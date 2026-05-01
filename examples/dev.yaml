@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: LicenseRef-DSL-1.0
+# Deferred Source License (DSL)
+# Pacer, Copyright (c) 2026 YouSysAdmin
+
+# Local UI-dev config. No GitHub App, no AWS creds required.
+#
+#   github.disabled: true
+#     - skips loading the App private key
+#     - skips registering /api/webhook + /api/runner/* routes
+#     - skips starting the orchestrator + reaper goroutines
+#
+#   aws.disabled: true
+#     - skips AWS credential resolution (Runtime.EC2 stays nil)
+#     - pool create/update stamps a placeholder LT id instead of
+#       calling CreateLaunchTemplate against EC2
+#
+# Both log a loud WARN at startup.
+#
+# Use with:  make dev   (or: pacer serve --config examples/dev.yaml)
+# Pair with: cd frontend && bun run dev   (proxies /api/* to :3000)
+
+server:
+  addr: :3000
+  # TLS modes (see internal/core/tlsutils):
+  #   none    -- plain HTTP (default; what dev runs as)
+  #   manual  -- operator-supplied cert + key paths
+  #   self    -- self-signed cert generated at startup (handy for IP-only deploys)
+  #   acme    -- Let's Encrypt via autocert; needs hosts (and email)
+  tls:
+    mode: self
+    fqdn: localhost
+
+github:
+  disabled: true
+
+aws:
+  disabled: true
+
+auth:
+  # Dev mode boots with auth ON so you can test login + the bootstrap
+  # flow. Flip disabled: true to bypass auth entirely while iterating
+  # on UI that lives behind the auth gate.
+  disabled: false
+
+  # Dev-only placeholder secret. The check at startup just enforces a
+  # 32-char minimum; this string satisfies it without needing
+  # `openssl rand -hex 32`. Production must use a real one (set via
+  # PACER_AUTH_JWT_SECRET in the systemd unit -- never bake into YAML).
+  jwt_secret: pacer-dev-only-jwt-secret-replace-me-in-prod
+
+  local:
+    enabled: true
+    email: ops@example.com # bootstrap user on first start; password logged once to stderr
+
+database:
+  engine: sqlite
+  path: pacer-dev.db
+
+logging:
+  level: info
+  format: text
+  color: true

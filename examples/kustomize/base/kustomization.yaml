@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: LicenseRef-DSL-1.0
+# Deferred Source License (DSL)
+# Pacer, Copyright (c) 2026 YouSysAdmin
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Reusable base. Compose into an overlay -- see overlays/example/.
+# The overlay is responsible for:
+#   - image: stanza pinning a specific tag / digest
+#   - IRSA role-arn annotation patch on the ServiceAccount
+#   - ConfigMap patch supplying real values for pacer.yaml
+#   - pacer-env + pacer-ghapp Secrets (or external-secrets refs)
+#   - Ingress / HTTPRoute / LoadBalancer Service for north-south traffic
+
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - configmap.yaml
+  - pvc.yaml
+  - service.yaml
+  - deployment.yaml
+
+# Decorative labels propagated to every resource but kept OUT of
+# selectors (selectors are immutable on Deployment + Service, so
+# changing them later breaks the world).
+labels:
+  - pairs:
+      app.kubernetes.io/name: pacer
+      app.kubernetes.io/component: orchestrator
+    includeSelectors: false

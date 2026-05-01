@@ -1,0 +1,24 @@
+{{ define "main" }}
+  <article class="cs-article">
+    <header class="cs-article-head">
+      <div class="cs-eyebrow">Section</div>
+      <h1>{{ .Title }}</h1>
+      {{ with .Description }}<p class="cs-lead">{{ . }}</p>{{ end }}
+    </header>
+    <div class="cs-prose">
+      {{ .Content }}
+    </div>
+
+    {{ with .Pages.ByWeight }}
+      <div class="cs-list-grid">
+        {{ range . }}
+          <a class="cs-list-card" href="{{ .RelPermalink }}">
+            <div class="cs-list-card-h">{{ .Title }}</div>
+            {{ with .Description }}<div class="cs-list-card-d">{{ . }}</div>{{ end }}
+            <div class="cs-list-card-arrow mono">→</div>
+          </a>
+        {{ end }}
+      </div>
+    {{ end }}
+  </article>
+{{ end }}

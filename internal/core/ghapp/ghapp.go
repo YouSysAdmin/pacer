@@ -1,0 +1,249 @@
+// SPDX-License-Identifier: LicenseRef-DSL-1.0
+// Deferred Source License (DSL)
+// Pacer, Copyright (c) 2026 YouSysAdmin
+
+// Package ghapp is the GitHub App client: signs JWTs with the App
+// private key, mints + caches per-installation access tokens, and
+// generates JIT runner configs.
+//
+// We deliberately do NOT pull in google/go-github - these three calls
+// are the entire surface we need from GitHub, and a focused client
+// keeps the dependency graph small.
+package ghapp
+
+import (
+	"bytes"
+	"context"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/json"
+	"encoding/pem"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"strconv"
+	"sync"
+	"time"
+
+	"github.com/golang-jwt/jwt/v4"
+	"golang.org/x/sync/singleflight"
+)
+
+const apiBase = "https://api.github.com"
+
+type Client struct {
+	appID      int64
+	privateKey *rsa.PrivateKey
+	http       *http.Client
+
+	mu     sync.Mutex
+	tokens map[int64]*cachedToken // installation_id -> access token
+
+	// sf collapses concurrent refreshes for the same installation into
+	// one upstream call. Without it, two goroutines hitting a cold
+	// cache for the same id both POST to GitHub and one result is
+	// thrown away.
+	sf singleflight.Group
+}
+
+type cachedToken struct {
+	Token     string
+	ExpiresAt time.Time
+}
+
+// New parses the App private key (PKCS1 or PKCS8 PEM) and returns a
+// ready-to-use client.
+func New(appID int64, privateKeyPath string) (*Client, error) {
+	raw, err := os.ReadFile(privateKeyPath)
+	if err != nil {
+		return nil, fmt.Errorf("read private key: %w", err)
+	}
+	block, _ := pem.Decode(raw)
+	if block == nil {
+		return nil, errors.New("private key: invalid PEM")
+	}
+
+	var key *rsa.PrivateKey
+	if k, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+		key = k
+	} else if k2, err2 := x509.ParsePKCS8PrivateKey(block.Bytes); err2 == nil {
+		rk, ok := k2.(*rsa.PrivateKey)
+		if !ok {
+			return nil, errors.New("private key: not RSA")
+		}
+		key = rk
+	} else {
+		return nil, fmt.Errorf("parse private key: pkcs1=%v pkcs8=%v", err, err2)
+	}
+
+	return &Client{
+		appID:      appID,
+		privateKey: key,
+		http:       &http.Client{Timeout: 30 * time.Second},
+		tokens:     map[int64]*cachedToken{},
+	}, nil
+}
+
+// AppJWT mints a 9-minute JWT signed with the App private key.
+// GitHub caps app-JWT lifetime at 10 minutes; we use 9 + 30s skew to stay
+// safely inside the window.
+func (c *Client) AppJWT() (string, error) {
+	now := time.Now().UTC()
+	claims := jwt.RegisteredClaims{
+		IssuedAt:  jwt.NewNumericDate(now.Add(-30 * time.Second)),
+		ExpiresAt: jwt.NewNumericDate(now.Add(9 * time.Minute)),
+		Issuer:    strconv.FormatInt(c.appID, 10),
+	}
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	return tok.SignedString(c.privateKey)
+}
+
+// InstallationToken returns a cached or freshly-minted installation
+// access token.
+// GitHub installation tokens last ~1h; we refresh 5m before expiry
+// so calls don't race the boundary.
+//
+// Concurrent callers for the same installation collapse into one
+// upstream POST via singleflight; the cache is re-checked under the
+// lock inside the flight to absorb a token a sibling goroutine
+// already minted.
+func (c *Client) InstallationToken(ctx context.Context, installationID int64) (string, error) {
+	if t, ok := c.cachedTokenIfFresh(installationID); ok {
+		return t, nil
+	}
+	key := strconv.FormatInt(installationID, 10)
+	v, err, _ := c.sf.Do(key, func() (any, error) {
+		if t, ok := c.cachedTokenIfFresh(installationID); ok {
+			return t, nil
+		}
+		return c.fetchInstallationToken(ctx, installationID)
+	})
+	if err != nil {
+		return "", err
+	}
+	return v.(string), nil
+}
+
+func (c *Client) cachedTokenIfFresh(installationID int64) (string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	t, ok := c.tokens[installationID]
+	if !ok || time.Until(t.ExpiresAt) <= 5*time.Minute {
+		return "", false
+	}
+	return t.Token, true
+}
+
+func (c *Client) fetchInstallationToken(ctx context.Context, installationID int64) (string, error) {
+	appJWT, err := c.AppJWT()
+	if err != nil {
+		return "", err
+	}
+	url := fmt.Sprintf("%s/app/installations/%d/access_tokens", apiBase, installationID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("build installation-token request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+appJWT)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("fetch installation token: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("installation token: %s %s", resp.Status, string(body))
+	}
+	var out struct {
+		Token     string    `json:"token"`
+		ExpiresAt time.Time `json:"expires_at"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", fmt.Errorf("decode installation token: %w", err)
+	}
+
+	c.mu.Lock()
+	c.tokens[installationID] = &cachedToken{Token: out.Token, ExpiresAt: out.ExpiresAt}
+	c.mu.Unlock()
+	return out.Token, nil
+}
+
+// JITConfig mints a just-in-time runner registration config for ONE
+// ephemeral runner registered against a single repo. The returned
+// string is fed to the runner via `--jitconfig <value>`; the runner
+// registers, claims one job, and exits.
+//
+// runnerGroupID is required for repo-level registration; the "Default"
+// group on personal accounts is id 1.
+func (c *Client) JITConfig(ctx context.Context, installationID int64, repoOwner, repoName, runnerName string, labels []string, runnerGroupID int) (string, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s/actions/runners/generate-jitconfig", apiBase, repoOwner, repoName)
+	return c.mintJITConfig(ctx, installationID, url, runnerName, labels, runnerGroupID)
+}
+
+// JITConfigOrg mints a JIT config for an org-level runner. The runner
+// shows up under Settings -> Actions -> Runners -> <runner_group> and
+// can claim any job from any repo in the org that targets the
+// corresponding labels.
+//
+// runnerGroupID 0 collapses to GitHub's "Default" group (id 1) so
+// operators don't have to look up the id when they only have one group.
+//
+// Requires the GitHub App's `organization_self_hosted_runners: write`
+// permission and the App installed on the org (not just specific
+// repos).
+func (c *Client) JITConfigOrg(ctx context.Context, installationID int64, orgName, runnerName string, labels []string, runnerGroupID int) (string, error) {
+	if runnerGroupID == 0 {
+		runnerGroupID = 1
+	}
+	url := fmt.Sprintf("%s/orgs/%s/actions/runners/generate-jitconfig", apiBase, orgName)
+	return c.mintJITConfig(ctx, installationID, url, runnerName, labels, runnerGroupID)
+}
+
+// mintJITConfig is the shared POST-and-decode for both repo and org
+// JIT-config endpoints. They differ only in the URL path; the
+// installation token, request shape, and response shape are identical.
+func (c *Client) mintJITConfig(ctx context.Context, installationID int64, url, runnerName string, labels []string, runnerGroupID int) (string, error) {
+	instTok, err := c.InstallationToken(ctx, installationID)
+	if err != nil {
+		return "", err
+	}
+	body, err := json.Marshal(map[string]any{
+		"name":            runnerName,
+		"runner_group_id": runnerGroupID,
+		"labels":          labels,
+		"work_folder":     "_work",
+	})
+	if err != nil {
+		return "", fmt.Errorf("marshal jitconfig body: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("build jitconfig request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+instTok)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("jitconfig: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		b, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("jitconfig: %s %s", resp.Status, string(b))
+	}
+	var out struct {
+		EncodedJITConfig string `json:"encoded_jit_config"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", fmt.Errorf("decode jitconfig: %w", err)
+	}
+	return out.EncodedJITConfig, nil
+}

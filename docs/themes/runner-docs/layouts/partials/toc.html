@@ -1,0 +1,8 @@
+<aside class="cs-toc" aria-label="On this page">
+  <div class="cs-toc-h">On this page</div>
+  {{ .TableOfContents }}
+  {{ if site.Params.edit_base }}
+    {{ $rel := .File.Path }}
+    <a class="cs-toc-edit" href="{{ site.Params.edit_base }}{{ $rel }}" target="_blank" rel="noopener">Edit this page <span class="mono">↗</span></a>
+  {{ end }}
+</aside>

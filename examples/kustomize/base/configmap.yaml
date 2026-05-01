@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: LicenseRef-DSL-1.0
+# Deferred Source License (DSL)
+# Pacer, Copyright (c) 2026 YouSysAdmin
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pacer-config
+  namespace: pacer
+data:
+  # Placeholder. Overlay with a strategic-merge patch (see
+  # overlays/example/configmap-patch.yaml) to set:
+  #   - server.public_url
+  #   - server.trusted_proxies (cluster pod / service CIDRs;
+  #     required when an Ingress fronts the pod, otherwise every
+  #     request looks like it came from the ingress pod's IP)
+  #   - aws.region
+  #   - github.app_id
+  #   - auth.local.email
+  pacer.yaml: |
+    server:
+      addr: :3000
+      public_url: https://pacer.example.com
+      tls:
+        mode: none
+    aws:
+      region: us-east-1
+      profile: ""
+    github:
+      app_id: 0
+      private_key_path: /etc/pacer/gh-app.pem
+    database:
+      engine: sqlite
+      path: /data/state.db
+    auth:
+      disabled: false
+      session_ttl: 12h
+      local:
+        enabled: true
+        email: ops@example.com
+    logging:
+      level: info
+      format: json
+      output: stdout

@@ -1,0 +1,15 @@
+The fonts shipped in this directory are redistributed under the SIL
+Open Font License, Version 1.1. Per OFL clause 2, every redistribution
+must carry the copyright notice and the license text below.
+
+  Inter Tight (InterTight-latin.woff2, InterTight-latin-ext.woff2)
+    Copyright 2022 The Inter Project Authors
+    https://github.com/rsms/inter-tight
+
+  Space Mono (SpaceMono-Regular.ttf, SpaceMono-Italic.ttf,
+              SpaceMono-Bold.ttf, SpaceMono-BoldItalic.ttf)
+    Copyright 2016 The Space Mono Project Authors
+    https://github.com/googlefonts/spacemono
+
+The canonical license text + FAQ:
+https://scripts.sil.org/OFL

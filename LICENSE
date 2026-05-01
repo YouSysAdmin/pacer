@@ -1,0 +1,120 @@
+Deferred Source License (DSL)
+SPDX-License-Identifier: LicenseRef-DSL-1.0
+
+Copyright (c) 2026 YouSysAdmin
+
+Change Date: 2029-01-01
+Change License: Mozilla Public License, Version 2.0
+
+Change Mechanism
+
+On the Change Date, this Agreement will automatically be replaced by the Change License,
+which will govern the Software and all versions of the Software previously distributed
+under this Agreement from that date forward.
+
+Acceptance
+
+This Agreement sets forth the terms and conditions on which Licensor makes the Software
+available to You.
+
+By accessing or using the Software or a Modified Version in any manner, You agree to be
+bound by all the terms and conditions of this Agreement.
+
+If you are an individual accessing or using the Software or a Modified Version on behalf
+of a legal entity, you represent and warrant that you have the authority to enter into
+this Agreement on behalf of such entity and bind such entity to this Agreement, and
+references to "You" in this Agreement will refer to such entity.
+
+License
+
+Subject to the terms and conditions of this Agreement, Licensor grants You a
+non-exclusive, worldwide, sublicensable license to:
+
+(i) use, copy, modify, create derivative works of, and distribute the Software; and
+
+(ii) make, have made, use, sell, offer for sale, and import the Software,
+where such license applies only to those patent claims licensable to You by Licensor
+that are necessarily infringed by the Software as made available to You by Licensor.
+
+If You initiate a patent claim alleging that the Software infringes Your patent rights,
+any patent rights granted to You under this Agreement terminate immediately.
+
+Limitations and Obligations
+
+You acknowledge that the Software and any Modified Versions may be subject to export or
+import control laws and regulations in Ukraine and other countries, and You agree to
+comply with all such laws and regulations.
+
+You will not alter, remove, or obscure any licensing, copyright, trademark, or other
+notices of Licensor in the Software or a Modified Version.
+
+You must ensure that anyone who receives a copy of any part of the Software or a
+Modified Version from You also receives a copy of this Agreement.
+
+If You create a Modified Version, You must include in such Modified Version prominent
+notices stating that You have modified the Software.
+
+You may not use the Software, or any Modified Version of the Software, to offer the
+Software as a hosted or managed service to third parties where the primary purpose of
+the service is to provide functionality substantially similar to the Software itself.
+
+No Other Rights
+
+Except for the licenses expressly granted to You in this Agreement, Licensor grants You
+no other licenses or rights in the Software or otherwise.
+
+Third-Party Software
+
+The Software may contain or be provided together with Third-Party Software.
+
+Each item of Third-Party Software is subject to its own license terms, which can be found
+in the documentation accompanying the Software or the source code.
+
+Copyrights to the Third-Party Software are held by the respective copyright holders
+indicated therein.
+
+You agree to fully comply with all such Third-Party Software license terms.
+
+Termination
+
+Your licenses to the Software will automatically terminate if You breach any term,
+condition, or restriction of this Agreement.
+
+If Your breach is capable of being cured and You cure it within 30 days, Your licenses
+will be reinstated retroactively.
+
+Notwithstanding the foregoing, intentional or repeated breaches of this Agreement by You
+will cause Your licenses to terminate automatically and permanently.
+
+Disclaimer; Liability Limitations
+
+TO THE EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED "AS IS" AND WITHOUT
+ANY REPRESENTATION, WARRANTY OR CONDITION, EXPRESS OR IMPLIED, INCLUDING WITHOUT
+LIMITATION ANY REPRESENTATION, WARRANTY OR CONDITION OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE, TITLE OR NON-INFRINGEMENT OR THAT USE OF THE SOFTWARE WILL BE
+UNINTERRUPTED OR ERROR FREE.
+
+LICENSOR WILL NOT BE LIABLE TO YOU FOR (I) ANY CONSEQUENTIAL, INDIRECT, SPECIAL, MULTIPLE,
+PUNITIVE OR INCIDENTAL DAMAGES, (INCLUDING WITHOUT LIMITATION, LOST PROFITS, BUSINESS
+INTERRUPTION AND LOST DATA) OR (II) DAMAGES IN EXCESS OF ONE HUNDRED US DOLLARS ($100),
+ARISING OUT OF THIS AGREEMENT OR THE USE OF THE SOFTWARE, REGARDLESS OF THE TYPE OF LEGAL
+CLAIM AND WHETHER LICENSOR HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+Governing Law
+
+This Agreement shall be governed by and construed under the laws of Ukraine without regard
+to the conflicts of law provisions thereof.
+
+The courts of Ukraine shall have exclusive jurisdiction for all purposes relating to this
+Agreement.
+
+Definitions
+
+Agreement: This Deferred Source License.
+Licensor: YouSysAdmin.
+Modified Version: any modified or derivative work of the Software.
+Software: the software provided to You under this Agreement that includes or refers to
+this Agreement, in any form, including any portion of such software.
+Third-Party Software: third-party software made available under open source or other
+license terms.
+You: the individual or entity agreeing to this Agreement.

@@ -1,0 +1,8 @@
+# Local terraform state -- this example is meant to be applied by the
+# operator, not committed.  Real state belongs in an S3 backend.
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+*.tfvars
+!terraform.tfvars.example

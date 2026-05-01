@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: LicenseRef-DSL-1.0
+# Deferred Source License (DSL)
+# Pacer, Copyright (c) 2026 YouSysAdmin
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: pacer
+  namespace: pacer
+spec:
+  type: ClusterIP
+  selector:
+    app: pacer
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

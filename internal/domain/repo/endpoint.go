@@ -1,0 +1,131 @@
+// SPDX-License-Identifier: LicenseRef-DSL-1.0
+// Deferred Source License (DSL)
+// Pacer, Copyright (c) 2026 YouSysAdmin
+
+package repo
+
+import (
+	"time"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
+
+	"github.com/yousysadmin/pacer/internal/core/env"
+	"github.com/yousysadmin/pacer/internal/core/response"
+	"github.com/yousysadmin/pacer/internal/core/validation"
+	"github.com/yousysadmin/pacer/internal/models/audit"
+	projectmodel "github.com/yousysadmin/pacer/internal/models/project"
+	repomodel "github.com/yousysadmin/pacer/internal/models/repo"
+)
+
+type Handler struct {
+	Runtime *env.Runtime
+}
+
+// bindInput is the repo-bind DTO.
+//
+// full_name shape is "owner/name"; the repo_full_name custom rule
+// rejects malformed shapes up-front so the handler doesn't have to
+// re-split. project_id length cap mirrors project.NameMax (uuid is
+// 36 chars but we leave headroom in case the ID format changes).
+// Tags follow the project / pool taxonomy: gha:* prefix reserved.
+type bindInput struct {
+	FullName             string            `json:"full_name"                  validate:"required,max=140,repo_full_name"`
+	ProjectID            string            `json:"project_id"                 validate:"required,min=1,max=128"`
+	MaxConcurrentRunners *int              `json:"max_concurrent_runners,omitempty"`
+	Tags                 map[string]string `json:"tags,omitempty"             validate:"omitempty,max=50,dive,keys,required,min=1,max=128,gha_safe,endkeys,max=256"`
+}
+
+func (h *Handler) Bind(c *fiber.Ctx) error {
+	in, err := validation.BindAndValidate[bindInput](c)
+	if err != nil {
+		fes := validation.Humanize(err)
+		return response.BadRequestFields(c, validation.Summary(fes), fes)
+	}
+
+	// Verify the project exists; FK would catch this too but the
+	// error is clearer here.
+	p, err := h.Runtime.Store.Project.Get(c.UserContext(), in.ProjectID)
+	if err != nil {
+		return response.Internal(c, err)
+	}
+	if p == nil {
+		return response.BadRequest(c, "project_id does not exist")
+	}
+	if p.Scope == projectmodel.ScopeOrg {
+		return response.BadRequest(c,
+			"project is org-scoped; webhooks for the org route via repository.owner.login - no per-repo binding needed")
+	}
+
+	r := &repomodel.Repo{
+		FullName:             in.FullName,
+		ProjectID:            in.ProjectID,
+		MaxConcurrentRunners: in.MaxConcurrentRunners,
+		Tags:                 in.Tags,
+		CreatedAt:            time.Now().UTC(),
+	}
+	if err := h.Runtime.Store.Repo.Put(c.UserContext(), r); err != nil {
+		return response.Internal(c, err)
+	}
+	h.audit(c, audit.ActionRepoBound, r.FullName, audit.Detail(map[string]any{
+		"project_id": r.ProjectID,
+	}))
+	return response.Created(c, r)
+}
+
+func (h *Handler) Get(c *fiber.Ctx) error {
+	fullName := c.Params("owner") + "/" + c.Params("name")
+	r, err := h.Runtime.Store.Repo.Get(c.UserContext(), fullName)
+	if err != nil {
+		return response.Internal(c, err)
+	}
+	if r == nil {
+		return response.NotFound(c, "repo not bound")
+	}
+	return response.Success(c, r)
+}
+
+func (h *Handler) List(c *fiber.Ctx) error {
+	rs, err := h.Runtime.Store.Repo.List(c.UserContext())
+	if err != nil {
+		return response.Internal(c, err)
+	}
+	return response.Success(c, rs)
+}
+
+func (h *Handler) ListByProject(c *fiber.Ctx) error {
+	projectID := c.Params("id")
+	rs, err := h.Runtime.Store.Repo.ListByProject(c.UserContext(), projectID)
+	if err != nil {
+		return response.Internal(c, err)
+	}
+	return response.Success(c, rs)
+}
+
+func (h *Handler) Unbind(c *fiber.Ctx) error {
+	fullName := c.Params("owner") + "/" + c.Params("name")
+	r, err := h.Runtime.Store.Repo.Get(c.UserContext(), fullName)
+	if err != nil {
+		return response.Internal(c, err)
+	}
+	if r == nil {
+		return response.NotFound(c, "repo not bound")
+	}
+	if err := h.Runtime.Store.Repo.Delete(c.UserContext(), fullName); err != nil {
+		return response.Internal(c, err)
+	}
+	h.audit(c, audit.ActionRepoUnbound, fullName, "")
+	return response.NoContent(c)
+}
+
+func (h *Handler) audit(c *fiber.Ctx, action, targetID, detail string) {
+	_ = h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
+		ID:         uuid.NewString(),
+		Action:     action,
+		TargetType: "repo",
+		TargetID:   targetID,
+		Detail:     detail,
+		ClientIP:   c.IP(),
+		OccurredAt: time.Now().UTC(),
+	})
+}

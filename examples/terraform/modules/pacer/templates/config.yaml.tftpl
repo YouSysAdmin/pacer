@@ -1,0 +1,104 @@
+# SPDX-License-Identifier: LicenseRef-DSL-1.0
+# Deferred Source License (DSL)
+# Pacer, Copyright (c) 2026 YouSysAdmin
+
+# Rendered by terraform from examples/terraform/modules/pacer/templates/config.yaml.tftpl
+# Long-lived secrets (jwt_secret, callback_hmac_secret, webhook_secret,
+# oidc.client_secret) are NOT in this file -- they're loaded from
+# /etc/pacer/secrets.env by the systemd unit and override the empty
+# values below at startup.
+
+server:
+  addr: 0.0.0.0:${listen_port}
+  public_url: ${public_url}
+%{ if length(trusted_proxies) > 0 ~}
+  trusted_proxies:
+%{ for p in trusted_proxies ~}
+    - ${p}
+%{ endfor ~}
+%{ endif ~}
+  tls:
+%{ if tls_mode == "none" ~}
+    mode: none
+%{ endif ~}
+%{ if tls_mode == "acme" ~}
+    mode: acme
+    acme:
+      hosts:
+        - ${fqdn}
+      email: ${acme_email}
+      cache_dir: /var/lib/pacer/acme
+      http_addr: ":80"
+%{ endif ~}
+%{ if tls_mode == "manual" ~}
+    mode: manual
+    cert: /etc/pacer/tls/cert.pem
+    key: /etc/pacer/tls/key.pem
+%{ endif ~}
+%{ if tls_mode == "self" ~}
+    mode: self
+    fqdn: ${fqdn}
+    alg: ${tls_self_alg}
+%{ endif ~}
+
+aws:
+  region: ${region}
+  profile: "${aws_profile}"
+
+github:
+  app_id: ${github_app_id}
+  private_key_path: /etc/pacer/gh-app.pem
+  webhook_secret: ""
+  callback_hmac_secret: ""
+
+database:
+  engine: sqlite
+  path: /var/lib/pacer/state.db
+
+logging:
+  level: ${log_level}
+  format: ${log_format}
+  output: stdout
+  color: false
+
+auth:
+  disabled: ${auth_disabled}
+  jwt_secret: ""
+  session_ttl: ${session_ttl}
+  local:
+    enabled: ${auth_local_enabled}
+    email: ${operator_email}
+  oidc:
+    enabled: ${oidc.enabled}
+%{ if oidc.enabled ~}
+    issuer: ${oidc.issuer}
+    client_id: ${oidc.client_id}
+    client_secret: ""
+    redirect_url: ${oidc.redirect_url}
+    scopes:
+%{ for s in oidc.scopes ~}
+      - ${s}
+%{ endfor ~}
+    require_email_verified: ${oidc.require_email_verified}
+%{ if length(oidc.allowed_domains) > 0 ~}
+    allowed_domains:
+%{ for d in oidc.allowed_domains ~}
+      - ${d}
+%{ endfor ~}
+%{ endif ~}
+%{ if length(oidc.allowed_emails) > 0 ~}
+    allowed_emails:
+%{ for e in oidc.allowed_emails ~}
+      - ${e}
+%{ endfor ~}
+%{ endif ~}
+%{ if oidc.groups_claim != "" ~}
+    groups_claim: ${oidc.groups_claim}
+%{ endif ~}
+%{ if length(oidc.allowed_groups) > 0 ~}
+    allowed_groups:
+%{ for g in oidc.allowed_groups ~}
+      - ${g}
+%{ endfor ~}
+%{ endif ~}
+%{ endif ~}

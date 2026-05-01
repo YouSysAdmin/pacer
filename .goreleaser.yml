@@ -1,0 +1,91 @@
+# SPDX-License-Identifier: LicenseRef-DSL-1.0
+# Deferred Source License (DSL)
+# Pacer, Copyright (c) 2026 YouSysAdmin
+
+version: 2
+
+project_name: pacer
+
+before:
+  hooks:
+    - go mod download
+
+release:
+  prerelease: "false"
+
+env:
+  - CGO_ENABLED=0
+
+builds:
+  - id: linux
+    main: ./cmd/pacer
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - "7"
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/yousysadmin/pacer/pkg.Version={{.Version }}
+
+archives:
+  - name_template: >-
+      {{ .Binary }}_v{{ .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}amd64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        formats: ['zip']
+
+checksum:
+  name_template: "checksums.sha256"
+
+snapshot:
+  version_template: "{{ .Tag }}-devel"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+dockers:
+  # linux/amd64
+  - ids: [linux]
+    image_templates:
+      - ghcr.io/yousysadmin/pacer:{{ .Version }}-amd64
+    dockerfile: Dockerfile
+    use: buildx
+    build_flag_templates:
+      - --platform=linux/amd64
+      - --label=org.opencontainers.image.source=https://github.com/YouSysAdmin/pacer
+      - --label=org.opencontainers.image.version={{ .Version }}
+
+  # linux/arm64
+  - ids: [linux]
+    image_templates:
+      - ghcr.io/yousysadmin/pacer:{{ .Version }}-arm64
+    dockerfile: Dockerfile
+    use: buildx
+    build_flag_templates:
+      - --platform=linux/arm64
+      - --label=org.opencontainers.image.source=https://github.com/YouSysAdmin/pacer
+      - --label=org.opencontainers.image.version={{ .Version }}
+
+docker_manifests:
+  - name_template: ghcr.io/yousysadmin/pacer:{{ .Version }}
+    image_templates:
+      - ghcr.io/yousysadmin/pacer:{{ .Version }}-amd64
+      - ghcr.io/yousysadmin/pacer:{{ .Version }}-arm64
+  - name_template: ghcr.io/yousysadmin/pacer:latest
+    image_templates:
+      - ghcr.io/yousysadmin/pacer:{{ .Version }}-amd64
+      - ghcr.io/yousysadmin/pacer:{{ .Version }}-arm64

@@ -1,0 +1,71 @@
+baseURL                = "https://pacer.local/"
+defaultContentLanguage = "en"
+title                  = "Pacer · Docs"
+themesDir    = "themes"
+theme        = "runner-docs"
+enableRobotsTXT = true
+
+[params]
+  description = "Self-hosted GitHub Actions runner orchestrator for AWS."
+  brand       = "Pacer"
+  brand_sub   = "docs"
+  tagline     = "Spot EC2 runners for GitHub Actions."
+
+  # Footer columns derived from these toggles.
+  show_footer_project = false
+  repoURL     = ""
+
+  # Optional: top-right primary CTA. Empty disables.
+  cta_label   = ""
+  cta_url     = ""
+
+  # Optional: source links / edit-on-github (set repoURL + edit_base to enable).
+  edit_base   = ""
+
+  # Trust badges below the home hero.
+  trust_badges = ["# single-binary", "# no lambda · no sqs", "# spot-friendly"]
+
+  # Home hero terminal demo.
+  terminal_title = "~/pacer"
+  terminal_lines = [
+    '<span class="cs-prefix cs-brand">$</span> pacer serve',
+    '<span class="cs-dim">orchestrator: tick interval=5s</span>',
+    '<span class="cs-dim">reaper:       tick interval=60s</span>',
+    '<span class="cs-dim">webhook → pool match → spawn</span>',
+    '',
+    '<span class="cs-ok">spawn   </span> i-0a1b2c · pool=large · spot · t3.large',
+    '<span class="cs-ok">register</span> jit-config minted · ephemeral',
+    '<span class="cs-dim">complete · 47s · shutdown -h now</span>',
+  ]
+
+[markup]
+  [markup.goldmark.renderer]
+    unsafe = true
+  [markup.tableOfContents]
+    startLevel = 2
+    endLevel   = 4
+    ordered    = false
+  [markup.highlight]
+    style                = "github-dark"
+    lineNos              = false
+    noClasses            = true
+    tabWidth             = 2
+    codeFences           = true
+    guessSyntax          = true
+
+[outputs]
+  home = ["HTML"]
+  page = ["HTML"]
+  section = ["HTML"]
+
+[taxonomies]
+  tag = "tags"
+
+[[menu.main]]
+  name   = "Description"
+  url    = "/description/"
+  weight = 10
+[[menu.main]]
+  name   = "Installation"
+  url    = "/installation/"
+  weight = 20

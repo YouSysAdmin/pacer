@@ -1,0 +1,18 @@
+{{- $prev := .PrevInSection -}}
+{{- $next := .NextInSection -}}
+{{ if or $prev $next }}
+  <nav class="cs-pager" aria-label="Page navigation">
+    {{ with $prev }}
+      <a class="cs-pager-link cs-pager-prev" href="{{ .RelPermalink }}">
+        <span class="cs-pager-d mono-dim">← Previous</span>
+        <span class="cs-pager-t">{{ .Title }}</span>
+      </a>
+    {{ else }}<span></span>{{ end }}
+    {{ with $next }}
+      <a class="cs-pager-link cs-pager-next" href="{{ .RelPermalink }}">
+        <span class="cs-pager-d mono-dim">Next →</span>
+        <span class="cs-pager-t">{{ .Title }}</span>
+      </a>
+    {{ else }}<span></span>{{ end }}
+  </nav>
+{{ end }}

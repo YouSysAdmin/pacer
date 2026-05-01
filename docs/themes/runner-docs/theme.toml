@@ -1,0 +1,10 @@
+name        = "runner-docs"
+license     = "Proprietary"
+description = "Pacer documentation theme. Dark-first, terminal energy, amber accent."
+homepage    = ""
+tags        = ["docs", "documentation", "dark", "amber"]
+features    = ["sidebar", "toc", "github-dark code"]
+min_version = "0.150.0"
+
+[author]
+  name = "Pacer"

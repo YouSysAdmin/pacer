@@ -1,0 +1,179 @@
+# SPDX-License-Identifier: LicenseRef-DSL-1.0
+# Deferred Source License (DSL)
+# Pacer, Copyright (c) 2026 YouSysAdmin
+
+# Production configuration example for Pacer.
+#
+# Copy this file to /etc/pacer/config.yaml and run:
+#   /usr/local/bin/pacer serve --config /etc/pacer/config.yaml
+#
+# Long-lived secrets (jwt_secret, callback_hmac_secret, webhook_secret) should
+# be supplied via environment variables in the systemd unit rather than being
+# baked into this YAML. Every key here is overridable as PACER_<UPPERCASE_DOT_TO_UNDERSCORE>:
+#
+#   PACER_AUTH_JWT_SECRET=...
+#   PACER_GITHUB_WEBHOOK_SECRET=...
+#   PACER_GITHUB_CALLBACK_HMAC_SECRET=...
+#
+# Generate fresh hex values with:  openssl rand -hex 32
+
+# -----------------------------------------------------------------------------
+# Server: listen address, public URL, TLS termination.
+# -----------------------------------------------------------------------------
+server:
+  # Bind only to localhost when fronted by a reverse proxy / ALB; bind to
+  # 0.0.0.0 if the tool itself is the public endpoint (TLS modes self/acme).
+  addr: 127.0.0.1:3000
+
+  # The URL GitHub webhooks AND spawned EC2 instances reach the tool at.
+  # MUST be HTTPS in production -- the runner callback tokens are HMAC-signed
+  # but we still want TLS in transit.
+  public_url: https://runner.example.com
+
+  # When fronted by a reverse proxy / ALB / Cloudflare that terminates TLS
+  # upstream, list its CIDRs here so c.IP() honors X-Forwarded-For ONLY when
+  # the request actually came through one of them. Without this list the
+  # rate-limiter, audit log, and access log would all see the proxy's IP
+  # (every login looks like the same client). Leave empty when the tool is
+  # the public endpoint - an empty list rejects spoofed XFF headers
+  # outright.
+  #
+  # trusted_proxies:
+  #   - 10.0.0.0/8
+  #   - 127.0.0.1
+  #   - ::1
+
+  # ---------------------------------------------------------------------------
+  # TLS termination.  Pick ONE of the four modes.
+  # ---------------------------------------------------------------------------
+  tls:
+    # OPTION A: Behind an ALB / Cloudflare / nginx that terminates TLS.
+    #           This is the most common production posture.
+    mode: none
+
+    # OPTION B: Operator-supplied PEM (corp CA, ACM-exported, etc).
+    # mode: manual
+    # cert: /etc/pacer/tls/fullchain.pem
+    # key:  /etc/pacer/tls/privkey.pem
+
+    # OPTION C: Let's Encrypt via autocert (HTTP-01 challenge on :80).
+    #           Public DNS must point at this host; cache_dir must persist.
+    #           The HTTP listener also 308-redirects every other request
+    #           method (not just GET/HEAD) to https.
+    # mode: acme
+    # acme:
+    #   hosts: [runner.example.com]
+    #   email: ops@example.com
+    #   cache_dir: /var/lib/pacer/acme
+    #   http_addr: ":80"
+
+    # OPTION D: Self-signed (private network / IP-only deploys).
+    # mode: self
+    # fqdn: runner.internal.example.com
+    # alg: rsa            # rsa (default; widest client compat) | ed25519
+
+# -----------------------------------------------------------------------------
+# AWS: single region, default credential chain.
+# -----------------------------------------------------------------------------
+aws:
+  region: us-east-1
+
+  # Empty = SDK default chain (instance profile when running on EC2, env vars,
+  # ~/.aws/credentials).  Production: prefer instance profile, never an
+  # access-key pair in YAML.
+  profile: ""
+
+# -----------------------------------------------------------------------------
+# GitHub App: app id, key path, secrets.  Subscribe to workflow_job only.
+# -----------------------------------------------------------------------------
+github:
+  app_id: 123456                                          # from App settings
+  private_key_path: /etc/pacer/gh-app.pem     # mode 0400, owned by the runner user
+
+  # GitHub-side webhook secret (configured in App settings).
+  # Prefer setting this via PACER_GITHUB_WEBHOOK_SECRET=... in the systemd unit.
+  webhook_secret: ""
+
+  # Tool-side secret used to sign per-spawn runner self-registration tokens.
+  # NOT a GitHub setting -- generate fresh with: openssl rand -hex 32
+  # Prefer setting this via PACER_GITHUB_CALLBACK_HMAC_SECRET=... in the unit.
+  callback_hmac_secret: ""
+
+# -----------------------------------------------------------------------------
+# Database: SQLite (single-writer; sufficient for v0.1.0 single-operator).
+# -----------------------------------------------------------------------------
+database:
+  engine: sqlite
+  path: /var/lib/pacer/state.db
+
+# -----------------------------------------------------------------------------
+# Logging: structured JSON to stdout for journald / CloudWatch ingest.
+# -----------------------------------------------------------------------------
+logging:
+  level: info       # debug | info | warn | error
+  format: json      # json (production) | text (dev)
+  output: stdout    # stdout | absolute file path
+  color: false
+
+# -----------------------------------------------------------------------------
+# Auth: HS256 JWT cookie, local bootstrap user.  OIDC scaffolded but not wired.
+# -----------------------------------------------------------------------------
+auth:
+  disabled: false   # true reverts to the pre-auth posture (private network only)
+
+  # HS256 secret; minimum 32 chars enforced at startup.
+  # Prefer setting this via PACER_AUTH_JWT_SECRET=... in the systemd unit.
+  jwt_secret: ""
+
+  session_ttl: 12h  # Go duration
+
+  local:
+    enabled: true
+    # On first start with an empty users table, the tool mints this user with a
+    # random password and logs the plaintext to stderr ONCE.  Copy it before
+    # the line scrolls off; password reset = wipe the row + restart.
+    email: ops@example.com
+
+  # OIDC SSO. When oidc.enabled is true, local login is auto-disabled
+  # at startup -- local stays available only for first-setup / break-glass.
+  oidc:
+    enabled: false
+    # issuer must be the IdP's URL - pacer fetches /.well-known/openid-configuration
+    # from it. Pointing it at pacer's own URL fails fast at startup. Issuer shapes
+    # by provider:
+    #   Okta:        https://<org>.okta.com/oauth2/default
+    #   Auth0:       https://<tenant>.auth0.com/
+    #   Google:      https://accounts.google.com
+    #   Cognito:     https://cognito-idp.<region>.amazonaws.com/<region>_<poolID>
+    #   Keycloak:    https://<host>/realms/<realm>
+    #   Entra ID:    https://login.microsoftonline.com/<tenant>/v2.0
+    #   JumpCloud:   https://oauth.id.jumpcloud.com/
+    # issuer:        https://accounts.example.com
+    # client_id:     pacer
+    # client_secret: ""    # set via PACER_AUTH_OIDC_CLIENT_SECRET
+    # redirect_url:  https://pacer.example.com/api/auth/oidc/callback
+    #
+    # scopes default to [openid, email, profile]. Add "groups" for IdPs that
+    # require it to surface the group claim (JumpCloud, some Auth0 / Keycloak
+    # setups). Cognito and Okta default deployments don't need it.
+    # scopes: [openid, email, profile, groups]
+    # require_email_verified: true   # default; flip if your IdP doesn't surface the claim
+    #
+    # Allowlist (any-of). All-empty means the IdP is the gate. The
+    # first user provisioned through OIDC gets role=admin (so the
+    # operator setting up the IdP can administer pacer); subsequent
+    # JIT-provisioned users default to role=user. Today middleware
+    # is "in or out" - the role distinction is forward-compat for
+    # when role gating lands.
+    #
+    # allowed_emails:  [ops@example.com]   # fully-qualified addresses; "@example.com"-style entries are rejected at startup - use allowed_domains for that
+    # allowed_domains: [example.com]       # case-insensitive
+    #
+    # Group allowlist; groups_claim varies per IdP:
+    #   "groups"          - Okta, Auth0, Keycloak (default), JumpCloud, Entra ID
+    #   "cognito:groups"  - AWS Cognito
+    #   "roles"           - some Keycloak setups
+    # Both sides are lowered at compare time, so "Admins" in YAML
+    # matches "ADMINS" from Cognito or "admins" from Okta.
+    # groups_claim:   groups
+    # allowed_groups: [pacer-admins]

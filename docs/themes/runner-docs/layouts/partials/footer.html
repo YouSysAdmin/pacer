@@ -1,0 +1,44 @@
+<footer class="cs-footer">
+  <div class="cs-footer-inner">
+    <div class="cs-footer-brand">
+      <div class="cs-footer-wordmark">{{ site.Params.brand }}</div>
+      <div class="cs-footer-tag">{{ site.Params.tagline }}</div>
+    </div>
+    <div class="cs-footer-cols">
+      {{- $sections := where site.Sections "Params.sidebar" "ne" false -}}
+      {{- $sections := $sections.ByWeight -}}
+      {{- $primary := first 3 $sections -}}
+      {{- $secondary := after 3 $sections -}}
+      {{ with $primary }}
+        <div>
+          <div class="cs-footer-h">Docs</div>
+          <ul>
+            {{ range . }}<li><a href="{{ .RelPermalink }}">{{ .Title }}</a></li>{{ end }}
+          </ul>
+        </div>
+      {{ end }}
+      {{ with $secondary }}
+        <div>
+          <div class="cs-footer-h">Reference</div>
+          <ul>
+            {{ range . }}<li><a href="{{ .RelPermalink }}">{{ .Title }}</a></li>{{ end }}
+          </ul>
+        </div>
+      {{ end }}
+      {{ if and site.Params.show_footer_project site.Params.repoURL }}
+        <div>
+          <div class="cs-footer-h">Project</div>
+          <ul>
+            <li><a href="{{ site.Params.repoURL }}" target="_blank" rel="noopener">Source</a></li>
+            <li><a href="{{ site.Params.repoURL }}/releases" target="_blank" rel="noopener">Releases</a></li>
+            <li><a href="{{ site.Params.repoURL }}/issues" target="_blank" rel="noopener">Issues</a></li>
+          </ul>
+        </div>
+      {{ end }}
+    </div>
+  </div>
+  <div class="cs-footer-bar">
+    <span class="mono-dim">© {{ now.Year }} {{ site.Params.brand }}</span>
+    <span class="mono-dim">built with hugo</span>
+  </div>
+</footer>

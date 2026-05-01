@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: LicenseRef-DSL-1.0
+# Deferred Source License (DSL)
+# Pacer, Copyright (c) 2026 YouSysAdmin
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pacer
+  namespace: pacer
+  annotations:
+    # cert-manager + nginx ingress. Swap the issuer / class for your
+    # cluster (e.g. AWS Load Balancer Controller -> alb).
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - pacer.example.com
+      secretName: pacer-tls
+  rules:
+    - host: pacer.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: pacer
+                port:
+                  number: 80

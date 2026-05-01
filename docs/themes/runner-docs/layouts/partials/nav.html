@@ -1,0 +1,22 @@
+<nav class="cs-nav">
+  <div class="cs-nav-inner">
+    <a href="{{ "/" | relURL }}" class="cs-brand" aria-label="{{ site.Params.brand }}">
+      <img src="{{ "assets/logo/mark.svg" | relURL }}" alt=""/>
+      <span>{{ site.Params.brand }}{{ with site.Params.brand_sub }} <em class="cs-brand-sub">{{ . }}</em>{{ end }}</span>
+    </a>
+    <div class="cs-nav-links">
+      {{ range site.Menus.main }}
+        {{- $external := false -}}
+        {{- with .Params }}{{ with .external }}{{ $external = . }}{{ end }}{{ end -}}
+        <a href="{{ .URL | relURL }}"{{ if $external }} target="_blank" rel="noopener"{{ end }}>{{ .Name }}{{ if $external }} <span class="cs-ext">↗</span>{{ end }}</a>
+      {{ end }}
+    </div>
+    <div class="cs-nav-cta">
+      {{ with site.Params.cta_url }}
+        <a class="cs-btn cs-btn-primary cs-btn-sm" href="{{ . }}" target="_blank" rel="noopener">
+          {{ site.Params.cta_label | default "Get started" }} <span class="mono">↗</span>
+        </a>
+      {{ end }}
+    </div>
+  </div>
+</nav>

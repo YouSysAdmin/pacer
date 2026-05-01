@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: LicenseRef-DSL-1.0
+# Deferred Source License (DSL)
+# Pacer, Copyright (c) 2026 YouSysAdmin
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pacer

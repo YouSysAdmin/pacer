@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: LicenseRef-DSL-1.0
+# Deferred Source License (DSL)
+# Pacer, Copyright (c) 2026 YouSysAdmin
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Wired-up demo overlay. Copy this directory to start a real
+# environment overlay (e.g. overlays/staging/, overlays/prod/) and
+# tune the values below.
+
+resources:
+  - ../../base
+  - secret-env.yaml
+  - secret-ghapp.yaml
+  - ingress.yaml
+
+patches:
+  - path: configmap-patch.yaml
+    target:
+      kind: ConfigMap
+      name: pacer-config
+  - path: serviceaccount-patch.yaml
+    target:
+      kind: ServiceAccount
+      name: pacer
+
+# Pin the image. Prefer an immutable digest in production:
+#   newName: ghcr.io/yousysadmin/pacer
+#   digest:  sha256:<sha>
+images:
+  - name: ghcr.io/yousysadmin/pacer
+    newTag: latest

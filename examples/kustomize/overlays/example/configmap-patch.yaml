@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: LicenseRef-DSL-1.0
+# Deferred Source License (DSL)
+# Pacer, Copyright (c) 2026 YouSysAdmin
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pacer-config
+  namespace: pacer
+data:
+  pacer.yaml: |
+    server:
+      addr: :3000
+      # Must match the Ingress host below + the GitHub App's
+      # Webhook URL setting.
+      public_url: https://pacer.example.com
+      # The Ingress controller is the only peer that ever reaches
+      # this pod, so honor X-Forwarded-For when (and only when) the
+      # request comes through it. Without this list the rate
+      # limiter, audit log, and access log would attribute every
+      # request to the ingress pod's IP. Replace with your cluster's
+      # actual pod / service CIDRs - 10.0.0.0/8 covers the default
+      # ranges on most managed clusters (EKS, GKE, kubeadm), but
+      # check yours: `kubectl cluster-info dump | grep -i cidr`.
+      trusted_proxies:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+      tls:
+        mode: none
+    aws:
+      region: us-east-1
+      # Empty profile - IRSA fills credentials in via the default
+      # SDK chain (the projected service-account token).
+      profile: ""
+    github:
+      app_id: 123456
+      private_key_path: /etc/pacer/gh-app.pem
+    database:
+      engine: sqlite
+      path: /data/state.db
+    auth:
+      disabled: false
+      session_ttl: 12h
+      local:
+        enabled: true
+        email: ops@example.com
+    logging:
+      level: info
+      format: json
+      output: stdout

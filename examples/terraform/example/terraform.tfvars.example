@@ -1,0 +1,22 @@
+region    = "eu-central-1"
+vpc_id    = "vpc-0123456789abcdef0"
+subnet_id = "subnet-0123456789abcdef0"
+
+fqdn           = "pacer.example.com"
+operator_email = "ops@example.com"
+
+github_app_id  = "123456"
+# Prefer:  TF_VAR_github_app_private_key="$(cat path/to/app.pem)" terraform apply
+github_app_private_key = "<<-EOF\n-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----\nEOF"
+
+webhook_secret       = "<from-github-app-settings>"
+callback_hmac_secret = "<openssl rand -hex 32>"
+jwt_secret           = "<openssl rand -hex 32>"
+
+pacer_version = "v0.1.0"
+
+tags = {
+  "managed-by"  = "terraform"
+  "service"     = "pacer"
+  "environment" = "prod"
+}

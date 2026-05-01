@@ -1,0 +1,84 @@
+#!/bin/bash
+# SPDX-License-Identifier: LicenseRef-DSL-1.0
+# Deferred Source License (DSL)
+# Pacer, Copyright (c) 2026 YouSysAdmin
+
+# Pacer host bootstrap. Idempotent; safe to re-run via cloud-init.
+set -euo pipefail
+exec > >(tee /var/log/pacer-bootstrap.log) 2>&1
+
+echo "==> creating pacer user + dirs"
+useradd --system --home-dir /var/lib/pacer --shell /usr/sbin/nologin pacer || true
+install -d -o pacer -g pacer -m 0750 /var/lib/pacer /etc/pacer /var/lib/pacer/acme
+
+echo "==> downloading pacer ${pacer_version}"
+ARCH="$(uname -m)"
+case "$ARCH" in
+  aarch64) GOARCH=arm64 ;;
+  x86_64)  GOARCH=amd64 ;;
+  *) echo "unsupported arch: $ARCH" >&2; exit 1 ;;
+esac
+
+# Operators can override pacer_release_url to point at a private mirror
+# (e.g. an internal artifactory copy of the GitHub release tarball).
+RELEASE_URL="${pacer_release_url}"
+if [ -z "$RELEASE_URL" ]; then
+  RELEASE_URL="https://github.com/${pacer_repo}/releases/download/${pacer_version}/pacer_${pacer_version}_linux_$${GOARCH}.tar.gz"
+fi
+curl -fsSL "$RELEASE_URL" -o /tmp/pacer.tar.gz
+tar -xzf /tmp/pacer.tar.gz -C /tmp pacer
+install -o root -g root -m 0755 /tmp/pacer /usr/local/bin/pacer
+rm -f /tmp/pacer.tar.gz /tmp/pacer
+
+echo "==> writing /etc/pacer/config.yaml"
+cat >/etc/pacer/config.yaml <<'PACER_CONFIG'
+${config_yaml}
+PACER_CONFIG
+chown root:pacer /etc/pacer/config.yaml
+chmod 0640 /etc/pacer/config.yaml
+
+echo "==> writing /etc/pacer/secrets.env"
+# These come from terraform vars (sensitive). Stored locally so a state
+# leak doesn't expose them and so secret rotation is a single-file edit.
+cat >/etc/pacer/secrets.env <<'PACER_SECRETS'
+PACER_AUTH_JWT_SECRET=${jwt_secret}
+PACER_GITHUB_WEBHOOK_SECRET=${webhook_secret}
+PACER_GITHUB_CALLBACK_HMAC_SECRET=${callback_hmac_secret}
+%{ if oidc_client_secret != "" ~}
+PACER_AUTH_OIDC_CLIENT_SECRET=${oidc_client_secret}
+%{ endif ~}
+PACER_SECRETS
+chown root:pacer /etc/pacer/secrets.env
+chmod 0640 /etc/pacer/secrets.env
+
+echo "==> writing /etc/pacer/gh-app.pem"
+cat >/etc/pacer/gh-app.pem <<'PACER_GH_APP_PEM'
+${github_app_private_key}
+PACER_GH_APP_PEM
+chown root:pacer /etc/pacer/gh-app.pem
+chmod 0640 /etc/pacer/gh-app.pem
+
+%{ if tls_mode == "manual" ~}
+echo "==> writing /etc/pacer/tls/{cert,key}.pem"
+install -d -o root -g pacer -m 0750 /etc/pacer/tls
+cat >/etc/pacer/tls/cert.pem <<'PACER_TLS_CERT'
+${tls_cert_pem}
+PACER_TLS_CERT
+chown root:pacer /etc/pacer/tls/cert.pem
+chmod 0640 /etc/pacer/tls/cert.pem
+
+cat >/etc/pacer/tls/key.pem <<'PACER_TLS_KEY'
+${tls_key_pem}
+PACER_TLS_KEY
+chown root:pacer /etc/pacer/tls/key.pem
+chmod 0640 /etc/pacer/tls/key.pem
+%{ endif ~}
+
+echo "==> installing systemd unit"
+cat >/etc/systemd/system/pacer.service <<'PACER_UNIT'
+${systemd_unit}
+PACER_UNIT
+systemctl daemon-reload
+systemctl enable --now pacer.service
+
+echo "==> bootstrap complete; tail logs with: journalctl -fu pacer"

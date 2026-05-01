@@ -1,0 +1,78 @@
+{{ define "main" }}
+<section class="cs-hero cs-home-hero">
+  <div class="cs-hero-inner">
+    <div>
+      <div class="cs-eyebrow">
+        {{ site.Params.brand }}{{ with site.Params.brand_sub }} · {{ . }}{{ end
+        }}
+      </div>
+      <h1 class="cs-display">{{ site.Params.tagline }}</h1>
+      <p class="cs-lead">{{ site.Params.description }}</p>
+      <div class="cs-hero-ctas">
+        {{ $first := index (where site.Sections "Params.sidebar" "ne"
+        false).ByWeight 0 }} {{ with $first }}
+        <a class="cs-btn cs-btn-primary cs-btn-lg" href="{{ .RelPermalink }}"
+          >Get started →</a
+        >
+        {{ end }} {{ with site.Params.cta_url }}
+        <a
+          class="cs-btn cs-btn-ghost cs-btn-lg"
+          href="{{ . }}"
+          target="_blank"
+          rel="noopener"
+          >{{ site.Params.cta_label | default "Open product" }} ↗</a
+        >
+        {{ end }}
+      </div>
+      {{ with site.Params.trust_badges }}
+      <div class="cs-hero-trust">
+        {{ range . }}<span>{{ . }}</span>{{ end }}
+      </div>
+      {{ end }}
+    </div>
+    {{ if site.Params.terminal_lines }}
+    <div class="cs-terminal" aria-hidden="true">
+      <div class="cs-terminal-chrome">
+        <span class="dot r"></span><span class="dot y"></span
+        ><span class="dot g"></span>
+        <span class="cs-terminal-title"
+          >{{ site.Params.terminal_title | default "~/pacer" }}</span
+        >
+      </div>
+      <pre
+        class="cs-terminal-body"
+      >{{ range site.Params.terminal_lines }}<span class="cs-line">{{ . | safeHTML }}</span>{{ end }}<span class="cs-line"><span class="cs-prefix cs-brand">$</span><span class="cs-cursor">▎</span></span></pre>
+    </div>
+    {{ else }}
+    <div class="cs-terminal cs-terminal-quiet" aria-hidden="true">
+      <div class="cs-terminal-chrome">
+        <span class="dot r"></span><span class="dot y"></span
+        ><span class="dot g"></span>
+        <span class="cs-terminal-title">pacer</span>
+      </div>
+      <pre
+        class="cs-terminal-body"
+      ><span class="cs-line cs-dim"># {{ site.Title }}</span><span class="cs-line cs-dim">{{ site.Params.description }}</span><span class="cs-line"><span class="cs-prefix cs-brand">$</span><span class="cs-cursor">▎</span></span></pre>
+    </div>
+    {{ end }}
+  </div>
+</section>
+
+<section class="cs-section-tight">
+  <div class="cs-section-inner">
+    <div class="cs-eyebrow">All sections</div>
+    <h2 class="cs-h2">Browse the manual</h2>
+    <div class="cs-list-grid">
+      {{ range (where site.Sections "Params.sidebar" "ne" false).ByWeight }}
+      <a class="cs-list-card" href="{{ .RelPermalink }}">
+        <div class="cs-list-card-h">{{ .Title }}</div>
+        {{ with .Description }}
+        <div class="cs-list-card-d">{{ . }}</div>
+        {{ end }}
+        <div class="cs-list-card-arrow mono">→</div>
+      </a>
+      {{ end }}
+    </div>
+  </div>
+</section>
+{{ end }}

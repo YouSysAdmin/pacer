@@ -1,0 +1,99 @@
+# SPDX-License-Identifier: LicenseRef-DSL-1.0
+# Deferred Source License (DSL)
+# Pacer, Copyright (c) 2026 YouSysAdmin
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pacer
+  namespace: pacer
+spec:
+  # Single-writer SQLite. Do not raise replicas. Postgres-backed HA
+  # is on the polish roadmap; until then, treat Pacer as a singleton.
+  replicas: 1
+  strategy:
+    # Recreate keeps the PVC attached to one pod at a time. With
+    # RollingUpdate on a ReadWriteOnce volume the new pod fails to
+    # schedule until the old one detaches, which manifests as a slow
+    # restart.
+    type: Recreate
+  selector:
+    matchLabels:
+      app: pacer
+  template:
+    metadata:
+      labels:
+        app: pacer
+    spec:
+      serviceAccountName: pacer
+      securityContext:
+        runAsUser: 65532
+        runAsGroup: 65532
+        # fsGroup re-owns the PVC mount on attach -- the distroless
+        # image runs as 65532 but a fresh PVC is owned by root.
+        fsGroup: 65532
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pacer
+          # Override via overlay's images: stanza.
+          image: ghcr.io/yousysadmin/pacer:latest
+          args:
+            - serve
+            - --config
+            - /etc/pacer/pacer.yaml
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            # PACER_AUTH_JWT_SECRET, PACER_GITHUB_WEBHOOK_SECRET,
+            # PACER_GITHUB_CALLBACK_HMAC_SECRET, etc.
+            - secretRef:
+                name: pacer-env
+          volumeMounts:
+            - name: config
+              mountPath: /etc/pacer/pacer.yaml
+              subPath: pacer.yaml
+              readOnly: true
+            - name: ghapp
+              mountPath: /etc/pacer/gh-app.pem
+              subPath: gh-app.pem
+              readOnly: true
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: config
+          configMap:
+            name: pacer-config
+        - name: ghapp
+          secret:
+            secretName: pacer-ghapp
+            defaultMode: 0400
+        - name: data
+          persistentVolumeClaim:
+            claimName: pacer-data

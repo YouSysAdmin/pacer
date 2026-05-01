@@ -1,0 +1,42 @@
+# Build artifacts
+bin/
+build/
+
+# SQLite (dev DB + WAL/SHM sidecars)
+*.db
+*.db-shm
+*.db-wal
+
+# TLS / signing material — never commit
+*.pem
+*.key
+*.crt
+*.cert
+*.p12
+*.pfx
+
+# Env / dotfiles with secrets
+.env
+.env.*
+!.env.example
+
+# Operator-supplied production config (examples/ contains the templates)
+pacer.yaml
+aws-github-runner.yaml
+
+# Hugo
+docs/public/
+docs/resources/
+
+# Logs / coverage / temp
+*.log
+*.out
+coverage.txt
+profile.cov
+
+# Editor / OS
+.DS_Store
+.idea/
+
+# UI kit
+ui-kit/

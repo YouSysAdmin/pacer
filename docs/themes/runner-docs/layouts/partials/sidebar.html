@@ -1,0 +1,21 @@
+{{- $current := . -}}
+<aside class="cs-side" aria-label="Documentation">
+  <nav class="cs-side-inner">
+    {{ range (where site.Sections "Params.sidebar" "ne" false).ByWeight }}
+      {{- $sec := . -}}
+      <div class="cs-side-group">
+        <div class="cs-side-h">{{ .Title }}</div>
+        <ul>
+          <li{{ if eq $current.RelPermalink $sec.RelPermalink }} class="cs-active"{{ end }}>
+            <a href="{{ $sec.RelPermalink }}">Overview</a>
+          </li>
+          {{ range $sec.Pages.ByWeight }}
+            <li{{ if eq $current.RelPermalink .RelPermalink }} class="cs-active"{{ end }}>
+              <a href="{{ .RelPermalink }}">{{ .Title }}</a>
+            </li>
+          {{ end }}
+        </ul>
+      </div>
+    {{ end }}
+  </nav>
+</aside>

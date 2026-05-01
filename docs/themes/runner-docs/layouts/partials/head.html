@@ -1,0 +1,24 @@
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+{{- $title := .Title -}}
+{{- $siteTitle := site.Title -}}
+{{- if .IsHome -}}
+<title>{{ $siteTitle }} — {{ site.Params.tagline }}</title>
+{{- else -}}
+<title>{{ $title }} · {{ $siteTitle }}</title>
+{{- end }}
+<meta name="description" content="{{ with .Description }}{{ . }}{{ else }}{{ site.Params.description }}{{ end }}"/>
+<meta name="theme-color" content="#0b0d10"/>
+
+<link rel="icon" type="image/svg+xml" href="{{ "assets/logo/favicon.svg" | relURL }}"/>
+
+{{ $tokens := resources.Get "css/tokens.css" }}
+{{ $docs   := resources.Get "css/docs.css" }}
+{{ $css    := slice $tokens $docs | resources.Concat "css/app.css" | minify | fingerprint }}
+<link rel="stylesheet" href="{{ $css.RelPermalink }}"/>
+
+<link rel="canonical" href="{{ .Permalink }}"/>
+<meta property="og:title" content="{{ if .IsHome }}{{ $siteTitle }}{{ else }}{{ $title }} · {{ $siteTitle }}{{ end }}"/>
+<meta property="og:description" content="{{ with .Description }}{{ . }}{{ else }}{{ site.Params.description }}{{ end }}"/>
+<meta property="og:type" content="website"/>
+<meta property="og:url" content="{{ .Permalink }}"/>
