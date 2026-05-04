@@ -1,4 +1,4 @@
-baseURL                = "https://pacer.local/"
+baseURL                = "https://pacer.yousysadmin.com/"
 defaultContentLanguage = "en"
 title                  = "Pacer · Docs"
 themesDir    = "themes"
@@ -69,3 +69,7 @@ enableRobotsTXT = true
   name   = "Installation"
   url    = "/installation/"
   weight = 20
+[[menu.main]]
+  name   = "GitHub"
+  url    = "https://github.com/YouSysAdmin/pacer"
+  weight = 30

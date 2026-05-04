@@ -1,8 +1,8 @@
-name: Build and deploy
+name: Docs build and deploy
 on:
   push:
     branches:
-      - main
+      - master
   workflow_dispatch:
 permissions:
   contents: read
@@ -80,6 +80,7 @@ jobs:
       - name: Build the site
         run: |
           hugo build \
+            --source ./docs \
             --gc \
             --minify \
             --baseURL "${{ steps.pages.outputs.base_url }}/" \
@@ -93,7 +94,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
         with:
-          path: ./public
+          path: ./docs/public
   deploy:
     environment:
       name: github-pages
