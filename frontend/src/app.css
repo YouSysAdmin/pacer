@@ -501,6 +501,11 @@ textarea {
 }
 .tbl td.mono { font-family: var(--font-mono); font-size: 13px; }
 
+/* Horizontal-scroll wrapper for tables that don't make sense to flip
+   into a stacked layout on mobile (audit dumps, payload-style rows
+   with many columns of similar weight). */
+.tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
 /* ------------------------------------------------------------------
    Tags / status badges
    ------------------------------------------------------------------ */
@@ -855,4 +860,136 @@ textarea {
   .field-row > .field > label {
     margin-bottom: 6px;
   }
+}
+
+/* ------------------------------------------------------------------
+   Mobile (phone) -- 640px and under. Stacked tables, full-width
+   header rows, two-column stats grid, modal padding tightened so
+   the dialog isn't pushed off-screen by the desktop 60px top inset.
+   ------------------------------------------------------------------ */
+
+@media (max-width: 640px) {
+  main { padding: 16px 14px 40px; }
+
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .page-header h2 { font-size: 20px; }
+  .row-actions { width: 100%; justify-content: flex-start; }
+  .row-actions .select,
+  .row-actions .input { flex: 1 1 auto; min-width: 0; }
+
+  .card { padding: 14px 14px; }
+
+  /* KPI grid: two columns at phone width so cards stay legible
+     without forcing six rows of vertical scroll. */
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .stat { padding: 12px 14px; }
+  .stat .value { font-size: 20px; }
+
+  /* Larger tap targets for primary buttons; .xs stays compact for
+     row-action chips. */
+  .btn { height: 40px; padding: 0 14px; }
+  .btn.sm { height: 32px; }
+  .btn.xs { height: 26px; }
+
+  /* Tables flagged with .tbl-stack flip to a card-stack: each row
+     becomes a vertical block, each cell renders as a "label / value"
+     row using the data-label attribute. Source markup must add
+     data-label="..." on every <td> in the table. */
+  .tbl-stack {
+    border-radius: var(--r-md);
+    overflow: hidden;
+  }
+  .tbl-stack thead { display: none; }
+  .tbl-stack tbody tr {
+    display: block;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line-1);
+  }
+  .tbl-stack tbody tr:last-child { border-bottom: 0; }
+  .tbl-stack tbody tr:hover { background: transparent; }
+  .tbl-stack td {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    padding: 4px 14px;
+    border: 0;
+    font-size: 13px;
+  }
+  .tbl-stack td::before {
+    content: attr(data-label);
+    color: var(--fg-3);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    flex: 0 0 auto;
+  }
+  /* Cells with no data-label (typically a final actions cell) get
+     the full row -- no synthesized empty label column. */
+  .tbl-stack td:not([data-label])::before { content: none; }
+  .tbl-stack td:not([data-label]) { justify-content: flex-start; }
+  /* Long mono values (commit URLs, instance IDs) need to wrap rather
+     than push the row sideways. */
+  .tbl-stack td.mono {
+    word-break: break-all;
+    text-align: right;
+  }
+  /* Audit-log detail rows use colspan to span the full table; in the
+     stacked layout, treat them as a normal full-width block (no
+     label-column flex) so the JSON pre still reads top-to-bottom. */
+  .tbl-stack tr.detail-row { padding: 0; }
+  .tbl-stack tr.detail-row td {
+    display: block;
+    padding: 8px 14px;
+    text-align: left;
+    word-break: break-all;
+  }
+  .tbl-stack tr.detail-row td::before { content: none; }
+
+  /* Job-detail modal table: th/td both flow as blocks so the 130px
+     label column from the desktop layout doesn't squeeze 300px of
+     content into a postage-stamp column. */
+  .detail-tbl tr { display: block; }
+  .detail-tbl th,
+  .detail-tbl td {
+    display: block;
+    width: auto;
+    padding: 4px 16px;
+    text-align: left;
+    border: 0;
+  }
+  .detail-tbl th {
+    font-size: 10px;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--fg-3);
+    font-weight: 500;
+    padding-top: 10px;
+    padding-bottom: 0;
+  }
+  .detail-tbl td { padding-bottom: 8px; word-break: break-all; }
+
+  /* Modal: tighter gutters, full available height, scroll-safe. */
+  .modal-backdrop { padding: 16px 10px; align-items: stretch; }
+  .modal { max-height: calc(100vh - 32px); }
+  .modal-head { padding: 12px 14px; }
+  .modal-body { padding: 14px; }
+
+  /* Bar chart bars stay readable when the month series is long. */
+  .bar-col { min-width: 14px; }
+
+  /* Ranked-list (overview spend rail) -- ellipsised name was sized
+     for desktop; on phone we let the dollar amount sit on a new line
+     when names are long. */
+  .rank-list li { flex-wrap: wrap; }
+  .rank-list .name { white-space: normal; overflow: visible; text-overflow: clip; }
 }

@@ -207,7 +207,7 @@
       {/if}
     </div>
   {:else}
-    <table class="tbl">
+    <table class="tbl tbl-stack">
       <thead>
         <tr>
           <th>Status</th>
@@ -224,16 +224,16 @@
       <tbody>
         {#each list as j (j.id)}
           <tr>
-            <td>
+            <td data-label="Status">
               <span class="tag {statusClass(j.status)}">{j.status}</span>
             </td>
-            <td class="mono">{j.repo_full_name}</td>
-            <td class="mono">{j.gh_job_id}</td>
-            <td class="mono">{j.sender_login || "—"}</td>
-            <td class="mono">{j.instance_id || "—"}</td>
-            <td class="mono">{fmt(j.queued_at)}</td>
-            <td class="mono">{age(j.claimed_at || j.started_at || j.queued_at, j.completed_at)}</td>
-            <td class="mono">{cost(j.estimated_cost_usd) || (j.completed_at ? "—" : "")}</td>
+            <td class="mono" data-label="Repo">{j.repo_full_name}</td>
+            <td class="mono" data-label="GH job">{j.gh_job_id}</td>
+            <td class="mono" data-label="Sender">{j.sender_login || "—"}</td>
+            <td class="mono" data-label="Instance">{j.instance_id || "—"}</td>
+            <td class="mono" data-label="Queued">{fmt(j.queued_at)}</td>
+            <td class="mono" data-label="Duration">{age(j.claimed_at || j.started_at || j.queued_at, j.completed_at)}</td>
+            <td class="mono" data-label="Est. cost">{cost(j.estimated_cost_usd) || (j.completed_at ? "—" : "")}</td>
             <td>
               <button class="btn xs" onclick={() => openDetail(j.id)}>details</button>
             </td>
@@ -365,52 +365,56 @@
 
     {#if derived.steps.length > 0}
       <h4 class="detail-section">Steps</h4>
-      <table class="tbl">
-        <thead>
-          <tr>
-            <th style="width: 40px">#</th>
-            <th>Name</th>
-            <th>Status</th>
-            <th>Conclusion</th>
-            <th>Duration</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each derived.steps as step, idx (idx)}
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead>
             <tr>
-              <td class="mono">{step.number ?? idx + 1}</td>
-              <td>{step.name}</td>
-              <td><span class="tag {statusClass(step.status)}">{step.status}</span></td>
-              <td class="mono">{step.conclusion || "—"}</td>
-              <td class="mono">{step.started_at && step.completed_at ? age(step.started_at, step.completed_at) : "—"}</td>
+              <th style="width: 40px">#</th>
+              <th>Name</th>
+              <th>Status</th>
+              <th>Conclusion</th>
+              <th>Duration</th>
             </tr>
-          {/each}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {#each derived.steps as step, idx (idx)}
+              <tr>
+                <td class="mono">{step.number ?? idx + 1}</td>
+                <td>{step.name}</td>
+                <td><span class="tag {statusClass(step.status)}">{step.status}</span></td>
+                <td class="mono">{step.conclusion || "—"}</td>
+                <td class="mono">{step.started_at && step.completed_at ? age(step.started_at, step.completed_at) : "—"}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
     {/if}
 
     <h4 class="detail-section">Audit trail</h4>
     {#if detail.audit.length === 0}
       <p class="muted">No audit entries.</p>
     {:else}
-      <table class="tbl">
-        <thead>
-          <tr>
-            <th>When</th>
-            <th>Action</th>
-            <th>Detail</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each detail.audit as a (a.id)}
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead>
             <tr>
-              <td class="mono">{fmt(a.occurred_at)}</td>
-              <td class="mono">{a.action}</td>
-              <td class="mono muted">{fmtAuditDetail(a.detail)}</td>
+              <th>When</th>
+              <th>Action</th>
+              <th>Detail</th>
             </tr>
-          {/each}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {#each detail.audit as a (a.id)}
+              <tr>
+                <td class="mono">{fmt(a.occurred_at)}</td>
+                <td class="mono">{a.action}</td>
+                <td class="mono muted">{fmtAuditDetail(a.detail)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
     {/if}
 
     {#if detail.payload}

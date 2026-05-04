@@ -151,10 +151,11 @@
         <p>Nothing has run between <strong>{from}</strong> and <strong>{to}</strong>. Pick a wider range or wait for some workflows to finish.</p>
       </div>
     {:else}
-      <table class="tbl">
+      {@const groupLabel = groupBy === "repo" ? "Repository" : groupBy === "pool" ? "Pool" : "Project"}
+      <table class="tbl tbl-stack">
         <thead>
           <tr>
-            <th>{groupBy === "repo" ? "Repository" : groupBy === "pool" ? "Pool" : "Project"}</th>
+            <th>{groupLabel}</th>
             <th>Jobs</th>
             <th>Runner time</th>
             <th>Est. cost</th>
@@ -164,11 +165,11 @@
         <tbody>
           {#each data.buckets as b (b.key)}
             <tr>
-              <td><strong>{b.name}</strong></td>
-              <td class="mono">{b.jobs}</td>
-              <td class="mono">{fmtMin(b.runner_minutes)}</td>
-              <td class="mono">{fmtUSD(b.est_cost_usd)}</td>
-              <td class="mono">{b.jobs_without_cost > 0 ? b.jobs_without_cost : "—"}</td>
+              <td data-label={groupLabel}><strong>{b.name}</strong></td>
+              <td class="mono" data-label="Jobs">{b.jobs}</td>
+              <td class="mono" data-label="Runner time">{fmtMin(b.runner_minutes)}</td>
+              <td class="mono" data-label="Est. cost">{fmtUSD(b.est_cost_usd)}</td>
+              <td class="mono" data-label="Jobs w/o cost">{b.jobs_without_cost > 0 ? b.jobs_without_cost : "—"}</td>
             </tr>
           {/each}
         </tbody>
@@ -180,7 +181,7 @@
       <p class="muted" style="margin: 0 0 8px; font-size: 12px;">
         GitHub senders ranked by terminal-state job count in the same window.
       </p>
-      <table class="tbl">
+      <table class="tbl tbl-stack">
         <thead>
           <tr>
             <th style="width: 40px">#</th>
@@ -193,11 +194,11 @@
         <tbody>
           {#each topUsers.users as u, idx (u.login)}
             <tr>
-              <td class="mono">{idx + 1}</td>
-              <td><strong>{u.login}</strong></td>
-              <td class="mono">{u.jobs}</td>
-              <td class="mono">{fmtMin(u.runner_minutes)}</td>
-              <td class="mono">{fmtUSD(u.est_cost_usd)}</td>
+              <td class="mono" data-label="#">{idx + 1}</td>
+              <td data-label="Login"><strong>{u.login}</strong></td>
+              <td class="mono" data-label="Jobs">{u.jobs}</td>
+              <td class="mono" data-label="Runner time">{fmtMin(u.runner_minutes)}</td>
+              <td class="mono" data-label="Est. cost">{fmtUSD(u.est_cost_usd)}</td>
             </tr>
           {/each}
         </tbody>

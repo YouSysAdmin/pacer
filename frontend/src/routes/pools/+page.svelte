@@ -458,7 +458,7 @@
             </div>
         </div>
     {:else}
-        <table class="tbl">
+        <table class="tbl tbl-stack">
             <thead>
                 <tr>
                     <th>Project</th>
@@ -473,8 +473,8 @@
             <tbody>
                 {#each visible() as p (p.id)}
                     <tr>
-                        <td>{projectName(p.project_id)}</td>
-                        <td>
+                        <td data-label="Project">{projectName(p.project_id)}</td>
+                        <td data-label="Pool">
                             <strong>{p.name}</strong>
                             {#if p.is_default}<span class="tag info"
                                     >default</span
@@ -483,12 +483,12 @@
                                     >disabled</span
                                 >{/if}
                         </td>
-                        <td class="mono">{p.ami_id}</td>
-                        <td class="mono"
+                        <td class="mono" data-label="AMI">{p.ami_id}</td>
+                        <td class="mono" data-label="Instance types"
                             >{(p.instance_types || []).join(", ")}</td
                         >
-                        <td>{p.max_concurrent_runners}</td>
-                        <td class="mono">
+                        <td data-label="Cap">{p.max_concurrent_runners}</td>
+                        <td class="mono" data-label="LT">
                             {#if p.launch_template_id}
                                 {p.launch_template_id}<span class="muted">
                                     v{p.launch_template_version}</span

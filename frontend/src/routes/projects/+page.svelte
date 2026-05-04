@@ -162,7 +162,7 @@
       </div>
     </div>
   {:else}
-    <table class="tbl">
+    <table class="tbl tbl-stack">
       <thead>
         <tr>
           <th>Name</th>
@@ -176,11 +176,11 @@
       <tbody>
         {#each list as p (p.id)}
           <tr>
-            <td>
+            <td data-label="Name">
               <strong>{p.name}</strong>
               {#if p.disabled}<span class="tag warn">disabled</span>{/if}
             </td>
-            <td>
+            <td data-label="Scope">
               {#if p.scope === "org"}
                 <span class="tag info">org</span>
                 <span class="mono" style="font-size: 0.75rem;">{p.org_name}{p.runner_group_id ? `#${p.runner_group_id}` : ""}</span>
@@ -188,9 +188,9 @@
                 <span class="tag">repo</span>
               {/if}
             </td>
-            <td><a href="/pools?project={p.id}">{poolCounts[p.id] ?? 0}</a></td>
-            <td>{p.max_concurrent_runners > 0 ? p.max_concurrent_runners : "—"}</td>
-            <td class="mono" style="font-size: 0.75rem;">
+            <td data-label="Pools"><a href="/pools?project={p.id}">{poolCounts[p.id] ?? 0}</a></td>
+            <td data-label="Project cap">{p.max_concurrent_runners > 0 ? p.max_concurrent_runners : "—"}</td>
+            <td class="mono" data-label="Tags" style="font-size: 0.75rem;">
               {#if p.tags && Object.keys(p.tags).length > 0}
                 {Object.entries(p.tags).map(([k, v]) => `${k}=${v}`).join(", ")}
               {:else}

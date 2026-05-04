@@ -164,7 +164,7 @@
       {/if}
     </div>
   {:else}
-    <table class="tbl">
+    <table class="tbl tbl-stack">
       <thead>
         <tr>
           <th>Repository</th>
@@ -177,10 +177,10 @@
       <tbody>
         {#each list as r (r.full_name)}
           <tr>
-            <td class="mono">{r.full_name}</td>
-            <td>{projectName(r.project_id)}</td>
-            <td>{r.max_concurrent_runners ?? "—"}</td>
-            <td class="mono" style="font-size: 0.75rem;">
+            <td class="mono" data-label="Repository">{r.full_name}</td>
+            <td data-label="Project">{projectName(r.project_id)}</td>
+            <td data-label="Cap override">{r.max_concurrent_runners ?? "—"}</td>
+            <td class="mono" data-label="Tags" style="font-size: 0.75rem;">
               {#if r.tags && Object.keys(r.tags).length > 0}
                 {Object.entries(r.tags).map(([k, v]) => `${k}=${v}`).join(", ")}
               {:else}
