@@ -125,7 +125,10 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 	// projects can't switch back to repo while pools have queued/active
 	// jobs from the org webhook path.
 	if (existing.Scope == "" || existing.Scope == projectmodel.ScopeRepo) && in.Scope == projectmodel.ScopeOrg {
-		repos, _ := h.Runtime.Store.Repo.ListByProject(c.UserContext(), existing.ID)
+		repos, err := h.Runtime.Store.Repo.ListByProject(c.UserContext(), existing.ID)
+		if err != nil {
+			return response.Internal(c, err)
+		}
 		if len(repos) > 0 {
 			return response.BadRequest(c,
 				fmt.Sprintf("project has %d bound repos; unbind them before switching to org scope", len(repos)))
@@ -228,15 +231,29 @@ func (h *Handler) Delete(c *fiber.Ctx) error {
 		return response.NotFound(c, "project not found")
 	}
 
-	inflight, _ := h.Runtime.Store.Project.ConcurrentRunnerCount(c.UserContext(), id)
+	// Each preflight query gates an irreversible delete. A swallowed
+	// error here would let a transient DB failure look like "no
+	// dependencies", and we'd happily delete a project that still has
+	// repos / pools / running jobs underneath it. Treat all three as
+	// hard failures.
+	inflight, err := h.Runtime.Store.Project.ConcurrentRunnerCount(c.UserContext(), id)
+	if err != nil {
+		return response.Internal(c, err)
+	}
 	if inflight > 0 {
 		return response.BadRequest(c, fmt.Sprintf("project has %d active jobs; wait or cancel first", inflight))
 	}
-	repos, _ := h.Runtime.Store.Repo.ListByProject(c.UserContext(), id)
+	repos, err := h.Runtime.Store.Repo.ListByProject(c.UserContext(), id)
+	if err != nil {
+		return response.Internal(c, err)
+	}
 	if len(repos) > 0 {
 		return response.BadRequest(c, fmt.Sprintf("project has %d bound repos; unbind them first", len(repos)))
 	}
-	pools, _ := h.Runtime.Store.Pool.ListByProject(c.UserContext(), id)
+	pools, err := h.Runtime.Store.Pool.ListByProject(c.UserContext(), id)
+	if err != nil {
+		return response.Internal(c, err)
+	}
 	if len(pools) > 0 {
 		return response.BadRequest(c, fmt.Sprintf("project has %d pools; delete them first", len(pools)))
 	}

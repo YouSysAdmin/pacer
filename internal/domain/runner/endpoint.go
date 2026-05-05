@@ -145,7 +145,7 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 	if err := h.Runtime.Store.Job.MarkRunning(c.UserContext(), j.ID, in.InstanceID, now); err != nil {
 		return response.Internal(c, err)
 	}
-	_ = h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
+	if err := h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
 		ID:         uuid.NewString(),
 		Action:     audit.ActionInstanceRegistered,
 		TargetType: "instance",
@@ -158,7 +158,12 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 		}),
 		ClientIP:   c.IP(),
 		OccurredAt: now,
-	})
+	}); err != nil {
+		// Audit is best-effort here -- the registration itself
+		// succeeded and we don't want to fail the runner over a
+		// missing log row. Surface the error so it isn't invisible.
+		slog.Warn("runner.register: audit put failed", "job_id", j.ID, "err", err)
+	}
 
 	slog.Info("runner registered", "job_id", j.ID, "instance_id", in.InstanceID,
 		"type", in.InstanceType, "pool", pl.Name)
@@ -183,15 +188,21 @@ func (h *Handler) Complete(c *fiber.Ctx) error {
 
 	now := time.Now().UTC()
 	if j.InstanceID != "" {
-		_ = h.Runtime.Store.Instance.UpdateState(c.UserContext(), j.InstanceID, "terminated", now)
+		if err := h.Runtime.Store.Instance.UpdateState(c.UserContext(), j.InstanceID, "terminated", now); err != nil {
+			slog.Warn("runner.complete: instance update failed",
+				"job_id", j.ID, "instance_id", j.InstanceID, "err", err)
+		}
 		// Refine the cost estimate with the actual billable window
 		// (terminated_at - launched_at) now that terminated_at is
 		// stamped. The earlier MarkCompleted/MarkFailed estimate
 		// missed the runner-shutdown tail that runs between the
 		// workflow_job webhook and this callback.
-		_ = h.Runtime.Store.Job.FinalizeCost(c.UserContext(), j.InstanceID)
+		if err := h.Runtime.Store.Job.FinalizeCost(c.UserContext(), j.InstanceID); err != nil {
+			slog.Warn("runner.complete: cost finalize failed",
+				"job_id", j.ID, "instance_id", j.InstanceID, "err", err)
+		}
 	}
-	_ = h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
+	if err := h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
 		ID:         uuid.NewString(),
 		Action:     audit.ActionInstanceTerminated,
 		TargetType: "instance",
@@ -202,7 +213,9 @@ func (h *Handler) Complete(c *fiber.Ctx) error {
 		}),
 		ClientIP:   c.IP(),
 		OccurredAt: now,
-	})
+	}); err != nil {
+		slog.Warn("runner.complete: audit put failed", "job_id", j.ID, "err", err)
+	}
 	return response.NoContent(c)
 }
 
@@ -255,13 +268,19 @@ func (h *Handler) Error(c *fiber.Ctx) error {
 		return response.Internal(c, err)
 	}
 	if j.InstanceID != "" {
-		_ = h.Runtime.Store.Instance.UpdateState(c.UserContext(), j.InstanceID, "terminated", now)
+		if err := h.Runtime.Store.Instance.UpdateState(c.UserContext(), j.InstanceID, "terminated", now); err != nil {
+			slog.Warn("runner.error: instance update failed",
+				"job_id", j.ID, "instance_id", j.InstanceID, "err", err)
+		}
 		// See Complete: refine cost using the now-stamped
 		// terminated_at. Bootstrap-fail instances usually terminate
 		// almost immediately, so the change is small but consistent.
-		_ = h.Runtime.Store.Job.FinalizeCost(c.UserContext(), j.InstanceID)
+		if err := h.Runtime.Store.Job.FinalizeCost(c.UserContext(), j.InstanceID); err != nil {
+			slog.Warn("runner.error: cost finalize failed",
+				"job_id", j.ID, "instance_id", j.InstanceID, "err", err)
+		}
 	}
-	_ = h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
+	if err := h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
 		ID:         uuid.NewString(),
 		Action:     audit.ActionJobFailed,
 		TargetType: "job",
@@ -273,7 +292,9 @@ func (h *Handler) Error(c *fiber.Ctx) error {
 		}),
 		ClientIP:   c.IP(),
 		OccurredAt: now,
-	})
+	}); err != nil {
+		slog.Warn("runner.error: audit put failed", "job_id", j.ID, "err", err)
+	}
 	slog.Warn("runner bootstrap failed", "job_id", j.ID, "stage", stage, "exit", in.ExitCode)
 	return response.NoContent(c)
 }
