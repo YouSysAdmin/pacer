@@ -97,6 +97,21 @@
                 </nav>
             {/each}
 
+            <!-- External resources. Kept as its own group so the docs
+                 link survives the 900px sidebar-foot hide rule and
+                 stays reachable on phones. -->
+            <nav class="nav-group" aria-label="Help">
+                <div class="nav-group-label">Help</div>
+                <a
+                    href="https://pacer.yousysadmin.com/"
+                    class="nav-item"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                >
+                    Docs
+                </a>
+            </nav>
+
             <div class="sidebar-foot">
                 {#if user}
                     <div class="sidebar-user">
