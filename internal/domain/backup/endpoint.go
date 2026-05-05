@@ -13,6 +13,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 
+	"github.com/yousysadmin/pacer/internal/core/auditing"
 	"github.com/yousysadmin/pacer/internal/core/ec2lt"
 	"github.com/yousysadmin/pacer/internal/core/env"
 	"github.com/yousysadmin/pacer/internal/core/response"
@@ -120,7 +121,7 @@ func (h *Handler) Export(c *fiber.Ctx) error {
 	if err != nil {
 		return response.Internal(c, err)
 	}
-	h.audit(c, audit.ActionConfigExported, "", audit.Detail(map[string]any{
+	auditing.PutCtx(c, h.Runtime.Store.Audit, audit.ActionConfigExported, "config", "", audit.Detail(map[string]any{
 		"projects": len(snap.Projects),
 		"version":  formatVersion,
 	}))
@@ -176,7 +177,7 @@ func (h *Handler) Import(c *fiber.Ctx) error {
 		h.applyProject(ctx, bp, &result)
 	}
 
-	h.audit(c, audit.ActionConfigImported, "", audit.Detail(map[string]any{
+	auditing.PutCtx(c, h.Runtime.Store.Audit, audit.ActionConfigImported, "config", "", audit.Detail(map[string]any{
 		"projects_created": result.Projects.Created,
 		"projects_updated": result.Projects.Updated,
 		"pools_created":    result.Pools.Created,
@@ -298,18 +299,6 @@ func (h *Handler) materializeLT(ctx context.Context, p *poolmodel.Pool, projectN
 		return nil
 	}
 	return ec2lt.CreateOrUpdate(ctx, h.Runtime.EC2, h.Runtime.IAM, p, projectName, projectTags)
-}
-
-func (h *Handler) audit(c *fiber.Ctx, action, targetID, detail string) {
-	_ = h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
-		ID:         uuid.NewString(),
-		Action:     action,
-		TargetType: "config",
-		TargetID:   targetID,
-		Detail:     detail,
-		ClientIP:   c.IP(),
-		OccurredAt: time.Now().UTC(),
-	})
 }
 
 func projectFromModel(p *projectmodel.Project) project {

@@ -10,13 +10,13 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 
+	"github.com/yousysadmin/pacer/internal/core/auditing"
 	"github.com/yousysadmin/pacer/internal/core/ec2lt"
 	"github.com/yousysadmin/pacer/internal/core/env"
 	"github.com/yousysadmin/pacer/internal/core/response"
@@ -170,7 +170,7 @@ func (h *Handler) Create(c *fiber.Ctx) error {
 	if err := h.Runtime.Store.Pool.Put(c.UserContext(), p); err != nil {
 		return response.Internal(c, err)
 	}
-	h.audit(c, audit.ActionPoolCreated, p.ID, poolDetailJSON(p))
+	auditing.PutCtx(c, h.Runtime.Store.Audit, audit.ActionPoolCreated, "pool", p.ID, poolDetailJSON(p))
 	return response.Created(c, p)
 }
 
@@ -216,7 +216,7 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 	if err := h.Runtime.Store.Pool.Put(c.UserContext(), p); err != nil {
 		return response.Internal(c, err)
 	}
-	h.audit(c, audit.ActionPoolUpdated, p.ID, poolDetailJSON(p))
+	auditing.PutCtx(c, h.Runtime.Store.Audit, audit.ActionPoolUpdated, "pool", p.ID, poolDetailJSON(p))
 	return response.Success(c, p)
 }
 
@@ -266,7 +266,7 @@ func (h *Handler) Delete(c *fiber.Ctx) error {
 		return response.Internal(c, err)
 	}
 	ltDeleted := h.deleteLaunchTemplate(c.UserContext(), p)
-	h.audit(c, audit.ActionPoolDeleted, id, audit.Detail(map[string]any{
+	auditing.PutCtx(c, h.Runtime.Store.Audit, audit.ActionPoolDeleted, "pool", id, audit.Detail(map[string]any{
 		"project_id": p.ProjectID,
 		"lt_id":      p.LaunchTemplateID,
 		"lt_deleted": ltDeleted,
@@ -401,16 +401,4 @@ func poolDetailJSON(p *poolmodel.Pool) string {
 		LTVersion:            p.LaunchTemplateVersion,
 	})
 	return string(b)
-}
-
-func (h *Handler) audit(c *fiber.Ctx, action, targetID, detail string) {
-	_ = h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
-		ID:         uuid.NewString(),
-		Action:     action,
-		TargetType: "pool",
-		TargetID:   targetID,
-		Detail:     detail,
-		ClientIP:   c.IP(),
-		OccurredAt: time.Now().UTC(),
-	})
 }

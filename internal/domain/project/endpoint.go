@@ -9,11 +9,11 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 
+	"github.com/yousysadmin/pacer/internal/core/auditing"
 	"github.com/yousysadmin/pacer/internal/core/ec2lt"
 	"github.com/yousysadmin/pacer/internal/core/env"
 	"github.com/yousysadmin/pacer/internal/core/response"
@@ -90,7 +90,7 @@ func (h *Handler) Create(c *fiber.Ctx) error {
 	if err := h.Runtime.Store.Project.Put(c.UserContext(), p); err != nil {
 		return response.Internal(c, err)
 	}
-	h.audit(c, audit.ActionProjectCreated, p.ID, audit.Detail(map[string]any{
+	auditing.PutCtx(c, h.Runtime.Store.Audit, audit.ActionProjectCreated, "project", p.ID, audit.Detail(map[string]any{
 		"name":     p.Name,
 		"scope":    p.Scope,
 		"org_name": p.OrgName,
@@ -153,7 +153,7 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 		rematerialized = h.rematerializePools(c.UserContext(), p)
 	}
 
-	h.audit(c, audit.ActionProjectUpdated, p.ID, audit.Detail(map[string]any{
+	auditing.PutCtx(c, h.Runtime.Store.Audit, audit.ActionProjectUpdated, "project", p.ID, audit.Detail(map[string]any{
 		"scope":                p.Scope,
 		"org_name":             p.OrgName,
 		"tags_changed":         tagsChanged,
@@ -244,18 +244,6 @@ func (h *Handler) Delete(c *fiber.Ctx) error {
 	if err := h.Runtime.Store.Project.Delete(c.UserContext(), id); err != nil {
 		return response.Internal(c, err)
 	}
-	h.audit(c, audit.ActionProjectDeleted, id, "")
+	auditing.PutCtx(c, h.Runtime.Store.Audit, audit.ActionProjectDeleted, "project", id, "")
 	return response.NoContent(c)
-}
-
-func (h *Handler) audit(c *fiber.Ctx, action, targetID, detail string) {
-	_ = h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
-		ID:         uuid.NewString(),
-		Action:     action,
-		TargetType: "project",
-		TargetID:   targetID,
-		Detail:     detail,
-		ClientIP:   c.IP(),
-		OccurredAt: time.Now().UTC(),
-	})
 }
