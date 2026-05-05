@@ -5,6 +5,7 @@
 -->
 
 <script>
+  import { onMount } from "svelte";
   import { repos, projects } from "$lib/api.js";
   import TagsEditor from "$lib/TagsEditor.svelte";
   import Modal from "$lib/Modal.svelte";
@@ -128,9 +129,8 @@
     }
   }
 
-  $effect(() => {
-    refresh();
-  });
+  // Mount-only fetch -- see projects/+page.svelte for the rationale.
+  onMount(() => { refresh(); });
 </script>
 
 <main>

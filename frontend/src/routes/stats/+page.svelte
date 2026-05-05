@@ -5,6 +5,7 @@
 -->
 
 <script>
+  import { onMount } from "svelte";
   import { stats } from "$lib/api.js";
 
   // Default window: last 30 days, UTC midnight to UTC midnight.
@@ -73,9 +74,9 @@
     refresh();
   }
 
-  $effect(() => {
-    refresh();
-  });
+  // Mount-only fetch. Range buttons + date pickers explicitly call
+  // setRange() / refresh() on user action.
+  onMount(() => { refresh(); });
 </script>
 
 <main>
