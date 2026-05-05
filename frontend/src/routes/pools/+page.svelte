@@ -5,6 +5,7 @@
 -->
 
 <script>
+    import { onMount } from "svelte";
     import { pools as poolsAPI, projects as projectsAPI } from "$lib/api.js";
     import { page } from "$app/state";
     import TagsEditor from "$lib/TagsEditor.svelte";
@@ -375,9 +376,11 @@
         return list.filter((p) => p.project_id === projectFilter);
     }
 
-    $effect(() => {
-        // Read ?project=<id> from URL on first render so a /projects link
-        // can scope the pool list.
+    // Mount-only setup -- read ?project=<id> from the URL so a
+    // /projects link can scope the pool list, then load. Plain
+    // $effect(() => refresh()) here re-fired on every form-field
+    // edit and on every list mutation, doubling API calls.
+    onMount(() => {
         const q = page.url.searchParams.get("project");
         if (q) projectFilter = q;
         refresh();

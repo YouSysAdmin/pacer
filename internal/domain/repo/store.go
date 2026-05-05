@@ -7,10 +7,10 @@ package repo
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"time"
 
+	"github.com/yousysadmin/pacer/internal/core/dbutil"
 	repomodel "github.com/yousysadmin/pacer/internal/models/repo"
 )
 
@@ -44,7 +44,7 @@ func (s *Store) Put(ctx context.Context, r *repomodel.Repo) error {
 	if r.MaxConcurrentRunners != nil {
 		maxConc = *r.MaxConcurrentRunners
 	}
-	tags, _ := json.Marshal(r.Tags)
+	tags := dbutil.MustJSON(r.Tags)
 	_, err := s.db.ExecContext(ctx, `
         INSERT INTO repos (full_name, project_id, max_concurrent_runners, tags, created_at)
         VALUES (?, ?, ?, ?, ?)
@@ -109,6 +109,6 @@ func scanRepo(r interface{ Scan(...any) error }) (*repomodel.Repo, error) {
 	if maxConc.Valid {
 		rp.MaxConcurrentRunners = new(int(maxConc.Int64))
 	}
-	_ = json.Unmarshal([]byte(tagsJSON), &rp.Tags)
+	dbutil.MustUnmarshalJSON(tagsJSON, &rp.Tags)
 	return &rp, nil
 }

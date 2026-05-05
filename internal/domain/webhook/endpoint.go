@@ -117,9 +117,9 @@ func (h *Handler) handleWorkflowJob(c *fiber.Ctx, body []byte, delivery string) 
 	case "queued":
 		return h.enqueue(ctx, c, &p, body, delivery)
 	case "in_progress":
-		return h.markRunning(ctx, c, &p)
+		return h.markRunning(ctx, c, &p, body)
 	case "completed":
-		return h.markCompleted(ctx, c, &p)
+		return h.markCompleted(ctx, c, &p, body)
 	default:
 		slog.Info("workflow_job action ignored", "action", p.Action, "delivery", delivery)
 		return response.NoContent(c)
@@ -278,13 +278,20 @@ func (h *Handler) routeProject(ctx context.Context, p *workflowJobPayload) (*pro
 	return h.Runtime.Store.Project.GetByOrgName(ctx, p.Repository.Owner.Login)
 }
 
-func (h *Handler) markRunning(ctx context.Context, c *fiber.Ctx, p *workflowJobPayload) error {
+func (h *Handler) markRunning(ctx context.Context, c *fiber.Ctx, p *workflowJobPayload, raw []byte) error {
 	j, err := h.Runtime.Store.Job.GetByGHJobID(ctx, p.WorkflowJob.ID)
 	if err != nil {
 		return response.Internal(c, err)
 	}
 	if j == nil {
 		return response.NoContent(c)
+	}
+	// The in_progress webhook arrives with steps[] partially populated
+	// (set-up, checkout, ...). Refresh the payload column so the job
+	// detail modal can render them. Best-effort -- a stale payload is
+	// preferable to a 500 here.
+	if err := h.Runtime.Store.Job.UpdatePayload(ctx, j.ID, raw); err != nil {
+		slog.Warn("webhook.in_progress: payload refresh failed", "job_id", j.ID, "err", err)
 	}
 	if j.Status == job.StatusRunning || j.Status == job.StatusCompleted {
 		return response.NoContent(c)
@@ -295,13 +302,20 @@ func (h *Handler) markRunning(ctx context.Context, c *fiber.Ctx, p *workflowJobP
 	return response.NoContent(c)
 }
 
-func (h *Handler) markCompleted(ctx context.Context, c *fiber.Ctx, p *workflowJobPayload) error {
+func (h *Handler) markCompleted(ctx context.Context, c *fiber.Ctx, p *workflowJobPayload, raw []byte) error {
 	j, err := h.Runtime.Store.Job.GetByGHJobID(ctx, p.WorkflowJob.ID)
 	if err != nil {
 		return response.Internal(c, err)
 	}
 	if j == nil {
 		return response.NoContent(c)
+	}
+	// The completed webhook is the only one that carries the fully
+	// populated steps[] (with conclusion + duration per step). Refresh
+	// the payload column so the modal renders the final shape. Same
+	// best-effort posture as markRunning.
+	if err := h.Runtime.Store.Job.UpdatePayload(ctx, j.ID, raw); err != nil {
+		slog.Warn("webhook.completed: payload refresh failed", "job_id", j.ID, "err", err)
 	}
 	now := time.Now().UTC()
 	switch p.WorkflowJob.Conclusion {

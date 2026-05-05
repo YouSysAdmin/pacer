@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
 
+	"github.com/yousysadmin/pacer/internal/core/auditing"
 	"github.com/yousysadmin/pacer/internal/core/env"
 	"github.com/yousysadmin/pacer/internal/core/response"
 	"github.com/yousysadmin/pacer/internal/core/validation"
@@ -67,7 +67,7 @@ func (h *Handler) Bind(c *fiber.Ctx) error {
 	if err := h.Runtime.Store.Repo.Put(c.UserContext(), r); err != nil {
 		return response.Internal(c, err)
 	}
-	h.audit(c, audit.ActionRepoBound, r.FullName, audit.Detail(map[string]any{
+	auditing.PutCtx(c, h.Runtime.Store.Audit, audit.ActionRepoBound, "repo", r.FullName, audit.Detail(map[string]any{
 		"project_id": r.ProjectID,
 	}))
 	return response.Created(c, r)
@@ -114,18 +114,6 @@ func (h *Handler) Unbind(c *fiber.Ctx) error {
 	if err := h.Runtime.Store.Repo.Delete(c.UserContext(), fullName); err != nil {
 		return response.Internal(c, err)
 	}
-	h.audit(c, audit.ActionRepoUnbound, fullName, "")
+	auditing.PutCtx(c, h.Runtime.Store.Audit, audit.ActionRepoUnbound, "repo", fullName, "")
 	return response.NoContent(c)
-}
-
-func (h *Handler) audit(c *fiber.Ctx, action, targetID, detail string) {
-	_ = h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
-		ID:         uuid.NewString(),
-		Action:     action,
-		TargetType: "repo",
-		TargetID:   targetID,
-		Detail:     detail,
-		ClientIP:   c.IP(),
-		OccurredAt: time.Now().UTC(),
-	})
 }

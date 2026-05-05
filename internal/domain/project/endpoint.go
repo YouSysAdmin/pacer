@@ -9,11 +9,11 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 
+	"github.com/yousysadmin/pacer/internal/core/auditing"
 	"github.com/yousysadmin/pacer/internal/core/ec2lt"
 	"github.com/yousysadmin/pacer/internal/core/env"
 	"github.com/yousysadmin/pacer/internal/core/response"
@@ -90,7 +90,7 @@ func (h *Handler) Create(c *fiber.Ctx) error {
 	if err := h.Runtime.Store.Project.Put(c.UserContext(), p); err != nil {
 		return response.Internal(c, err)
 	}
-	h.audit(c, audit.ActionProjectCreated, p.ID, audit.Detail(map[string]any{
+	auditing.PutCtx(c, h.Runtime.Store.Audit, audit.ActionProjectCreated, "project", p.ID, audit.Detail(map[string]any{
 		"name":     p.Name,
 		"scope":    p.Scope,
 		"org_name": p.OrgName,
@@ -125,7 +125,10 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 	// projects can't switch back to repo while pools have queued/active
 	// jobs from the org webhook path.
 	if (existing.Scope == "" || existing.Scope == projectmodel.ScopeRepo) && in.Scope == projectmodel.ScopeOrg {
-		repos, _ := h.Runtime.Store.Repo.ListByProject(c.UserContext(), existing.ID)
+		repos, err := h.Runtime.Store.Repo.ListByProject(c.UserContext(), existing.ID)
+		if err != nil {
+			return response.Internal(c, err)
+		}
 		if len(repos) > 0 {
 			return response.BadRequest(c,
 				fmt.Sprintf("project has %d bound repos; unbind them before switching to org scope", len(repos)))
@@ -153,7 +156,7 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 		rematerialized = h.rematerializePools(c.UserContext(), p)
 	}
 
-	h.audit(c, audit.ActionProjectUpdated, p.ID, audit.Detail(map[string]any{
+	auditing.PutCtx(c, h.Runtime.Store.Audit, audit.ActionProjectUpdated, "project", p.ID, audit.Detail(map[string]any{
 		"scope":                p.Scope,
 		"org_name":             p.OrgName,
 		"tags_changed":         tagsChanged,
@@ -228,15 +231,29 @@ func (h *Handler) Delete(c *fiber.Ctx) error {
 		return response.NotFound(c, "project not found")
 	}
 
-	inflight, _ := h.Runtime.Store.Project.ConcurrentRunnerCount(c.UserContext(), id)
+	// Each preflight query gates an irreversible delete. A swallowed
+	// error here would let a transient DB failure look like "no
+	// dependencies", and we'd happily delete a project that still has
+	// repos / pools / running jobs underneath it. Treat all three as
+	// hard failures.
+	inflight, err := h.Runtime.Store.Project.ConcurrentRunnerCount(c.UserContext(), id)
+	if err != nil {
+		return response.Internal(c, err)
+	}
 	if inflight > 0 {
 		return response.BadRequest(c, fmt.Sprintf("project has %d active jobs; wait or cancel first", inflight))
 	}
-	repos, _ := h.Runtime.Store.Repo.ListByProject(c.UserContext(), id)
+	repos, err := h.Runtime.Store.Repo.ListByProject(c.UserContext(), id)
+	if err != nil {
+		return response.Internal(c, err)
+	}
 	if len(repos) > 0 {
 		return response.BadRequest(c, fmt.Sprintf("project has %d bound repos; unbind them first", len(repos)))
 	}
-	pools, _ := h.Runtime.Store.Pool.ListByProject(c.UserContext(), id)
+	pools, err := h.Runtime.Store.Pool.ListByProject(c.UserContext(), id)
+	if err != nil {
+		return response.Internal(c, err)
+	}
 	if len(pools) > 0 {
 		return response.BadRequest(c, fmt.Sprintf("project has %d pools; delete them first", len(pools)))
 	}
@@ -244,18 +261,6 @@ func (h *Handler) Delete(c *fiber.Ctx) error {
 	if err := h.Runtime.Store.Project.Delete(c.UserContext(), id); err != nil {
 		return response.Internal(c, err)
 	}
-	h.audit(c, audit.ActionProjectDeleted, id, "")
+	auditing.PutCtx(c, h.Runtime.Store.Audit, audit.ActionProjectDeleted, "project", id, "")
 	return response.NoContent(c)
-}
-
-func (h *Handler) audit(c *fiber.Ctx, action, targetID, detail string) {
-	_ = h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
-		ID:         uuid.NewString(),
-		Action:     action,
-		TargetType: "project",
-		TargetID:   targetID,
-		Detail:     detail,
-		ClientIP:   c.IP(),
-		OccurredAt: time.Now().UTC(),
-	})
 }

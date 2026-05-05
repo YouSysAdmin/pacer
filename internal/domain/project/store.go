@@ -7,7 +7,6 @@ package project
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"time"
 
@@ -53,7 +52,7 @@ func (s *Store) Put(ctx context.Context, p *projectmodel.Project) error {
 		p.CreatedAt = time.Now().UTC()
 	}
 	p.UpdatedAt = time.Now().UTC()
-	tags, _ := json.Marshal(p.Tags)
+	tags := dbutil.MustJSON(p.Tags)
 
 	scope := p.Scope
 	if scope == "" {
@@ -126,7 +125,7 @@ func scanProject(r interface{ Scan(...any) error }) (*projectmodel.Project, erro
 		&disabled, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		return nil, err
 	}
-	_ = json.Unmarshal([]byte(tagsJSON), &p.Tags)
+	dbutil.MustUnmarshalJSON(tagsJSON, &p.Tags)
 	p.Scope = scope
 	p.OrgName = orgName
 	p.RunnerGroupID = runnerGroupID

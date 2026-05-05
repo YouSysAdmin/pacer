@@ -105,6 +105,12 @@ type JobStore interface {
 	// StampSpawn records the spawned EC2 instance ID + the sha256
 	// hash of the runner self-registration callback token.
 	StampSpawn(ctx context.Context, id, instanceID, callbackTokenHash string) error
+	// UpdatePayload overwrites jobs.payload with a newer webhook body.
+	// Used so the in_progress / completed workflow_job payloads -- which
+	// carry the populated steps[] array -- replace the queued-action
+	// snapshot stamped at enqueue time. Best-effort; callers log and
+	// continue on error rather than fail the lifecycle transition.
+	UpdatePayload(ctx context.Context, id string, payload []byte) error
 	MarkRunning(ctx context.Context, id, instanceID string, now time.Time) error
 	MarkCompleted(ctx context.Context, id string, now time.Time) error
 	MarkFailed(ctx context.Context, id, stage, message string, now time.Time) error

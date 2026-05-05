@@ -5,6 +5,7 @@
 -->
 
 <script>
+  import { onMount } from "svelte";
   import { projects, pools as poolsAPI } from "$lib/api.js";
   import TagsEditor from "$lib/TagsEditor.svelte";
   import Modal from "$lib/Modal.svelte";
@@ -133,9 +134,12 @@
     }
   }
 
-  $effect(() => {
-    refresh();
-  });
+  // Mount-only fetch. A bare $effect(() => refresh()) re-fires every
+  // time any reactive variable in the script tracks (form fields,
+  // poolCounts, success banner, etc.), causing duplicate API calls
+  // during normal interaction. The list refresh after a successful
+  // create/update/delete is triggered explicitly by submit().
+  onMount(() => { refresh(); });
 </script>
 
 <main>
