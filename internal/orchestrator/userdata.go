@@ -118,9 +118,16 @@ elif [ "$INSTALLED" != "$RUNNER_VERSION" ]; then
 fi
 
 # ---------------------------------------------------------------- register
+# This is the only request the runner CANNOT survive losing -- the JIT
+# config is single-use and we have no graceful fallback if it doesn't
+# come back. --retry 12 + --retry-delay 6 = up to ~72s of retry,
+# covering a typical pacer redeploy window without bouncing the
+# instance. --retry-all-errors (curl 7.71+) folds connect-refused +
+# other transport errors into the same retry policy, not just HTTP 5xx.
 STAGE="register"
 echo "POST /api/runner/register"
-RESP=$(curl -fsS -X POST "$SERVER_URL/api/runner/register" \
+RESP=$(curl -fsS --retry 12 --retry-delay 6 --retry-all-errors \
+    -X POST "$SERVER_URL/api/runner/register" \
     -H "Content-Type: application/json" \
     -d "{\"job_id\":\"$JOB_ID\",\"instance_id\":\"$INSTANCE_ID\",\"instance_type\":\"$INSTANCE_TYPE\",\"az\":\"$AZ\",\"callback_token\":\"$CALLBACK_TOKEN\"}")
 
