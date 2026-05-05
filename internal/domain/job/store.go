@@ -143,6 +143,20 @@ func (s *Store) MarkRunning(ctx context.Context, id, instanceID string, now time
 	return err
 }
 
+// UpdatePayload overwrites jobs.payload with the latest workflow_job
+// webhook body. The in_progress and completed actions carry a richer
+// blob than the queued action (steps[] is populated, started_at /
+// completed_at are stamped, sender drift is reflected) and the modal
+// is more useful when that data is on hand. Job-row state columns
+// (status, claimed_at, etc.) are authoritative; the payload is purely
+// for display.
+func (s *Store) UpdatePayload(ctx context.Context, id string, payload []byte) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE jobs SET payload = ? WHERE id = ?`,
+		string(payload), id)
+	return err
+}
+
 // costSubquery is the SQL fragment that derives a job's estimated
 // USD cost at terminal-state time -- price_per_hour * elapsed-hours
 // since the instance launched, looked up via the job's instance_id.
