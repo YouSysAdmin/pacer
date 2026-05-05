@@ -11,7 +11,11 @@
 // I plan to add Postgres and MySQL (maybe Mongo too) in the future.
 package dbutil
 
-import "time"
+import (
+	"encoding/json"
+	"fmt"
+	"time"
+)
 
 // NullStr returns nil for empty strings so they land as SQL NULL,
 // otherwise returns the string itself.
@@ -41,4 +45,35 @@ func BoolInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// MustJSON marshals v as JSON and panics on error. Stores serialize
+// Go-native maps and slices (string-keyed maps, []string, etc.) which
+// json.Marshal cannot fail on -- a panic here means a programmer bug
+// (e.g. someone slipped a chan or func into a model field) and we'd
+// rather crash loudly than write a corrupt empty-string column.
+//
+// MustJSON returns []byte so callers can pass it straight to driver
+// args without an extra type conversion.
+func MustJSON(v any) []byte {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(fmt.Sprintf("dbutil.MustJSON: %v (input: %#v)", err, v))
+	}
+	return b
+}
+
+// MustUnmarshalJSON is the read-side complement to MustJSON: parse
+// store-emitted JSON into v. An error here means the row in the DB
+// was tampered with or written by a foreign tool, both of which are
+// hard failures rather than recoverable conditions. Empty input
+// behaves as a no-op so callers can safely round-trip through stores
+// that default empty TEXT columns to "".
+func MustUnmarshalJSON(raw string, v any) {
+	if raw == "" {
+		return
+	}
+	if err := json.Unmarshal([]byte(raw), v); err != nil {
+		panic(fmt.Sprintf("dbutil.MustUnmarshalJSON: %v (raw: %q)", err, raw))
+	}
 }

@@ -7,7 +7,6 @@ package pool
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"time"
 
@@ -48,13 +47,15 @@ func (s *Store) Put(ctx context.Context, p *poolmodel.Pool) error {
 	}
 	p.UpdatedAt = time.Now().UTC()
 
-	instTypes, _ := json.Marshal(p.InstanceTypes)
-	subnets, _ := json.Marshal(p.SubnetIDs)
-	sgs, _ := json.Marshal(p.SecurityGroupIDs)
-	tags, _ := json.Marshal(p.Tags)
-	extraLabels, _ := json.Marshal(p.ExtraLabels)
+	instTypes := dbutil.MustJSON(p.InstanceTypes)
+	subnets := dbutil.MustJSON(p.SubnetIDs)
+	sgs := dbutil.MustJSON(p.SecurityGroupIDs)
+	tags := dbutil.MustJSON(p.Tags)
+	var extraLabels []byte
 	if p.ExtraLabels == nil {
 		extraLabels = []byte("[]")
+	} else {
+		extraLabels = dbutil.MustJSON(p.ExtraLabels)
 	}
 
 	var ltVer any
@@ -192,11 +193,11 @@ func scanPool(r interface{ Scan(...any) error }) (*poolmodel.Pool, error) {
 	p.AllocationStrategy = allocStrategy
 	p.RunnerVersion = runnerVersion
 	p.RunnerUser = runnerUser
-	_ = json.Unmarshal([]byte(instTypes), &p.InstanceTypes)
-	_ = json.Unmarshal([]byte(subnets), &p.SubnetIDs)
-	_ = json.Unmarshal([]byte(sgs), &p.SecurityGroupIDs)
-	_ = json.Unmarshal([]byte(extraLabels), &p.ExtraLabels)
-	_ = json.Unmarshal([]byte(tags), &p.Tags)
+	dbutil.MustUnmarshalJSON(instTypes, &p.InstanceTypes)
+	dbutil.MustUnmarshalJSON(subnets, &p.SubnetIDs)
+	dbutil.MustUnmarshalJSON(sgs, &p.SecurityGroupIDs)
+	dbutil.MustUnmarshalJSON(extraLabels, &p.ExtraLabels)
+	dbutil.MustUnmarshalJSON(tags, &p.Tags)
 	p.UserDataExtra = userDataExtra.String
 	p.LaunchTemplateID = ltID.String
 	p.LaunchTemplateVersion = int(ltVer.Int64)
