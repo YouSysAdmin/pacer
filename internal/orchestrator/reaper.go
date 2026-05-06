@@ -22,6 +22,7 @@ import (
 	"github.com/yousysadmin/pacer/internal/models/audit"
 	"github.com/yousysadmin/pacer/internal/models/instance"
 	jobmodel "github.com/yousysadmin/pacer/internal/models/job"
+	projectmodel "github.com/yousysadmin/pacer/internal/models/project"
 )
 
 const ReapInterval = 60 * time.Second
@@ -270,6 +271,12 @@ func (r *Reaper) markLost(ctx context.Context, i *instance.Instance, d deadState
 		})
 	}
 
+	// Best-effort: deregister the runner from GitHub. With an active
+	// workflow_job, GitHub aborts it immediately on delete -- the user
+	// sees the workflow fail in seconds rather than waiting on the
+	// ~10-min heartbeat timeout.
+	r.deleteGitHubRunner(ctx, i, j)
+
 	// Refine cost from the now-stamped terminated_at. Best-effort: a
 	// NULL price_per_hour leaves cost NULL.
 	if err := r.Runtime.Store.Job.FinalizeCost(ctx, i.ID); err != nil {
@@ -352,6 +359,12 @@ func (r *Reaper) maybeReap(ctx context.Context, i *instance.Instance) error {
 		"instance_id", i.ID, "job_id", i.JobID, "pool", pl.Name,
 		"age", age.String(), "max_runtime", maxRuntime.String())
 
+	// Best-effort runner deregister BEFORE we hard-kill the host:
+	// gives GitHub a clean abort signal so the workflow_job fails fast
+	// instead of relying on heartbeat timeout.
+	j, _ := r.Runtime.Store.Job.Get(ctx, i.JobID)
+	r.deleteGitHubRunner(ctx, i, j)
+
 	if _, err := r.Runtime.EC2.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
 		InstanceIds: []string{i.ID},
 	}); err != nil {
@@ -387,4 +400,55 @@ func (r *Reaper) maybeReap(ctx context.Context, i *instance.Instance) error {
 		slog.Warn("reaper: audit write failed", "instance_id", i.ID, "err", err)
 	}
 	return nil
+}
+
+// deleteGitHubRunner asks GitHub to deregister the runner backed by
+// this instance. With an active workflow_job assigned to that runner,
+// GitHub aborts the job immediately on delete -- the user-visible
+// "lost communication" hang shrinks from ~10 min to seconds.
+//
+// Best-effort end to end: missing GHRunnerID (runner never came online),
+// missing job/project rows (deleted out from under us), or a 4xx/5xx
+// from GitHub all log + return without surfacing -- the local cleanup
+// the caller already did is the authoritative pacer-side state.
+//
+// j may be nil when the caller couldn't fetch the job row; we'll skip
+// silently in that case rather than try to recover.
+func (r *Reaper) deleteGitHubRunner(ctx context.Context, i *instance.Instance, j *jobmodel.Job) {
+	if i.GHRunnerID == 0 || j == nil || r.Runtime.GHApp == nil {
+		return
+	}
+	proj, err := r.Runtime.Store.Project.Get(ctx, j.ProjectID)
+	if err != nil || proj == nil {
+		if err != nil {
+			slog.Warn("reaper: project lookup for runner-delete failed",
+				"instance_id", i.ID, "project_id", j.ProjectID, "err", err)
+		}
+		return
+	}
+	if proj.Scope == projectmodel.ScopeOrg {
+		if err := r.Runtime.GHApp.DeleteRunnerOrg(ctx, j.InstallationID, proj.OrgName, i.GHRunnerID); err != nil {
+			slog.Warn("reaper: delete runner (org) failed",
+				"instance_id", i.ID, "gh_runner_id", i.GHRunnerID, "org", proj.OrgName, "err", err)
+		}
+		return
+	}
+	owner, name, splitErr := splitRepoFullName(j.RepoFullName)
+	if splitErr != nil {
+		slog.Warn("reaper: malformed repo full_name; skipping runner-delete",
+			"instance_id", i.ID, "repo", j.RepoFullName, "err", splitErr)
+		return
+	}
+	if err := r.Runtime.GHApp.DeleteRunnerRepo(ctx, j.InstallationID, owner, name, i.GHRunnerID); err != nil {
+		slog.Warn("reaper: delete runner (repo) failed",
+			"instance_id", i.ID, "gh_runner_id", i.GHRunnerID, "repo", j.RepoFullName, "err", err)
+	}
+}
+
+func splitRepoFullName(s string) (owner, name string, err error) {
+	parts := strings.SplitN(s, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("malformed repo full_name %q", s)
+	}
+	return parts[0], parts[1], nil
 }

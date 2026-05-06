@@ -178,9 +178,15 @@ func (c *Client) fetchInstallationToken(ctx context.Context, installationID int6
 // string is fed to the runner via `--jitconfig <value>`; the runner
 // registers, claims one job, and exits.
 //
+// Returns (encoded_jit_config, runner_id, err). The runner_id is
+// GitHub's integer identity for the freshly-created runner; the
+// caller stamps it on the instance row so the reaper can DELETE the
+// runner from GitHub when the host is lost (fast-fails the
+// workflow_job instead of waiting on heartbeat timeout).
+//
 // runnerGroupID is required for repo-level registration; the "Default"
 // group on personal accounts is id 1.
-func (c *Client) JITConfig(ctx context.Context, installationID int64, repoOwner, repoName, runnerName string, labels []string, runnerGroupID int) (string, error) {
+func (c *Client) JITConfig(ctx context.Context, installationID int64, repoOwner, repoName, runnerName string, labels []string, runnerGroupID int) (string, int64, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s/actions/runners/generate-jitconfig", apiBase, repoOwner, repoName)
 	return c.mintJITConfig(ctx, installationID, url, runnerName, labels, runnerGroupID)
 }
@@ -196,12 +202,60 @@ func (c *Client) JITConfig(ctx context.Context, installationID int64, repoOwner,
 // Requires the GitHub App's `organization_self_hosted_runners: write`
 // permission and the App installed on the org (not just specific
 // repos).
-func (c *Client) JITConfigOrg(ctx context.Context, installationID int64, orgName, runnerName string, labels []string, runnerGroupID int) (string, error) {
+func (c *Client) JITConfigOrg(ctx context.Context, installationID int64, orgName, runnerName string, labels []string, runnerGroupID int) (string, int64, error) {
 	if runnerGroupID == 0 {
 		runnerGroupID = 1
 	}
 	url := fmt.Sprintf("%s/orgs/%s/actions/runners/generate-jitconfig", apiBase, orgName)
 	return c.mintJITConfig(ctx, installationID, url, runnerName, labels, runnerGroupID)
+}
+
+// DeleteRunnerRepo removes a self-hosted runner from a repository.
+// When the runner has an active job, GitHub aborts that workflow_job
+// immediately -- the reaper uses this on instance.lost / reap so the
+// workflow_job fails fast rather than hanging on the ~10-min
+// heartbeat timeout.
+//
+// 404 from GitHub is treated as success: the runner has already been
+// deregistered (ephemeral runners auto-deregister when run.sh exits
+// cleanly, or GitHub purged it after its own timeout).
+func (c *Client) DeleteRunnerRepo(ctx context.Context, installationID int64, repoOwner, repoName string, runnerID int64) error {
+	url := fmt.Sprintf("%s/repos/%s/%s/actions/runners/%d", apiBase, repoOwner, repoName, runnerID)
+	return c.deleteRunner(ctx, installationID, url)
+}
+
+// DeleteRunnerOrg is the org-scoped variant of DeleteRunnerRepo. Used
+// when the project's scope is "org".
+func (c *Client) DeleteRunnerOrg(ctx context.Context, installationID int64, orgName string, runnerID int64) error {
+	url := fmt.Sprintf("%s/orgs/%s/actions/runners/%d", apiBase, orgName, runnerID)
+	return c.deleteRunner(ctx, installationID, url)
+}
+
+func (c *Client) deleteRunner(ctx context.Context, installationID int64, url string) error {
+	instTok, err := c.InstallationToken(ctx, installationID)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
+	if err != nil {
+		return fmt.Errorf("build delete-runner request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+instTok)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("delete runner: %w", err)
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusNoContent, http.StatusNotFound:
+		return nil
+	default:
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("delete runner: %s %s", resp.Status, string(body))
+	}
 }
 
 // WorkflowJob fetches the current state of a workflow job (steps, status,
@@ -247,10 +301,15 @@ func (c *Client) WorkflowJob(ctx context.Context, installationID int64, repoOwne
 // mintJITConfig is the shared POST-and-decode for both repo and org
 // JIT-config endpoints. They differ only in the URL path; the
 // installation token, request shape, and response shape are identical.
-func (c *Client) mintJITConfig(ctx context.Context, installationID int64, url, runnerName string, labels []string, runnerGroupID int) (string, error) {
+//
+// Returns (encoded_jit_config, runner_id, err). runner_id is the
+// integer identity GitHub assigns to the new ephemeral runner --
+// stable for the runner's lifetime, used by DeleteRunner to abort
+// the workflow_job when the host is lost.
+func (c *Client) mintJITConfig(ctx context.Context, installationID int64, url, runnerName string, labels []string, runnerGroupID int) (string, int64, error) {
 	instTok, err := c.InstallationToken(ctx, installationID)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	body, err := json.Marshal(map[string]any{
 		"name":            runnerName,
@@ -259,11 +318,11 @@ func (c *Client) mintJITConfig(ctx context.Context, installationID int64, url, r
 		"work_folder":     "_work",
 	})
 	if err != nil {
-		return "", fmt.Errorf("marshal jitconfig body: %w", err)
+		return "", 0, fmt.Errorf("marshal jitconfig body: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return "", fmt.Errorf("build jitconfig request: %w", err)
+		return "", 0, fmt.Errorf("build jitconfig request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+instTok)
 	req.Header.Set("Accept", "application/vnd.github+json")
@@ -272,18 +331,21 @@ func (c *Client) mintJITConfig(ctx context.Context, installationID int64, url, r
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("jitconfig: %w", err)
+		return "", 0, fmt.Errorf("jitconfig: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("jitconfig: %s %s", resp.Status, string(b))
+		return "", 0, fmt.Errorf("jitconfig: %s %s", resp.Status, string(b))
 	}
 	var out struct {
 		EncodedJITConfig string `json:"encoded_jit_config"`
+		Runner           struct {
+			ID int64 `json:"id"`
+		} `json:"runner"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", fmt.Errorf("decode jitconfig: %w", err)
+		return "", 0, fmt.Errorf("decode jitconfig: %w", err)
 	}
-	return out.EncodedJITConfig, nil
+	return out.EncodedJITConfig, out.Runner.ID, nil
 }

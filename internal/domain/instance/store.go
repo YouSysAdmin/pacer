@@ -25,7 +25,8 @@ func NewStore(db *sql.DB) *Store {
 const instanceSelect = `
 SELECT id, job_id, project_id, pool_id, instance_type, az, state, spot,
        price_per_hour, price_model,
-       launched_at, registered_at, terminated_at, last_seen_at
+       launched_at, registered_at, terminated_at, last_seen_at,
+       gh_runner_id
 FROM instances`
 
 func (s *Store) Put(ctx context.Context, i *instancemodel.Instance) error {
@@ -93,13 +94,25 @@ func (s *Store) UpdateState(ctx context.Context, id string, state instancemodel.
 	return err
 }
 
-func (s *Store) StampRegistration(ctx context.Context, id, instanceType, az string, now time.Time) error {
+func (s *Store) StampRegistration(ctx context.Context, id, instanceType, az string, ghRunnerID int64, now time.Time) error {
 	_, err := s.db.ExecContext(ctx, `
         UPDATE instances
-        SET instance_type = ?, az = ?, state = 'running', registered_at = ?, last_seen_at = ?
+        SET instance_type = ?, az = ?, state = 'running',
+            registered_at = ?, last_seen_at = ?, gh_runner_id = ?
         WHERE id = ?
-    `, instanceType, az, now, now, id)
+    `, instanceType, az, now, now, nullInt64Zero(ghRunnerID), id)
 	return err
+}
+
+// nullInt64Zero maps a 0 sentinel to SQL NULL so the gh_runner_id
+// column stays NULL when the JIT-config response didn't include a
+// runner id (older GHES, mocked dev runs). Avoids a magic 0 row that
+// would later be passed to GitHub's DeleteRunner endpoint.
+func nullInt64Zero(v int64) sql.NullInt64 {
+	if v == 0 {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: v, Valid: true}
 }
 
 func (s *Store) ListAlive(ctx context.Context) ([]*instancemodel.Instance, error) {
@@ -146,10 +159,12 @@ func scanInstance(r interface{ Scan(...any) error }) (*instancemodel.Instance, e
 	var spot int
 	var pricePerHour sql.NullFloat64
 	var registeredAt, terminatedAt, lastSeenAt sql.NullTime
+	var ghRunnerID sql.NullInt64
 	if err := r.Scan(&i.ID, &i.JobID, &i.ProjectID, &poolID,
 		&iType, &az, &state, &spot,
 		&pricePerHour, &priceModel,
-		&i.LaunchedAt, &registeredAt, &terminatedAt, &lastSeenAt); err != nil {
+		&i.LaunchedAt, &registeredAt, &terminatedAt, &lastSeenAt,
+		&ghRunnerID); err != nil {
 		return nil, err
 	}
 	i.PoolID = poolID.String
@@ -169,6 +184,9 @@ func scanInstance(r interface{ Scan(...any) error }) (*instancemodel.Instance, e
 	}
 	if lastSeenAt.Valid {
 		i.LastSeenAt = new(lastSeenAt.Time)
+	}
+	if ghRunnerID.Valid {
+		i.GHRunnerID = ghRunnerID.Int64
 	}
 	return &i, nil
 }

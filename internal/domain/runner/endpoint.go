@@ -120,26 +120,27 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 	// the runner can claim any matching job in the org / runner-group.
 	// JIT config goes to /orgs/{org}/... rather than /repos/{owner}/{name}/...
 	var (
-		labels    []string
-		jitConfig string
+		labels      []string
+		jitConfig   string
+		ghRunnerID  int64
 	)
 	if proj.Scope == projectmodel.ScopeOrg {
 		labels = pool.RunnerLabels(proj.Name, pl.Name, "", pl.ExtraLabels)
-		jitConfig, err = h.GHApp.JITConfigOrg(c.UserContext(), j.InstallationID, proj.OrgName, runnerName, labels, proj.RunnerGroupID)
+		jitConfig, ghRunnerID, err = h.GHApp.JITConfigOrg(c.UserContext(), j.InstallationID, proj.OrgName, runnerName, labels, proj.RunnerGroupID)
 	} else {
 		owner, name, splitErr := splitRepoFullName(j.RepoFullName)
 		if splitErr != nil {
 			return response.Internal(c, splitErr)
 		}
 		labels = pool.RunnerLabels(proj.Name, pl.Name, j.RepoFullName, pl.ExtraLabels)
-		jitConfig, err = h.GHApp.JITConfig(c.UserContext(), j.InstallationID, owner, name, runnerName, labels, 1)
+		jitConfig, ghRunnerID, err = h.GHApp.JITConfig(c.UserContext(), j.InstallationID, owner, name, runnerName, labels, 1)
 	}
 	if err != nil {
 		return response.Internal(c, fmt.Errorf("jit config: %w", err))
 	}
 
 	now := time.Now().UTC()
-	if err := h.Runtime.Store.Instance.StampRegistration(c.UserContext(), in.InstanceID, in.InstanceType, in.AZ, now); err != nil {
+	if err := h.Runtime.Store.Instance.StampRegistration(c.UserContext(), in.InstanceID, in.InstanceType, in.AZ, ghRunnerID, now); err != nil {
 		return response.Internal(c, err)
 	}
 	if err := h.Runtime.Store.Job.MarkRunning(c.UserContext(), j.ID, in.InstanceID, now); err != nil {

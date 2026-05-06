@@ -38,4 +38,10 @@ type Instance struct {
 	RegisteredAt *time.Time `json:"registered_at,omitempty"`
 	TerminatedAt *time.Time `json:"terminated_at,omitempty"`
 	LastSeenAt   *time.Time `json:"last_seen_at,omitempty"`
+	// GHRunnerID is GitHub's integer runner identity, returned by
+	// generate-jitconfig at register time. The reaper uses it to
+	// DELETE the runner from GitHub when the instance is lost so
+	// the workflow_job fast-fails instead of hanging on heartbeat
+	// timeout. Zero when the runner never registered.
+	GHRunnerID int64 `json:"gh_runner_id,omitempty"`
 }
