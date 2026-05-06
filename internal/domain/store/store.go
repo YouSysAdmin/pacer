@@ -111,6 +111,12 @@ type JobStore interface {
 	// snapshot stamped at enqueue time. Best-effort; callers log and
 	// continue on error rather than fail the lifecycle transition.
 	UpdatePayload(ctx context.Context, id string, payload []byte) error
+	// UpdatePayloadIfRunning is the race-safe variant used by the
+	// detail-endpoint inline-refresh path. The conditional WHERE
+	// prevents the on-demand GitHub fetch from regressing a final
+	// `completed` webhook payload that landed between the handler's
+	// status check and the UPDATE.
+	UpdatePayloadIfRunning(ctx context.Context, id string, payload []byte) error
 	MarkRunning(ctx context.Context, id, instanceID string, now time.Time) error
 	MarkCompleted(ctx context.Context, id string, now time.Time) error
 	MarkFailed(ctx context.Context, id, stage, message string, now time.Time) error

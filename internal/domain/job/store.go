@@ -157,6 +157,21 @@ func (s *Store) UpdatePayload(ctx context.Context, id string, payload []byte) er
 	return err
 }
 
+// UpdatePayloadIfRunning is the conditional variant used by the
+// detail-endpoint inline refresh path. The WHERE clause closes the
+// race where a `completed` webhook lands between the handler's status
+// check and our UPDATE -- without it, an in-flight refresh could
+// regress an authoritative final payload back to a partial running
+// snapshot. Zero rows affected is silent success: it just means the
+// job moved out of running state and our stale view should be
+// discarded.
+func (s *Store) UpdatePayloadIfRunning(ctx context.Context, id string, payload []byte) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE jobs SET payload = ? WHERE id = ? AND status = 'running'`,
+		string(payload), id)
+	return err
+}
+
 // costSubquery is the SQL fragment that derives a job's estimated
 // USD cost at terminal-state time -- price_per_hour * elapsed-hours
 // since the instance launched, looked up via the job's instance_id.

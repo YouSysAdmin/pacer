@@ -5,8 +5,14 @@
 package job
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"strconv"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 
@@ -17,8 +23,20 @@ import (
 	jobmodel "github.com/yousysadmin/pacer/internal/models/job"
 )
 
+// refreshThrottle bounds how often a single running job can trigger
+// an upstream GitHub fetch. The modal polls the detail endpoint every
+// 5s; matching the throttle to the poll cadence means one tab hits
+// GitHub once per cycle, multiple tabs viewing the same job collapse
+// to the same rate, and an idle modal generates zero traffic.
+const refreshThrottle = 5 * time.Second
+
 type Handler struct {
 	Runtime *env.Runtime
+
+	// lastRefreshAt[jobID] = time.Time of last successful or attempted
+	// upstream fetch. In-memory only -- on restart we just pay the cost
+	// of one fresh round of GitHub calls bounded by client poll rate.
+	lastRefreshAt sync.Map
 }
 
 // detail is the bundle returned by GET /api/jobs/:id. The list view
@@ -67,6 +85,12 @@ func (h *Handler) List(c *fiber.Ctx) error {
 // job row, the parsed webhook payload (raw GitHub JSON), the linked
 // instance row when one was spawned, and the audit trail filtered to
 // this job. One endpoint, one round trip from the modal.
+//
+// While the job is `running`, this also opportunistically refreshes
+// `payload` from GitHub's REST API on the way out so the modal's 5s
+// poll cadence drives mid-run step updates without any background
+// goroutine. See refreshStepsIfRunning for the throttle + race
+// semantics.
 func (h *Handler) Get(c *fiber.Ctx) error {
 	id := c.Params("id")
 	ctx := c.UserContext()
@@ -79,10 +103,14 @@ func (h *Handler) Get(c *fiber.Ctx) error {
 		return response.NotFound(c, "job not found")
 	}
 
-	d := detail{Job: j, Audit: []*auditmodel.Entry{}}
+	payload := j.Payload
+	if fresh, ok := h.refreshStepsIfRunning(ctx, j); ok {
+		payload = fresh
+	}
 
-	if len(j.Payload) > 0 && json.Valid(j.Payload) {
-		d.Payload = json.RawMessage(j.Payload)
+	d := detail{Job: j, Audit: []*auditmodel.Entry{}}
+	if len(payload) > 0 && json.Valid(payload) {
+		d.Payload = json.RawMessage(payload)
 	}
 
 	if j.InstanceID != "" {
@@ -106,4 +134,70 @@ func (h *Handler) Get(c *fiber.Ctx) error {
 	}
 
 	return response.Success(c, d)
+}
+
+// refreshStepsIfRunning calls GitHub's workflow-job API, wraps the
+// response into the same shape webhooks deliver
+// ({"action":"in_progress","workflow_job":{...}}) so the frontend's
+// payload.workflow_job.steps[] path keeps working, and persists via
+// UpdatePayloadIfRunning.
+//
+// Returns (newPayload, true) only on a successful fetch + non-empty
+// write; (nil, false) for every skip / error path so the caller falls
+// back to whatever was already on the row.
+//
+// All failure modes (GHApp not configured, ctx-cancelled mid-flight,
+// GitHub 404 / 5xx, malformed repo full_name, DB write error) log warn
+// and return false -- the detail endpoint must never fail because
+// the optional refresh did.
+func (h *Handler) refreshStepsIfRunning(ctx context.Context, j *jobmodel.Job) ([]byte, bool) {
+	if h.Runtime.GHApp == nil {
+		return nil, false
+	}
+	if j.Status != jobmodel.StatusRunning || j.GHJobID == 0 {
+		return nil, false
+	}
+	if t, ok := h.lastRefreshAt.Load(j.ID); ok {
+		if last, _ := t.(time.Time); time.Since(last) < refreshThrottle {
+			return nil, false
+		}
+	}
+	// Stamp the timestamp before the upstream call so concurrent
+	// requests that race past the load above still get coalesced
+	// to one round-trip per cycle. Errors below leave it stamped
+	// too -- that's intentional, it backs off persistent failures.
+	h.lastRefreshAt.Store(j.ID, time.Now())
+
+	owner, name, err := splitRepoFullName(j.RepoFullName)
+	if err != nil {
+		slog.Warn("job.refresh: malformed repo", "job_id", j.ID, "err", err)
+		return nil, false
+	}
+	raw, err := h.Runtime.GHApp.WorkflowJob(ctx, j.InstallationID, owner, name, j.GHJobID)
+	if err != nil {
+		slog.Warn("job.refresh: github fetch failed",
+			"job_id", j.ID, "gh_job_id", j.GHJobID, "err", err)
+		return nil, false
+	}
+	wrapped, err := json.Marshal(struct {
+		Action      string          `json:"action"`
+		WorkflowJob json.RawMessage `json:"workflow_job"`
+	}{Action: "in_progress", WorkflowJob: raw})
+	if err != nil {
+		slog.Warn("job.refresh: marshal wrapped payload failed", "job_id", j.ID, "err", err)
+		return nil, false
+	}
+	if err := h.Runtime.Store.Job.UpdatePayloadIfRunning(ctx, j.ID, wrapped); err != nil {
+		slog.Warn("job.refresh: db write failed", "job_id", j.ID, "err", err)
+		return nil, false
+	}
+	return wrapped, true
+}
+
+func splitRepoFullName(s string) (owner, name string, err error) {
+	parts := strings.SplitN(s, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("malformed repo full_name %q", s)
+	}
+	return parts[0], parts[1], nil
 }

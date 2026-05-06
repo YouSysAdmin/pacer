@@ -244,6 +244,41 @@ func TestJob_Reschedule_FlipsBackToQueued(t *testing.T) {
 	}
 }
 
+func TestJob_UpdatePayloadIfRunning_OnlyUpdatesRunningRows(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	mustPut(t, f, "j-run", jobmodel.StatusRunning, now, nil, 0)
+	mustPut(t, f, "j-done", jobmodel.StatusCompleted, now, nil, 0)
+
+	fresh := []byte(`{"action":"in_progress","workflow_job":{"steps":[1,2,3]}}`)
+
+	if err := f.store.UpdatePayloadIfRunning(ctx, "j-run", fresh); err != nil {
+		t.Fatalf("UpdatePayloadIfRunning(running): %v", err)
+	}
+	if err := f.store.UpdatePayloadIfRunning(ctx, "j-done", fresh); err != nil {
+		// Zero rows affected isn't an error -- the WHERE just skipped.
+		t.Fatalf("UpdatePayloadIfRunning(completed): %v", err)
+	}
+
+	gotRun, err := f.store.Get(ctx, "j-run")
+	if err != nil {
+		t.Fatalf("Get(j-run): %v", err)
+	}
+	if string(gotRun.Payload) != string(fresh) {
+		t.Fatalf("running row should have new payload, got %q", string(gotRun.Payload))
+	}
+
+	gotDone, err := f.store.Get(ctx, "j-done")
+	if err != nil {
+		t.Fatalf("Get(j-done): %v", err)
+	}
+	if string(gotDone.Payload) == string(fresh) {
+		t.Fatalf("completed row payload should NOT have been overwritten, got %q", string(gotDone.Payload))
+	}
+}
+
 // --- helpers ---
 
 func idN(prefix string, i int) string {

@@ -204,6 +204,46 @@ func (c *Client) JITConfigOrg(ctx context.Context, installationID int64, orgName
 	return c.mintJITConfig(ctx, installationID, url, runnerName, labels, runnerGroupID)
 }
 
+// WorkflowJob fetches the current state of a workflow job (steps, status,
+// conclusion, timing) from GitHub. Used by the job-detail endpoint to
+// refresh `jobs.payload` while the modal is open, since the
+// `workflow_job` webhook only fires on lifecycle transitions and steps[]
+// is incomplete until the final `completed` event.
+//
+// Returns the raw 200 response body so the caller can wrap it back into
+// the webhook envelope shape without re-marshalling. On any non-2xx
+// status the error wraps the status code so the caller can distinguish
+// permanent (404 -- job removed) from transient (5xx, rate limit) and
+// log appropriately.
+func (c *Client) WorkflowJob(ctx context.Context, installationID int64, repoOwner, repoName string, jobID int64) ([]byte, error) {
+	instTok, err := c.InstallationToken(ctx, installationID)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/repos/%s/%s/actions/jobs/%d", apiBase, repoOwner, repoName, jobID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build workflow-job request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+instTok)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch workflow job: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read workflow job: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("workflow job: %s %s", resp.Status, string(body))
+	}
+	return body, nil
+}
+
 // mintJITConfig is the shared POST-and-decode for both repo and org
 // JIT-config endpoints. They differ only in the URL path; the
 // installation token, request shape, and response shape are identical.
