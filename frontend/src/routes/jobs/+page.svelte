@@ -43,6 +43,28 @@
     return "";
   }
 
+  // GitHub workflow_job step shape: status is the lifecycle phase
+  // (queued / in_progress / completed) and conclusion is the actual
+  // outcome (success / failure / skipped / cancelled / timed_out /
+  // neutral / action_required / null when not finished).  Coloring on
+  // status alone paints every finished step green, including failures
+  // -- so we prefer conclusion when present and fall back to status.
+  function stepResult(step) {
+    const c = (step.conclusion || "").toLowerCase();
+    if (c === "success")   return { text: "success",   cls: "ok"   };
+    if (c === "failure" || c === "timed_out") return { text: c, cls: "crit" };
+    if (c === "cancelled" || c === "action_required" || c === "neutral") {
+      return { text: c, cls: "warn" };
+    }
+    if (c === "skipped")   return { text: "skipped",   cls: "info" };
+    if (c)                 return { text: c,           cls: ""     };
+    // No conclusion yet -- step is still in flight; show the lifecycle.
+    const s = (step.status || "").toLowerCase();
+    if (s === "in_progress") return { text: "running", cls: "info" };
+    if (s === "queued")      return { text: "queued",  cls: "warn" };
+    return { text: s || "-", cls: "" };
+  }
+
   function fmt(t) {
     if (!t) return "";
     const d = new Date(t);
@@ -371,18 +393,17 @@
             <tr>
               <th style="width: 40px">#</th>
               <th>Name</th>
-              <th>Status</th>
-              <th>Conclusion</th>
+              <th>Result</th>
               <th>Duration</th>
             </tr>
           </thead>
           <tbody>
             {#each derived.steps as step, idx (idx)}
+              {@const r = stepResult(step)}
               <tr>
                 <td class="mono">{step.number ?? idx + 1}</td>
                 <td>{step.name}</td>
-                <td><span class="tag {statusClass(step.status)}">{step.status}</span></td>
-                <td class="mono">{step.conclusion || "—"}</td>
+                <td><span class="tag {r.cls}">{r.text}</span></td>
                 <td class="mono">{step.started_at && step.completed_at ? age(step.started_at, step.completed_at) : "—"}</td>
               </tr>
             {/each}
