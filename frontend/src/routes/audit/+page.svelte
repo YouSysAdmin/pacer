@@ -5,7 +5,8 @@
 -->
 
 <script>
-  import { audit } from "$lib/api.js";
+  import { audit, projects, pools } from "$lib/api.js";
+  import { onMount } from "svelte";
 
   // UTC-aligned date helpers (match the stats page convention).
   function todayUTC() {
@@ -47,6 +48,41 @@
   // tighter and reduces "where did I click" confusion.
   let openID = $state(null);
   function toggleDetail(id) { openID = (openID === id) ? null : id; }
+
+  // UUID-keyed targets (project / pool) are opaque on their own.
+  // Resolve the human name once at mount and decorate the target block.
+  // Pools render as <project>/<pool> to disambiguate identically named
+  // pools across projects (same convention the stats page uses).
+  // One-time fetch -- projects/pools rotate slowly enough that a stale
+  // entry only means missing one decoration line, never a wrong one,
+  // since we fall back to showing nothing extra.
+  let projectName = $state(new Map());
+  let poolName = $state(new Map());
+
+  onMount(async () => {
+    try {
+      const [ps, pls] = await Promise.all([projects.list(), pools.list()]);
+      const pm = new Map();
+      for (const p of ps || []) pm.set(p.id, p.name);
+      const lm = new Map();
+      for (const pl of pls || []) {
+        const proj = pm.get(pl.project_id) || pl.project_id;
+        lm.set(pl.id, `${proj}/${pl.name}`);
+      }
+      projectName = pm;
+      poolName = lm;
+    } catch {
+      // Best-effort -- if either fetch fails (auth, network),
+      // we just skip the name decoration.
+    }
+  });
+
+  function targetName(e) {
+    if (!e.target_type || !e.target_id) return "";
+    if (e.target_type === "project") return projectName.get(e.target_id) || "";
+    if (e.target_type === "pool")    return poolName.get(e.target_id)    || "";
+    return "";
+  }
 
   function windowParams() {
     if (range === "all") return {};
@@ -188,6 +224,8 @@
       lines.push("# target");
       if (e.target_type) lines.push("type       = " + e.target_type);
       if (e.target_id)   lines.push("id         = " + e.target_id);
+      const tn = targetName(e);
+      if (tn)            lines.push("name       = " + tn);
     }
     if (e.detail) {
       let parsed = null;
