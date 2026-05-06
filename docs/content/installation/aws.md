@@ -222,26 +222,12 @@ Replace the placeholders before applying:
 | `REPLACE_ACCOUNT_ID`           | Your AWS account ID (12 digits).                                                                                                                |
 | `REPLACE_RUNNER_INSTANCE_ROLE` | The IAM role attached to the runner instance profile (from step 1).                                                                             |
 
-The literal `pacer` value of the `gha:managed-by` tag is **hard-coded in the binary** (
-`internal/core/ec2lt/ec2lt.go::ManagedByTagValue`); do not change it unless you also fork the binary.
+The literal `pacer` value of the `gha:managed-by` tag is fixed inside the binary; do not change it unless you also
+fork the binary.
 
-### What each statement does
-
-| Sid                                   | What it allows                                                                                                                                                                                                                                                                                           |
-|---------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `DescribeForValidation`               | Validate the AMI / subnet / security-group IDs an operator types into a pool form before persisting the pool. Read-only.                                                                                                                                                                                 |
-| `ReadOnDemandPricing`                 | **Optional.** Powers the cost-tracking feature. Drop this if you don't need at-launch cost snapshots; the orchestrator logs a WARN and stamps NULL prices.                                                                                                                                               |
-| `ValidateInstanceProfileAtPoolSave`   | Lets the tool call `iam:GetInstanceProfile` at pool save time so a missing or empty instance profile fails fast in the form instead of 30s later at the first spawn. Optional — without it the pool save still proceeds; the operator just sees the cryptic EC2 error at spawn time.                     |
-| `CreateTaggedLaunchTemplate`          | Create new LTs only when the request stamps `gha:managed-by=pacer` on the LT itself. The tool always does.                                                                                                                                                                                               |
-| `ModifyOnlyOurLaunchTemplates`        | Bump versions / set defaults / delete versions on LTs that already carry the tag. The Fleet path mints a transient LT version per spawn (carrying per-job user-data) and deletes it after; this Sid covers both.                                                                                         |
-| `RunInstancesReadOnlyResources`       | Grants `RunInstances` against the read-only inputs (AMI, subnet, SG, ENI, etc.). No tag condition because these are not tool-owned.                                                                                                                                                                      |
-| `RunInstancesFromOurLaunchTemplate`   | Limits which LT can drive a `RunInstances` call to those carrying the tool's tag — defends against using a random LT.                                                                                                                                                                                    |
-| `CreateFleetFromOurLaunchTemplate`    | Allows `CreateFleet` only when the request stamps `gha:managed-by=pacer` on the fleet itself (the orchestrator does). The fleet's LaunchTemplateConfigs reference the pool's LT, which is also gated by the same tag.                                                                                    |
-| `RunInstancesTaggedInstanceAndVolume` | Requires the produced instance + volume be stamped with the tool's tag at create time.                                                                                                                                                                                                                   |
-| `TagOnCreate`                         | Permits `ec2:CreateTags` only as part of `RunInstances` / `CreateFleet` / `CreateLaunchTemplate*`, and only when the tool's tag is in the request.                                                                                                                                                       |
-| `TagAfterFleetLaunch`                 | The Fleet path can't carry per-job tags through `CreateFleet`'s API surface. The orchestrator post-tags instances with `gha:job_id`, `gha:repo`, and the repo user-tag layer. The condition pins this to instances/volumes that already carry `gha:managed-by=pacer` (placed there by the LT at launch). |
-| `TerminateOnlyOurInstances`           | Tag-scoped Terminate. The role can only kill instances the tool itself launched.                                                                                                                                                                                                                         |
-| `PassRunnerInstanceProfile`           | The privilege-escalation gate. Scoped to a single role ARN — only the runner-instance role from step 1 can be passed to EC2.                                                                                                                                                                             |
+The policy is **tag-scoped** — Pacer can only modify launch templates and instances that it itself tagged with
+`gha:managed-by=pacer`. The `iam:PassRole` permission is scoped to the single runner-instance role you picked in step 1,
+which is the privilege-escalation boundary: that's the only role Pacer can hand to a spawned EC2 instance.
 
 Apply the policy as either:
 
@@ -272,20 +258,14 @@ Before you can save your first pool, you need:
 
 ## 4. Decide on `server.public_url`
 
-The user-data script that boots inside each spawned EC2 calls back to the tool over HTTPS:
+Each spawned EC2 instance calls back to Pacer over HTTPS to register itself, then again to report completion. The
+public URL must be:
 
-```
-POST <server.public_url>/api/runner/register
-POST <server.public_url>/api/runner/complete
-```
-
-`server.public_url` must be:
-
-- reachable from the runner subnets (so the spawned EC2 can `curl` it)
+- reachable from the runner subnets (the spawned EC2 instances need to reach it)
 - HTTPS (ideally) — the calls carry HMAC tokens, but TLS is still preferred to avoid token replay risk on shared
   networks
-- the same value you put in the GitHub App's **Webhook URL** in [the GitHub side](../github/) (the tool exposes
-  `/api/webhook` from the same server)
+- the same value you put in the GitHub App's **Webhook URL** in [the GitHub side](../github/) — Pacer serves the
+  GitHub webhook from the same server
 
 Two options for terminating TLS:
 

@@ -340,7 +340,7 @@ You should see the Sids that were generated — `DescribeForValidation`, `ReadOn
 
 ## Notes
 
-- The `gha:managed-by` value is hard-coded to `pacer` in the binary (`internal/core/ec2lt/ec2lt.go::ManagedByTagValue`). Don't change it unless you also fork the binary.
+- The `gha:managed-by` value is fixed at `pacer` inside the binary. Don't change it unless you also fork the binary.
 - **Runner instance role is optional.** Leave the field blank if your pools won't attach an instance profile -- the generator drops the `PassRunnerInstanceProfile` statement entirely. The orchestrator's `iam:PassRole` permission is only exercised when a pool's `iam_instance_profile` field is non-empty AND the launch causes EC2 to attach a profile to the instance. If you later add an instance profile to a pool, regenerate the policy with the role name filled in -- otherwise the spawn fails with `Insufficient privileges to pass role`.
 - Cost-tracking statements (`ReadOnDemandPricing`, `ec2:DescribeSpotPriceHistory` inside `DescribeForValidation`) are optional. Drop them if you don't want at-launch cost snapshots; the orchestrator will log a warning and stamp NULL prices.
 - `ValidateInstanceProfileAtPoolSave` is optional. Without it the pool save still works, but a missing instance profile only surfaces at the first spawn (with a cryptic EC2 error). Harmless to keep even when no pool uses an instance profile.

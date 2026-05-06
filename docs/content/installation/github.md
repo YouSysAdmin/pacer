@@ -7,7 +7,8 @@ weight: 10
 The tool authenticates to GitHub as a **GitHub App** — not a personal access token. One App covers all repos you want to
 manage runners for; each repo `Install`s the App.
 
-PAT auth is **not** supported: minting JIT runner configs requires an installation token, which only Apps can produce.
+PAT auth is **not** supported — Pacer registers runners through the GitHub App, which is the only way to mint the
+short-lived installation tokens it needs.
 
 ## 1. Create the App
 

@@ -4,8 +4,8 @@ description: "Build the binary, write the YAML config, and run the serve subcomm
 weight: 30
 ---
 
-The tool is a single Go binary at `cmd/pacer`. It exposes one user-facing subcommand for runtime — `serve` — plus
-`version`. There are no per-domain CLI subcommands; everything else happens through the web UI.
+Pacer ships as a single binary with one runtime subcommand, `serve` (plus `version`). Everything else is configured
+through the web UI.
 
 ## 1. Build
 
@@ -213,8 +213,7 @@ ReadWritePaths=/var/lib/pacer
 WantedBy=multi-user.target
 ```
 
-The process is a single goroutine for the orchestrator and a single goroutine for the reaper, plus the Fiber HTTP
-handlers. No supervisord-style config needed; one binary, one PID.
+One process, one PID — no supervisord-style config needed.
 
 ## 5. Smoke-test
 
@@ -255,9 +254,8 @@ make build-docker DOCKER_GOARCH=arm64
 make build-docker DOCKER_IMAGE=ghcr.io/yousysadmin/pacer:dev
 ```
 
-What this does in order: `bun install && bun run build` (so the SPA is in `frontend/dist/` for the embed), then
-`go build` with `GOOS=linux GOARCH=$(go env GOARCH)` into `bin/docker/pacer`, then `docker build -f Dockerfile`
-against `bin/docker/` as the context.
+In order: builds the SPA, cross-compiles the Linux binary into `bin/docker/`, then runs `docker build` against that
+directory.
 
 ### Release images
 
@@ -417,7 +415,7 @@ metadata:
     eks.amazonaws.com/role-arn: arn:aws:iam::<ACCOUNT_ID>:role/pacer
 ```
 
-The AWS SDK in Pacer reads the projected token automatically — leave `aws.profile` empty in the YAML.
+Leave `aws.profile` empty in the YAML; IRSA fills the default credential chain.
 
 ### ConfigMap (`pacer.yaml`)
 
@@ -684,9 +682,9 @@ ACME notes:
 ### Behind a reverse proxy
 
 When something else terminates TLS upstream (ALB, Cloudflare, Nginx, Caddy, an Ingress controller), set
-`server.trusted_proxies` to the proxy's IPs / CIDRs. Without it, the Fiber app sees the proxy address as the client and
-the rate limiter, audit log, and access log all attribute every request to the same IP - a spam of failed logins from
-one operator looks identical to a spam from a thousand attackers.
+`server.trusted_proxies` to the proxy's IPs / CIDRs. Without it, Pacer sees the proxy address as the client and the
+rate limiter, audit log, and access log all attribute every request to the same IP — a spam of failed logins from one
+operator looks identical to a spam from a thousand attackers.
 
 ```yaml
 server:
@@ -702,9 +700,8 @@ the public endpoint.
 
 ## Auth posture
 
-When `auth.disabled: false`, the project / pool / repo / job / stats CRUD pages and read-only `/api/*` endpoints are
-gated by an HS256 JWT cookie. The webhook (`/api/webhook`) and runner self-registration callbacks (
-`/api/runner/{register,complete,error}`) stay HMAC-only regardless — they don't accept session cookies.
+When `auth.disabled: false`, the operator console is gated by a session cookie. The webhook from GitHub and the
+callbacks from spawned runners stay HMAC-only regardless — they don't accept session cookies.
 
 ### First-start bootstrap
 
@@ -732,11 +729,7 @@ systemctl restart pacer
 ### Cookie + Bearer
 
 The session is a `pacer_session` cookie, `HttpOnly + SameSite=Strict + Secure` (when served over HTTPS), TTL =
-`auth.session_ttl` (default 12h). For `curl` callers, the same JWT is accepted via `Authorization: Bearer <token>`.
-
-The minted JWT carries `iss=pacer` and `aud=pacer-session` plus the standard `iat`, `nbf`, `exp` claims. Both `iss`
-and `aud` are validated on parse, so a token minted by a sibling service that happens to share `auth.jwt_secret`
-won't be honored here.
+`auth.session_ttl` (default 12h). For `curl` callers, the same token is accepted via `Authorization: Bearer <token>`.
 
 ### Authorization tier
 
@@ -770,41 +763,23 @@ open. Don't expose this configuration to the public Internet.
 
 ### OIDC SSO
 
-The tool implements the OpenID Connect **Authorization Code flow with PKCE**. Discovery (
-`/.well-known/openid-configuration`) runs at startup, so issuer-side typos / outages fail fast instead of surfacing on
-the first sign-in.
-
-Flow:
-
-1. User visits the protected SPA -> middleware bounces them to `/login`.
-2. SPA shows "Sign in with `<issuer host>`" (the button comes from `/api/auth/info`).
-3. Click -> `GET /api/auth/oidc/start`. The server mints state + nonce + a PKCE code verifier, packs them into a
-   10-minute HMAC-signed cookie (`pacer_oidc_state`, signed with `auth.jwt_secret` so no second secret is needed), and
-   302s the browser to the IdP's `authorization_endpoint`.
-4. IdP authenticates the user and 302s back to `auth.oidc.redirect_url` with `?code=...&state=...`.
-5. `GET /api/auth/oidc/callback` verifies the state cookie, exchanges the code (sending the PKCE verifier), and
-   validates the ID token (signature against the IdP's JWKS, `aud == client_id`, `nonce` match, expiry).
-6. The allowlist is evaluated against the ID-token claims (see below). On admit, the user row is found-or-created and
-   the standard `pacer_session` JWT cookie is issued.
+Pacer uses standard OpenID Connect (Authorization Code flow with PKCE). Discovery happens at startup, so issuer-side
+typos or outages fail fast instead of surfacing on the first sign-in.
 
 #### User provisioning
 
-Lookup precedence on each callback:
+On each sign-in, Pacer looks up the user first by the IdP's stable `sub` claim, then by email. If a local user with
+that email already exists, the row is linked to the IdP on first sign-in (so an existing local admin keeps their
+account). If neither matches, a new user row is created automatically.
 
-1. **By `oidc_subject`** (the IdP's `sub` claim). Most stable -- survives email changes at the IdP.
-2. **By email** -- if a local user already has this email, the row is *linked* (oidc_subject filled in). Audit log
-   records `user.oidc_linked`.
-3. **Auto-create** - a fresh row with the IdP's email + sub. Role is `admin` only when this is the very first user
-   in the table (the operator setting up the IdP); subsequent JIT-provisioned users default to role `user`. Audit log
-   records `user.created` with `via=oidc`.
-
-Today the middleware doesn't tier on role - v1 auth is "in or out" (see [Authorization tier](#authorization-tier)
-below) - so the role distinction is descriptive metadata at the moment, kept on the schema for forward-compat.
+The very first user provisioned (whether local-bootstrap or first OIDC sign-in) is set to `admin`; subsequent users
+default to `user`. Today the middleware is "in or out" — every authenticated user has full access — so the role
+distinction is descriptive metadata only, kept on the schema for when role gating lands.
 
 Removing access:
 
-- Disable the user in the IdP -> next sign-in fails at the IdP.
-- Or set `users.disabled = 1` for that email in SQLite -> the callback short-circuits with `sso_access_denied`.
+- Disable the user in the IdP — the next sign-in fails at the IdP.
+- Or disable the user inside Pacer — the next callback short-circuits with an access-denied page.
 
 #### Allowlist surface
 
@@ -826,14 +801,9 @@ restart if the IdP is unreachable). Both methods are never simultaneously open i
 
 #### Audit events
 
-- `auth.oidc.login_succeeded`
-- `auth.oidc.login_denied` -- allowlist refused (account disabled, email/domain/group not on the list, email_verified
-  false)
-- `auth.oidc.login_failed` -- token verify error, malformed callback, expired state cookie, etc.
-- `user.oidc_linked` -- a pre-existing local user was linked to an IdP `sub` on first sign-in.
-
-The denial cause is in the audit log's `detail` column; the user only sees a generic `Access denied` page so the failure
-mode doesn't leak which leg of the allowlist refused.
+Sign-in attempts (success and failure) are recorded in the audit log. The user-facing message is always a generic
+"Access denied" so the failure mode doesn't leak which leg of the allowlist refused — the specific cause shows in
+the audit log instead.
 
 #### Tested IdPs
 
@@ -856,29 +826,22 @@ own. Pointing `issuer` at pacer's own URL fails fast at startup with a clear err
 
 ## Cost tracking
 
-When the tool can talk to the AWS Pricing API, it stamps a launch-time USD/hour quote on every spawned instance. Cost
-rollups multiply that by elapsed time at completion / fail / reap and surface in two places:
+When the tool can talk to the AWS Pricing API, it stamps a launch-time USD/hour quote on every spawned instance and
+multiplies it by elapsed time at completion / fail / reap. Two places surface the result:
 
-- **`/api/stats`** — date-range + group-by buckets (per project, pool, or repo).
-- **`/api/stats/top-users`** — top-N GitHub senders (the user that triggered each workflow run) by job count over
-  the same window, with cost and runner-minutes alongside. Powers the "Top users" panel on the stats page so you can
-  see who's driving the bill.
+- The **Stats** page rolls cost up by project, pool, or repo over a chosen date range.
+- The **Top users** panel on the same page shows who's driving the bill (by GitHub sender on the workflow run).
 
-This feature requires:
-
-- `pricing:GetProducts` (the `ReadOnDemandPricing` Sid in the IAM policy)
-- `ec2:DescribeSpotPriceHistory` (in `DescribeForValidation`)
-
-Drop both Sids if you don't want cost estimates — the orchestrator logs a warning and stamps NULL prices, and the
-`/api/stats` rollup skips those rows.
+This feature requires `pricing:GetProducts` and `ec2:DescribeSpotPriceHistory` in the IAM policy. Drop those statements
+if you don't want cost estimates — Pacer logs a warning and stamps NULL prices, and the rollup skips those rows.
 
 Estimates are **best-effort** — launch-time price * elapsed time, ignoring spot-price drift, EBS, and data-transfer.
 They are not authoritative for billing.
 
 ## Logging
 
-`logging.format: json` (default) is the right choice for production — every call site uses structured `slog` fields.
-`text` is for dev. Levels follow standard slog (`debug` / `info` / `warn` / `error`).
+`logging.format: json` (default) is the right choice for production — every log line is structured. `text` is for dev.
+Levels are `debug` / `info` / `warn` / `error`.
 
 Behind a load balancer or systemd, prefer JSON to stdout and let the supervisor capture it:
 
@@ -905,7 +868,7 @@ Inbound:
 
 Outbound (the tool host needs to reach):
 
-- `api.github.com:443` — App auth, JIT runner config, latest-release lookup.
+- `api.github.com:443` — App auth, runner registration, latest-release lookup.
 - `api.pricing.us-east-1.amazonaws.com:443` (and other AWS service endpoints in `aws.region`).
 - `acme-v02.api.letsencrypt.org:443` — only when `server.tls.mode: acme`.
 
@@ -916,35 +879,3 @@ Outbound from spawned EC2 instances:
 - `api.github.com:443` and `objects.githubusercontent.com:443` — GitHub Actions runner protocol + binary download.
 - Whatever the workflow itself needs (S3, ECR, etc.).
 
-## Local UI dev mode
-
-For frontend work without setting up a real GitHub App or AWS account, the two `*.disabled` flags are orthogonal — set
-both for full UI-only dev:
-
-```yaml
-server:
-  addr: :3000
-github:
-  disabled: true
-aws:
-  disabled: true
-auth:
-  disabled: true
-database:
-  engine: sqlite
-  path: pacer-dev.db
-logging:
-  level: info
-  format: text
-  color: true
-```
-
-What each flag does:
-
-| Flag                    | Effect                                                                                                                                 |
-|-------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
-| `github.disabled: true` | Skip loading the App private key; don't register `/api/webhook` or `/api/runner/*`; don't start the orchestrator or reaper.            |
-| `aws.disabled: true`    | Skip credential resolution; leave `Runtime.EC2` nil; pool create/update short-circuits to a placeholder LT id (no real LT is created). |
-| `auth.disabled: true`   | Skip the auth middleware so the SPA is open; no bootstrap flow runs.                                                                   |
-
-Both `*.disabled` flags log a loud `WARN` at startup so the mode can't be shipped to production by accident.
