@@ -97,7 +97,12 @@ func groupExpr(by statsmodel.GroupBy) (keyCol, nameJoin string, err error) {
 	case statsmodel.ByProject:
 		return "j.project_id", "LEFT JOIN projects p ON p.id = j.project_id", nil
 	case statsmodel.ByPool:
-		return "j.pool_id", "LEFT JOIN pools po ON po.id = j.pool_id", nil
+		// Pool names aren't unique across projects -- qualify with the
+		// owning project so identically named pools don't collapse into
+		// one bucket in the UI.
+		return "j.pool_id",
+			"LEFT JOIN pools po ON po.id = j.pool_id LEFT JOIN projects p ON p.id = po.project_id",
+			nil
 	case statsmodel.ByRepo:
 		return "j.repo_full_name", "", nil
 	default:
@@ -155,7 +160,9 @@ func nameCol(by statsmodel.GroupBy) string {
 	case statsmodel.ByProject:
 		return "COALESCE(p.name, j.project_id)"
 	case statsmodel.ByPool:
-		return "COALESCE(po.name, j.pool_id)"
+		// Display as <project>/<pool>; fall back to the raw IDs when
+		// either parent row was deleted after the job ran.
+		return "COALESCE(p.name, j.project_id) || '/' || COALESCE(po.name, j.pool_id)"
 	case statsmodel.ByRepo:
 		return "j.repo_full_name"
 	}
