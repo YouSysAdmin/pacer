@@ -55,6 +55,7 @@ const (
 	ActionInstanceRegistered = "instance.registered"
 	ActionInstanceTerminated = "instance.terminated"
 	ActionInstanceReaped     = "instance.reaped"
+	ActionInstanceLost       = "instance.lost"
 	ActionConfigExported     = "config.exported"
 	ActionConfigImported     = "config.imported"
 	ActionUserCreated        = "user.created"
