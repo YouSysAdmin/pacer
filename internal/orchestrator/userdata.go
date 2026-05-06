@@ -122,11 +122,19 @@ fi
 # config is single-use and we have no graceful fallback if it doesn't
 # come back. --retry 12 + --retry-delay 6 = up to ~72s of retry,
 # covering a typical pacer redeploy window without bouncing the
-# instance. --retry-all-errors (curl 7.71+) folds connect-refused +
-# other transport errors into the same retry policy, not just HTTP 5xx.
+# instance.
+#
+# We deliberately do NOT use --retry-all-errors here: a 400 from this
+# endpoint means the job moved out of "claimed" (e.g. GitHub cancelled
+# it because a higher-priority workflow run superseded this one), which
+# is permanent. Retrying just burns ~72s of compute before the trap
+# fires. --retry-connrefused covers the "server restarted mid-deploy"
+# case (which is what the retry budget is actually for) without
+# extending into 4xx territory; default --retry already handles 5xx
+# + 408 + 429.
 STAGE="register"
 echo "POST /api/runner/register"
-RESP=$(curl -fsS --retry 12 --retry-delay 6 --retry-all-errors \
+RESP=$(curl -fsS --retry 12 --retry-delay 6 --retry-connrefused \
     -X POST "$SERVER_URL/api/runner/register" \
     -H "Content-Type: application/json" \
     -d "{\"job_id\":\"$JOB_ID\",\"instance_id\":\"$INSTANCE_ID\",\"instance_type\":\"$INSTANCE_TYPE\",\"az\":\"$AZ\",\"callback_token\":\"$CALLBACK_TOKEN\"}")
