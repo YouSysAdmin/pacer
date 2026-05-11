@@ -298,7 +298,13 @@ func (h *Handler) materializeLT(ctx context.Context, p *poolmodel.Pool, projectN
 		}
 		return nil
 	}
-	return ec2lt.CreateOrUpdate(ctx, h.Runtime.EC2, h.Runtime.IAM, p, projectName, projectTags)
+	runnerVersion := p.RunnerVersion
+	if h.Runtime.RunnerVersion != nil {
+		runnerVersion = h.Runtime.RunnerVersion.Resolve(p.RunnerVersion)
+	}
+	bootstrapToken, _ := h.Runtime.BootstrapAPIToken.Load().(string)
+	return ec2lt.CreateOrUpdate(ctx, h.Runtime.EC2, h.Runtime.IAM, p, projectName, projectTags,
+		h.Runtime.Config.Server.PublicURL, runnerVersion, bootstrapToken)
 }
 
 func projectFromModel(p *projectmodel.Project) project {

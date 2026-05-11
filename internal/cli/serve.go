@@ -27,6 +27,7 @@ import (
 	corepricing "github.com/yousysadmin/pacer/internal/core/pricing"
 	"github.com/yousysadmin/pacer/internal/core/validation"
 	"github.com/yousysadmin/pacer/internal/database/sqlite"
+	"github.com/yousysadmin/pacer/internal/domain/settings"
 	usermodel "github.com/yousysadmin/pacer/internal/models/user"
 	"github.com/yousysadmin/pacer/internal/orchestrator"
 	"github.com/yousysadmin/pacer/internal/server"
@@ -172,6 +173,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 		if err := bootstrapUser(context.Background(), rt); err != nil {
 			return fmt.Errorf("auth bootstrap: %w", err)
 		}
+	}
+
+	// Bootstrap API token: lives in the settings table, auto-generated
+	// on first start. Loaded into Runtime.BootstrapAPIToken (atomic.Value)
+	// so the bootstrap endpoint + LT-materialize have it ready.
+	// Rotatable later via the Settings UI.
+	if err := settings.EnsureBootstrapToken(context.Background(), rt); err != nil {
+		return fmt.Errorf("settings bootstrap: %w", err)
 	}
 
 	// Background workers run under a cancellable context so SIGINT

@@ -22,6 +22,7 @@ package ec2lt
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strconv"
@@ -50,10 +51,26 @@ const (
 // On the Create path: stamps p.LaunchTemplateID + Version.
 // On the Update path: bumps version + sets it as default.
 //
+// The user-data bash payload is rendered once here and baked into the
+// LT, so spawns never need to mint per-spawn LT versions. The
+// orchestrator threads per-job state (the HMAC callback token)
+// out-of-band via POST /api/runner/bootstrap; the bootstrap API
+// token (bootstrapAPIToken) is the shared secret embedded in
+// user-data that authenticates that request.
+//
+// Inputs:
+//   - serverURL: Runtime.Config.Server.PublicURL.
+//   - runnerVersion: resolved actions/runner tag at materialize time
+//     (empty allowed -- the script falls back to the AMI's baked binary).
+//   - bootstrapAPIToken: the global secret the runner presents as
+//     `Authorization: Bearer <token>` to /api/runner/bootstrap. Rotation
+//     requires re-saving each pool (or hitting the Settings UI's
+//     "Rotate" which auto-rematerializes).
+//
 // iamc is optional -- when nil (e.g. running without iam:GetInstanceProfile
 // in the role) the instance-profile check is skipped and a malformed
 // or missing profile only surfaces at orchestrator spawn time.
-func CreateOrUpdate(ctx context.Context, c *ec2.Client, iamc *iam.Client, p *pool.Pool, projectName string, projectTags map[string]string) error {
+func CreateOrUpdate(ctx context.Context, c *ec2.Client, iamc *iam.Client, p *pool.Pool, projectName string, projectTags map[string]string, serverURL, runnerVersion, bootstrapAPIToken string) error {
 	ami, err := validateAMI(ctx, c, p)
 	if err != nil {
 		return err
@@ -68,7 +85,10 @@ func CreateOrUpdate(ctx context.Context, c *ec2.Client, iamc *iam.Client, p *poo
 		return err
 	}
 
-	data := buildLTData(p, ami, projectName, projectTags)
+	data, err := buildLTData(p, ami, projectName, projectTags, serverURL, runnerVersion, bootstrapAPIToken)
+	if err != nil {
+		return err
+	}
 
 	if p.LaunchTemplateID == "" {
 		out, err := c.CreateLaunchTemplate(ctx, &ec2.CreateLaunchTemplateInput{
@@ -214,10 +234,17 @@ func validateIAMInstanceProfile(ctx context.Context, iamc *iam.Client, p *pool.P
 	return nil
 }
 
-func buildLTData(p *pool.Pool, ami *ec2types.Image, projectName string, projectTags map[string]string) *ec2types.RequestLaunchTemplateData {
+func buildLTData(p *pool.Pool, ami *ec2types.Image, projectName string, projectTags map[string]string, serverURL, runnerVersion, bootstrapAPIToken string) (*ec2types.RequestLaunchTemplateData, error) {
+	script, err := renderUserData(p, serverURL, runnerVersion, bootstrapAPIToken)
+	if err != nil {
+		return nil, err
+	}
+	encoded := base64.StdEncoding.EncodeToString([]byte(script))
+
 	data := &ec2types.RequestLaunchTemplateData{
 		ImageId:          aws.String(p.AMIID),
 		SecurityGroupIds: p.SecurityGroupIDs,
+		UserData:         aws.String(encoded),
 		// `shutdown -h` from inside the runner's user-data (both the
 		// happy path and the bootstrap-error path) must take the
 		// instance away, not leave it stopped racking up EBS charges.
@@ -265,7 +292,7 @@ func buildLTData(p *pool.Pool, ami *ec2types.Image, projectName string, projectT
 			},
 		}
 	}
-	return data
+	return data, nil
 }
 
 // instanceTagSpecs is the LT's *default* tag set for instances + volumes

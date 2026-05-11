@@ -11,6 +11,7 @@ import (
 	"github.com/yousysadmin/pacer/internal/domain/pool"
 	"github.com/yousysadmin/pacer/internal/domain/project"
 	"github.com/yousysadmin/pacer/internal/domain/repo"
+	"github.com/yousysadmin/pacer/internal/domain/settings"
 	"github.com/yousysadmin/pacer/internal/domain/stats"
 	"github.com/yousysadmin/pacer/internal/domain/store"
 	"github.com/yousysadmin/pacer/internal/domain/user"
@@ -34,5 +35,6 @@ func BindStore(s *SQLite) *store.Store {
 		Audit:    audit.NewStore(s.db),
 		Stats:    stats.NewStore(s.db),
 		Webhook:  webhook.NewStore(s.db),
+		Settings: settings.NewStore(s.db),
 	}
 }

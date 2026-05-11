@@ -162,4 +162,10 @@ export const audit = {
   },
 };
 
+export const settings = {
+  getBootstrapToken: () => call("/api/settings/bootstrap-token"),
+  rotateBootstrapToken: () =>
+    call("/api/settings/bootstrap-token/rotate", { method: "POST" }),
+};
+
 export const health = () => call("/healthz");

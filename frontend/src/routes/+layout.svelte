@@ -38,6 +38,7 @@
                 { href: "/repos", label: "Repos" },
                 { href: "/pools", label: "Pools" },
                 { href: "/backup", label: "Backup" },
+                { href: "/settings", label: "Settings" },
             ],
         },
     ];

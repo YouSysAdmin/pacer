@@ -2,7 +2,7 @@
 // Deferred Source License (DSL)
 // Pacer, Copyright (c) 2026 YouSysAdmin
 
-package orchestrator
+package ec2lt
 
 import (
 	"bytes"
@@ -10,39 +10,47 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/yousysadmin/pacer/internal/models/job"
 	"github.com/yousysadmin/pacer/internal/models/pool"
 )
 
-// userDataScript is the bash payload run by cloud-init on every
-// spawned instance.
-// Generated per-spawn (carries job_id + callback_token + the resolved runner version),
-// so it can't live in the launch template.
+// userDataScript is the bash payload baked into every launch template
+// at materialize time and run by cloud-init on every spawned instance.
+//
+// Static across spawns -- per-job state (the HMAC-signed callback
+// token) is fetched from pacer's /api/runner/bootstrap endpoint using
+// the global bootstrap API token baked in here as the bearer secret.
+// The orchestrator stashes the per-job HMAC token on jobs.bootstrap_token
+// at spawn time; bootstrap returns it (and clears the column,
+// enforcing single-use) so subsequent /register POSTs authenticate
+// normally.
 //
 // The AMI must ship: bash, curl, jq, tar.
-// The actions/runner is auto-installed at boot from the GitHub release tarball, version
-// resolved server-side; the AMI doesn't have to bake it.
+// The actions/runner is auto-installed at boot from the GitHub
+// release tarball, version resolved server-side at LT materialize
+// time; the AMI doesn't have to bake it.
 //
-// Robustness patterns borrowed from production runner setups:
+// Robustness:
 //   - exec > >(tee LOG) 2>&1 captures everything for the error trap
 //   - IMDSv2 token fetch retries (cold-boot timing)
+//   - bootstrap POST retries on transient server / network failures
 //   - trap ERR posts the captured log to /api/runner/error
 //   - shutdown -h on terminal failure so the host doesn't sit idle
 //     waiting for the 60s reaper sweep
-//
-// TODO: maybe this should be moved somewhere where the user can edit it (DB/Config/etc.)
 const userDataScript = `#!/bin/bash
 set -euo pipefail
 
 # ---------------------------------------------------------------- vars
-JOB_ID={{.JobID | sh}}
-CALLBACK_TOKEN={{.CallbackToken | sh}}
 SERVER_URL={{.ServerURL | sh}}
 RUNNER_VERSION={{.RunnerVersion | sh}}
 RUNNER_USER={{.RunnerUser | sh}}
+BOOTSTRAP_API_TOKEN={{.BootstrapAPIToken | sh}}
 RUNNER_HOME="${RUNNER_HOME:-/opt/actions-runner}"
 LOG=/var/log/runner-bootstrap.log
 STAGE="init"
+
+# Filled in below once /api/runner/bootstrap returns.
+JOB_ID=""
+CALLBACK_TOKEN=""
 
 mkdir -p "$(dirname "$LOG")" || true
 exec > >(tee -a "$LOG") 2>&1
@@ -53,18 +61,19 @@ report_error() {
     local line="$2"
     [ "$exit_code" = "0" ] && return 0
     echo "BOOTSTRAP FAIL stage=$STAGE exit=$exit_code line=$line"
-    # Stuff the captured log into JSON via jq -Rs (reads stdin as a
-    # single string) and POST it.  Failures here are best-effort --
-    # the instance still self-terminates afterwards.
-    local payload
-    payload=$(jq -Rsa --arg job_id "$JOB_ID" --arg tok "$CALLBACK_TOKEN" \
-        --arg stage "$STAGE" --argjson exit "$exit_code" --argjson line "$line" \
-        '{job_id:$job_id, callback_token:$tok, stage:$stage, exit_code:$exit, line:$line, log:.}' \
-        < "$LOG" || echo "{}")
-    curl -fsS -X POST "$SERVER_URL/api/runner/error" \
-        -H "Content-Type: application/json" \
-        -d "$payload" || true
-    # Give the curl + log writes time to flush before shutdown.
+    # Without a callback token (bootstrap never returned) we can't
+    # authenticate the error report -- log and skip the POST. The
+    # reaper sweep is the safety net.
+    if [ -n "$CALLBACK_TOKEN" ]; then
+        local payload
+        payload=$(jq -Rsa --arg job_id "$JOB_ID" --arg tok "$CALLBACK_TOKEN" \
+            --arg stage "$STAGE" --argjson exit "$exit_code" --argjson line "$line" \
+            '{job_id:$job_id, callback_token:$tok, stage:$stage, exit_code:$exit, line:$line, log:.}' \
+            < "$LOG" || echo "{}")
+        curl -fsS -X POST "$SERVER_URL/api/runner/error" \
+            -H "Content-Type: application/json" \
+            -d "$payload" || true
+    fi
     sleep 5
     sudo shutdown -h now "runner bootstrap failed" 2>/dev/null || shutdown -h now "runner bootstrap failed" || true
 }
@@ -87,6 +96,37 @@ INSTANCE_ID=$(curl -fs -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254
 INSTANCE_TYPE=$(curl -fs -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/instance-type)
 AZ=$(curl -fs -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/placement/availability-zone)
 echo "instance_id=$INSTANCE_ID type=$INSTANCE_TYPE az=$AZ"
+
+# ---------------------------------------------------------------- bootstrap
+# Fetch the per-job HMAC callback token from pacer. The bootstrap API
+# token (operator-managed, rotatable via Settings UI) authenticates
+# the request; pacer matches our instance_id against jobs.instance_id
+# (status=claimed, claimed_at within TTL, bootstrap_token still present)
+# and returns the per-job token. Single-use server-side: a second call
+# returns 410.
+#
+# --retry 12 + --retry-delay 6 covers transient network blips during
+# pacer restarts. 4xx (including 401 / 403 / 410) do NOT retry --
+# those are permanent.
+STAGE="bootstrap"
+echo "POST /api/runner/bootstrap"
+RESP=$(curl -fsS --retry 12 --retry-delay 6 --retry-connrefused \
+    -X POST "$SERVER_URL/api/runner/bootstrap" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $BOOTSTRAP_API_TOKEN" \
+    -d "{\"instance_id\":\"$INSTANCE_ID\",\"instance_type\":\"$INSTANCE_TYPE\",\"az\":\"$AZ\"}")
+
+CALLBACK_TOKEN=$(echo "$RESP" | jq -r .callback_token)
+JOB_ID=$(echo "$RESP" | jq -r .job_id)
+if [ -z "$CALLBACK_TOKEN" ] || [ "$CALLBACK_TOKEN" = "null" ]; then
+    echo "bootstrap: no callback_token in response: $RESP"
+    exit 13
+fi
+if [ -z "$JOB_ID" ] || [ "$JOB_ID" = "null" ]; then
+    echo "bootstrap: no job_id in response: $RESP"
+    exit 14
+fi
+echo "bootstrap ok: job_id=$JOB_ID"
 
 # ---------------------------------------------------------------- runner sync
 STAGE="runner-sync"
@@ -185,12 +225,11 @@ sudo shutdown -h +1 "actions-runner job complete" || shutdown -h +1 "actions-run
 `
 
 type userDataVars struct {
-	JobID         string
-	CallbackToken string
-	ServerURL     string
-	RunnerVersion string
-	RunnerUser    string
-	UserDataExtra string
+	ServerURL         string
+	RunnerVersion     string
+	RunnerUser        string
+	BootstrapAPIToken string
+	UserDataExtra     string
 }
 
 // shellEscape wraps a string in single quotes for safe shell embedding.
@@ -204,22 +243,27 @@ var userDataTmpl = template.Must(template.New("userdata").
 	Funcs(template.FuncMap{"sh": shellEscape}).
 	Parse(userDataScript))
 
-// renderUserData fills the user-data template for a specific job + pool.
-// serverURL is the orchestrator's public URL; runnerVersion
-// is the resolved actions/runner tag (pool pin or server-cached latest).
-// Empty runnerVersion is allowed -- the script will skip
-// the sync step and use whatever the AMI baked.
-// Empty pool.RunnerUser means run as root with RUNNER_ALLOW_RUNASROOT=1;
-// non-empty sudo-drops to that user before invoking ./run.sh.
-func renderUserData(j *job.Job, p *pool.Pool, callbackToken, serverURL, runnerVersion string) (string, error) {
+// renderUserData fills the static user-data template baked into the
+// launch template at materialize time.
+//
+// serverURL is the orchestrator's public URL. runnerVersion is the
+// resolved actions/runner tag (pool pin or server-cached latest at
+// the moment the LT was materialized); the script skips the runner
+// download when empty and uses whatever the AMI baked.
+// bootstrapAPIToken authenticates POST /api/runner/bootstrap -- it's
+// the operator-managed shared secret in the settings table.
+//
+// The per-job callback token + job id are NOT inputs here -- the
+// script fetches them via the bootstrap endpoint after IMDSv2 brings
+// up its own instance_id.
+func renderUserData(p *pool.Pool, serverURL, runnerVersion, bootstrapAPIToken string) (string, error) {
 	var buf bytes.Buffer
 	if err := userDataTmpl.Execute(&buf, userDataVars{
-		JobID:         j.ID,
-		CallbackToken: callbackToken,
-		ServerURL:     serverURL,
-		RunnerVersion: runnerVersion,
-		RunnerUser:    p.RunnerUser,
-		UserDataExtra: p.UserDataExtra,
+		ServerURL:         serverURL,
+		RunnerVersion:     runnerVersion,
+		RunnerUser:        p.RunnerUser,
+		BootstrapAPIToken: bootstrapAPIToken,
+		UserDataExtra:     p.UserDataExtra,
 	}); err != nil {
 		return "", fmt.Errorf("render user-data: %w", err)
 	}

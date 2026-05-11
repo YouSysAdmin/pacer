@@ -6,6 +6,7 @@ package runner
 
 import (
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -20,6 +21,7 @@ import (
 	"github.com/yousysadmin/pacer/internal/core/ghapp"
 	"github.com/yousysadmin/pacer/internal/core/response"
 	"github.com/yousysadmin/pacer/internal/core/validation"
+	jobstore "github.com/yousysadmin/pacer/internal/domain/job"
 	"github.com/yousysadmin/pacer/internal/domain/pool"
 	"github.com/yousysadmin/pacer/internal/models/audit"
 	"github.com/yousysadmin/pacer/internal/models/job"
@@ -30,6 +32,28 @@ type Handler struct {
 	Runtime *env.Runtime
 	GHApp   *ghapp.Client
 	HMACKey []byte
+}
+
+// bootstrapTTL caps how long after StampSpawn the runner can call
+// /api/runner/bootstrap. Generous enough to cover slow AMIs (boot +
+// cloud-init can stretch on first-launch of a fat image) but short
+// enough to limit the attack window on a leaked instance_id + bootstrap
+// API token combo.
+const bootstrapTTL = 15 * time.Minute
+
+// bootstrapInput is the body of POST /api/runner/bootstrap. The
+// instance_id is the EC2 instance ID the in-instance script reads
+// from IMDS; pacer matches it against jobs.instance_id (status=claimed,
+// claimed_at within TTL, bootstrap_token still set).
+//
+// instance_type and az are informational -- we record them on the
+// instance row at register time (with the same data via the
+// /api/runner/register input), so accepting them here is for parity
+// only.
+type bootstrapInput struct {
+	InstanceID   string `json:"instance_id"   validate:"required,min=1,max=32"`
+	InstanceType string `json:"instance_type" validate:"omitempty,max=64"`
+	AZ           string `json:"az"            validate:"omitempty,max=32"`
 }
 
 // registerInput is the runner self-registration body.
@@ -75,6 +99,82 @@ const (
 	failureLogMaxBytes   = 64 * 1024
 	errorRequestMaxBytes = 256 * 1024
 )
+
+// Bootstrap is POST /api/runner/bootstrap.
+//
+// Called by the in-instance user-data script BEFORE /api/runner/register.
+// Auth is `Authorization: Bearer <bootstrap_api_token>` where the
+// token is the operator-managed shared secret stored in the settings
+// table (auto-generated at first start, rotatable via Settings UI).
+// On success, returns the per-job HMAC callback token stashed at
+// spawn time + the job_id.
+//
+// Defense in depth:
+//   - Bearer token verified constant-time against Runtime.BootstrapAPIToken.
+//     Blocks all external attackers without the token.
+//   - jobs.instance_id must match a row in status=claimed.
+//   - claimed_at must be within bootstrapTTL of now (15 min).
+//   - bootstrap_token column must be non-NULL. Atomic read-and-clear
+//     makes this single-use: a concurrent second call lands on the
+//     post-clear NULL and returns 410.
+//
+// Failure modes -> HTTP status:
+//   - Missing / wrong bearer  -> 401
+//   - Body validation failure -> 400
+//   - No matching job row     -> 410 (already consumed, stale, or
+//                                     never existed -- runner has no
+//                                     viable recovery, just shut down)
+func (h *Handler) Bootstrap(c *fiber.Ctx) error {
+	if !h.checkBootstrapToken(c) {
+		return nil // 401 already written
+	}
+	in, err := validation.BindAndValidate[bootstrapInput](c)
+	if err != nil {
+		fes := validation.Humanize(err)
+		return response.BadRequestFields(c, validation.Summary(fes), fes)
+	}
+	token, jobID, err := h.Runtime.Store.Job.ConsumeBootstrap(c.UserContext(), in.InstanceID, bootstrapTTL, time.Now().UTC())
+	if err != nil {
+		if errors.Is(err, jobstore.ErrBootstrapUnavailable) {
+			slog.Info("runner.bootstrap: no eligible job row",
+				"instance_id", in.InstanceID, "client_ip", c.IP())
+			return c.Status(fiber.StatusGone).JSON(fiber.Map{"error": "bootstrap unavailable"})
+		}
+		return response.Internal(c, err)
+	}
+	slog.Info("runner.bootstrap: token issued", "job_id", jobID, "instance_id", in.InstanceID)
+	return response.Success(c, fiber.Map{
+		"callback_token": token,
+		"job_id":         jobID,
+	})
+}
+
+// checkBootstrapToken verifies the `Authorization: Bearer <token>`
+// header against Runtime.BootstrapAPIToken. Writes 401 + returns
+// false on any mismatch / missing header. The check is constant-time
+// to avoid revealing prefix-correct partial guesses via timing.
+func (h *Handler) checkBootstrapToken(c *fiber.Ctx) bool {
+	want, _ := h.Runtime.BootstrapAPIToken.Load().(string)
+	if want == "" {
+		// Server misconfigured -- no token loaded. Reject loudly
+		// rather than letting unauthenticated requests through.
+		slog.Error("runner.bootstrap: server has no bootstrap_api_token loaded")
+		_ = response.Unauthorized(c, "bootstrap not configured")
+		return false
+	}
+	hdr := c.Get("Authorization")
+	const prefix = "Bearer "
+	if !strings.HasPrefix(hdr, prefix) {
+		_ = response.Unauthorized(c, "missing bearer token")
+		return false
+	}
+	got := hdr[len(prefix):]
+	if subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
+		_ = response.Unauthorized(c, "invalid bearer token")
+		return false
+	}
+	return true
+}
 
 // Register is POST /api/runner/register.
 // Returns the JIT runner

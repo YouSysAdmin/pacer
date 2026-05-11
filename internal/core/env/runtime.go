@@ -6,6 +6,7 @@ package env
 
 import (
 	"log/slog"
+	"sync/atomic"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
@@ -33,4 +34,12 @@ type Runtime struct {
 	Pricing       *pricing.Fetcher   // nil when aws.disabled is true
 	RunnerVersion *ghrunner.Resolver // nil when github.disabled is true (no spawns)
 	OIDC          *pacoidc.Provider  // nil when auth.oidc.enabled is false
+	// BootstrapAPIToken is the secret the in-instance bootstrap script
+	// presents as `Authorization: Bearer <token>` when calling
+	// /api/runner/bootstrap. Loaded from the settings table at startup
+	// (auto-generated on first start) and refreshed in place when the
+	// operator rotates via the Settings UI. atomic.Value so the
+	// orchestrator + bootstrap-endpoint readers don't take a lock per
+	// request.
+	BootstrapAPIToken atomic.Value // string
 }

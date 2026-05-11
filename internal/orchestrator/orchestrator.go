@@ -6,15 +6,20 @@
 //
 // Spawn loop: every PollInterval, drain the queued-jobs queue. For
 // each claimed job: look up its pool (job.PoolID was stamped at
-// webhook time by the pool selector), render user-data with a fresh
-// HMAC-signed callback token, then call either CreateFleet (default,
-// "fleet" spawn method -- AWS picks an available type+AZ from every
-// override combo) or RunInstances (legacy serial fallback, "run_instances"
-// spawn method). Capacity-class failures (no capacity for any
-// type+AZ combo) are RESCHEDULED rather than failing the job: a
-// backoff is applied and the next tick after next_retry_at picks it
-// up. Permanent errors (bad AMI, missing IAM role) still mark the
-// job failed immediately.
+// webhook time by the pool selector), mint a fresh HMAC-signed
+// callback token (the per-job secret), then call either CreateFleet
+// (default, "fleet" spawn method -- AWS picks an available type+AZ
+// from every override combo) or RunInstances (legacy serial
+// fallback, "run_instances" spawn method) referencing the pool's
+// LT at $Default. The callback token rides as the gha:callback-token
+// instance tag (stamped at-launch for RunInstances, post-launch for
+// Fleet); the LT's baked user-data reads it via IMDS at boot. The
+// LT itself is never mutated by the orchestrator -- it only changes
+// when the operator saves the pool. Capacity-class failures (no
+// capacity for any type+AZ combo) are RESCHEDULED rather than
+// failing the job: a backoff is applied and the next tick after
+// next_retry_at picks it up. Permanent errors (bad AMI, missing IAM
+// role) still mark the job failed immediately.
 //
 // Reaper: every ReapInterval, sweep instances older than their
 // pool's max_runtime_minutes and TerminateInstances them.
@@ -26,7 +31,6 @@ package orchestrator
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -202,13 +206,19 @@ func retryBackoff(attempt int) time.Duration {
 
 // spawnContext bundles the per-spawn inputs the backend impls need.
 // Built once in spawn() and threaded into spawnFleet/spawnRunInstances.
+//
+// callbackToken is the raw HMAC token (`<job_id>.<exp>.<sig>`); the
+// orchestrator stamps it on the instance as the gha:callback-token
+// tag so the in-instance bootstrap script can read it via IMDS. Per
+// CLAUDE.md, raw tokens never hit disk -- only the sha256 hash lives
+// on the job row.
 type spawnContext struct {
-	job       *job.Job
-	pool      *pool.Pool
-	project   *projectInfo
-	repoTags  map[string]string
-	userData  string // base64-encoded
-	tokenHash string
+	job           *job.Job
+	pool          *pool.Pool
+	project       *projectInfo
+	repoTags      map[string]string
+	callbackToken string
+	tokenHash     string
 }
 
 type projectInfo struct {
@@ -266,26 +276,13 @@ func (o *Orchestrator) spawn(ctx context.Context, j *job.Job) (error, bool) {
 	ttl := time.Duration(maxMin)*time.Minute + callbackTokenGrace
 	token, hash := callback.Mint(j.ID, o.HMACKey, ttl)
 
-	// Resolve the actions/runner version: per-pool pin if set,
-	// otherwise the server's cached latest. Empty here means neither
-	// was available; user-data falls back to the AMI's baked binary.
-	runnerVersion := o.Runtime.RunnerVersion.Resolve(pl.RunnerVersion)
-	if runnerVersion == "" && pl.RunnerVersion == "" {
-		slog.Warn("orchestrator: no runner version resolved; user-data will use AMI default", "job_id", j.ID)
-	}
-
-	userData, err := renderUserData(j, pl, token, o.Runtime.Config.Server.PublicURL, runnerVersion)
-	if err != nil {
-		return err, false
-	}
-
 	sc := &spawnContext{
-		job:       j,
-		pool:      pl,
-		project:   &projectInfo{Name: proj.Name, Tags: proj.Tags},
-		repoTags:  repoTags,
-		userData:  base64.StdEncoding.EncodeToString([]byte(userData)),
-		tokenHash: hash,
+		job:           j,
+		pool:          pl,
+		project:       &projectInfo{Name: proj.Name, Tags: proj.Tags},
+		repoTags:      repoTags,
+		callbackToken: token,
+		tokenHash:     hash,
 	}
 
 	method := pl.SpawnMethod
@@ -348,7 +345,7 @@ func (o *Orchestrator) recordSpawn(ctx context.Context, sc *spawnContext, r *spa
 		return fmt.Errorf("instance store put: %w", err)
 	}
 
-	if err := o.Runtime.Store.Job.StampSpawn(ctx, sc.job.ID, r.InstanceID, sc.tokenHash); err != nil {
+	if err := o.Runtime.Store.Job.StampSpawn(ctx, sc.job.ID, r.InstanceID, sc.tokenHash, sc.callbackToken); err != nil {
 		// Without this stamp the runner can't authenticate against
 		// /api/runner/register; the spawn would burn a full max_runtime
 		// before the reaper noticed. Roll back: terminate the instance
@@ -486,9 +483,10 @@ func (o *Orchestrator) snapshotPrice(ctx context.Context, instanceType, az strin
 //
 // Note: with the Fleet path, instance/volume tags come from the LT
 // (project + pool + gha:{managed-by,project,pool}); per-job + repo
-// tags are added by spawnFleet via a post-launch CreateTags call.
-func buildTagSpecs(projectName string, projectTags map[string]string, p *pool.Pool, repoTags map[string]string, j *job.Job) []ec2types.TagSpecification {
-	tags := buildAllTags(projectName, projectTags, p, repoTags, j)
+// tags + the callback-token tag are added by spawnFleet via a
+// post-launch CreateTags call (see postLaunchTags).
+func buildTagSpecs(sc *spawnContext) []ec2types.TagSpecification {
+	tags := buildAllTags(sc)
 	return []ec2types.TagSpecification{
 		{ResourceType: ec2types.ResourceTypeInstance, Tags: tags},
 		{ResourceType: ec2types.ResourceTypeVolume, Tags: tags},
@@ -496,16 +494,19 @@ func buildTagSpecs(projectName string, projectTags map[string]string, p *pool.Po
 }
 
 // buildAllTags returns the merged tag set as a flat []ec2types.Tag.
-// Used by buildTagSpecs (RunInstances) and by spawnFleet's post-tag
-// CreateTags call.
-func buildAllTags(projectName string, projectTags map[string]string, p *pool.Pool, repoTags map[string]string, j *job.Job) []ec2types.Tag {
-	merged := ec2lt.MergeTags(projectTags, p.Tags, repoTags)
+// Used by buildTagSpecs (RunInstances) -- the full set is stamped
+// atomically at RunInstances time. Per-job state (the HMAC callback
+// token) does NOT travel here: the in-instance bootstrap script
+// fetches it from /api/runner/bootstrap using the global bootstrap
+// API token baked into user-data.
+func buildAllTags(sc *spawnContext) []ec2types.Tag {
+	merged := ec2lt.MergeTags(sc.project.Tags, sc.pool.Tags, sc.repoTags)
 	ghaTags := []ec2types.Tag{
 		{Key: aws.String(ec2lt.ManagedByTagKey), Value: aws.String(ec2lt.ManagedByTagValue)},
-		{Key: aws.String("gha:project"), Value: aws.String(projectName)},
-		{Key: aws.String("gha:pool"), Value: aws.String(p.Name)},
-		{Key: aws.String("gha:job_id"), Value: aws.String(j.ID)},
-		{Key: aws.String("gha:repo"), Value: aws.String(j.RepoFullName)},
+		{Key: aws.String("gha:project"), Value: aws.String(sc.project.Name)},
+		{Key: aws.String("gha:pool"), Value: aws.String(sc.pool.Name)},
+		{Key: aws.String("gha:job_id"), Value: aws.String(sc.job.ID)},
+		{Key: aws.String("gha:repo"), Value: aws.String(sc.job.RepoFullName)},
 	}
 	tags := make([]ec2types.Tag, 0, len(merged)+len(ghaTags))
 	for k, v := range merged {

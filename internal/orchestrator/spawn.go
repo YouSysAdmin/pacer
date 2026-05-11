@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -30,13 +29,12 @@ import (
 // Spot price never exceeds on-demand -- AWS guarantees this since
 // 2017, so we don't pass an explicit MaxPrice.
 //
-// Per-spawn user-data carries the per-job HMAC callback token, but
-// Fleet's API has no per-launch user-data override. We work around
-// this by creating a fresh LT version per spawn with the user-data
-// inherited-then-overridden from $Default, pointing Fleet at that
-// specific version, and deleting it after. AWS caps templates at
-// 10000 versions, well above any realistic burst; the cleanup keeps
-// the count bounded even on long-running deployments.
+// The LT carries static user-data baked at pool-save time; per-job
+// state (the HMAC callback token) is stamped on the instance via
+// post-launch CreateTags and read by the bootstrap script from IMDS.
+// This is why we reference Version=$Default rather than minting a
+// transient version per spawn -- the LT only mutates when the
+// operator saves the pool.
 //
 // Returns:
 //   - (result, false, nil)              success
@@ -52,20 +50,13 @@ func (o *Orchestrator) spawnFleet(ctx context.Context, sc *spawnContext) (*spawn
 	}
 	onDemandAlloc, spotAlloc := allocationStrategies(sc.pool.AllocationStrategy)
 
-	versionNum, err := o.createSpawnLTVersion(ctx, sc)
-	if err != nil {
-		return nil, false, err
-	}
-	versionStr := strconv.FormatInt(versionNum, 10)
-	defer o.deleteSpawnLTVersion(context.Background(), sc.pool.LaunchTemplateID, versionNum)
-
 	in := &ec2.CreateFleetInput{
 		Type: ec2types.FleetTypeInstant,
 		LaunchTemplateConfigs: []ec2types.FleetLaunchTemplateConfigRequest{
 			{
 				LaunchTemplateSpecification: &ec2types.FleetLaunchTemplateSpecificationRequest{
 					LaunchTemplateId: aws.String(sc.pool.LaunchTemplateID),
-					Version:          aws.String(versionStr),
+					Version:          aws.String("$Default"),
 				},
 				Overrides: overrides,
 			},
@@ -113,10 +104,25 @@ func (o *Orchestrator) spawnFleet(ctx context.Context, sc *spawnContext) (*spawn
 		// surface can't carry on its own. The instance came up with
 		// managed-by tag from the LT, so the IAM CreateTags Sid
 		// (gated on managed-by) admits this call. Retry once to ride
-		// over a transient rate limit before degrading observability.
+		// over a transient rate limit.
+		//
+		// Failure here is fatal: gha-callback-token is in this batch
+		// and the bootstrap script can't authenticate to
+		// /api/runner/register without it. Without the tag the
+		// instance polls IMDS for 2 min, exits, terminates -- and
+		// the job sits in claimed until the reaper fires. Better to
+		// terminate immediately and fail the spawn so the operator
+		// sees a real error.
 		if err := o.postTagInstanceRetry(ctx, sc, instID); err != nil {
-			slog.Warn("orchestrator: post-launch tagging failed after retry (cost attribution may be incomplete)",
+			slog.Error("orchestrator: post-launch tagging failed; terminating to avoid stranded runner",
 				"instance_id", instID, "err", err)
+			if _, terr := o.Runtime.EC2.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
+				InstanceIds: []string{instID},
+			}); terr != nil {
+				slog.Error("orchestrator: terminate after tagging failure also failed; clean up via EC2 console",
+					"instance_id", instID, "err", terr)
+			}
+			return nil, false, fmt.Errorf("post-launch tagging (instance %s terminated): %w", instID, err)
 		}
 		return &spawnResult{InstanceID: instID, InstanceType: instType, AZ: az}, false, nil
 	}
@@ -143,40 +149,6 @@ func (o *Orchestrator) spawnFleet(ctx context.Context, sc *spawnContext) (*spawn
 		return nil, true, summary
 	}
 	return nil, false, summary
-}
-
-// createSpawnLTVersion mints a one-shot LT version that inherits the
-// pool's $Default shape and overlays the per-spawn user-data. Fleet
-// picks this exact version; the deferred deleteSpawnLTVersion cleans
-// it up after the spawn completes.
-func (o *Orchestrator) createSpawnLTVersion(ctx context.Context, sc *spawnContext) (int64, error) {
-	out, err := o.Runtime.EC2.CreateLaunchTemplateVersion(ctx, &ec2.CreateLaunchTemplateVersionInput{
-		LaunchTemplateId: aws.String(sc.pool.LaunchTemplateID),
-		SourceVersion:    aws.String("$Default"),
-		LaunchTemplateData: &ec2types.RequestLaunchTemplateData{
-			UserData: aws.String(sc.userData),
-		},
-		VersionDescription: aws.String("pacer per-spawn user-data (transient; deleted after fleet completes)"),
-	})
-	if err != nil {
-		return 0, fmt.Errorf("create launch template version: %w", err)
-	}
-	return aws.ToInt64(out.LaunchTemplateVersion.VersionNumber), nil
-}
-
-// deleteSpawnLTVersion is best-effort -- a stale leftover doesn't
-// impact spawns (the next CreateLaunchTemplateVersion just gets the
-// next number) but the 10000-version cap means we should clean up.
-// Errors are logged, not returned.
-func (o *Orchestrator) deleteSpawnLTVersion(ctx context.Context, ltID string, version int64) {
-	_, err := o.Runtime.EC2.DeleteLaunchTemplateVersions(ctx, &ec2.DeleteLaunchTemplateVersionsInput{
-		LaunchTemplateId: aws.String(ltID),
-		Versions:         []string{strconv.FormatInt(version, 10)},
-	})
-	if err != nil {
-		slog.Warn("orchestrator: delete transient LT version failed (will accumulate; clean via console if needed)",
-			"lt_id", ltID, "version", version, "err", err)
-	}
 }
 
 func defaultCapacityType(spot bool) ec2types.DefaultTargetCapacityType {
@@ -229,10 +201,15 @@ func allocationStrategies(strategy string) (ec2types.FleetOnDemandAllocationStra
 }
 
 // postTagInstance applies per-spawn tags Fleet can't include in the
-// CreateFleet call: gha:job_id, gha:repo, plus the repo user tags.
-// The instance already carries managed-by + project + pool tags from
-// the LT, so the IAM CreateTags Sid (gated on managed-by) admits
-// this call.
+// CreateFleet call: gha:job_id, gha:repo, gha:callback-token, plus
+// the repo user tags. The instance already carries managed-by +
+// project + pool tags from the LT, so the IAM CreateTags Sid (gated
+// on managed-by) admits this call.
+//
+// gha:callback-token is load-bearing: the in-instance bootstrap
+// script polls IMDS for this tag and uses the value as the HMAC
+// auth on /api/runner/{register,error,complete}. The script polls
+// up to 2 minutes, so post-launch tagging racing cloud-init is fine.
 func (o *Orchestrator) postTagInstance(ctx context.Context, sc *spawnContext, instID string) error {
 	tags := postLaunchTags(sc)
 	if len(tags) == 0 {
@@ -278,8 +255,14 @@ func postLaunchTags(sc *spawnContext) []ec2types.Tag {
 // pool.InstanceTypes against pool.SubnetIDs[0]. Kept for operators
 // who specifically want it. No multi-AZ -- if SubnetIDs[0]'s AZ is
 // dry, we never try the rest. Same return contract as spawnFleet.
+//
+// User-data is baked into the LT at materialize time, not passed
+// per-call, so the LT version this references stays consecutive
+// across spawns (same invariant as the Fleet path). gha:callback-token
+// is included in the launch-time TagSpecifications, so RunInstances
+// spawns see the tag before cloud-init starts -- no polling race.
 func (o *Orchestrator) spawnRunInstances(ctx context.Context, sc *spawnContext) (*spawnResult, bool, error) {
-	tagSpec := buildTagSpecs(sc.project.Name, sc.project.Tags, sc.pool, sc.repoTags, sc.job)
+	tagSpec := buildTagSpecs(sc)
 
 	var (
 		runOut   *ec2.RunInstancesOutput
@@ -296,7 +279,6 @@ func (o *Orchestrator) spawnRunInstances(ctx context.Context, sc *spawnContext) 
 			SubnetId:          aws.String(sc.pool.SubnetIDs[0]),
 			MinCount:          aws.Int32(1),
 			MaxCount:          aws.Int32(1),
-			UserData:          aws.String(sc.userData),
 			TagSpecifications: tagSpec,
 		})
 		if runErr == nil && runOut != nil && len(runOut.Instances) > 0 {

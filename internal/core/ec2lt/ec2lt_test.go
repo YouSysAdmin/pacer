@@ -5,8 +5,51 @@
 package ec2lt
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/yousysadmin/pacer/internal/models/pool"
 )
+
+func TestRenderUserData(t *testing.T) {
+	p := &pool.Pool{
+		RunnerUser:    "runner",
+		UserDataExtra: "echo tail",
+	}
+	got, err := renderUserData(p, "https://pacer.example", "2.319.1", "deadbeef")
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	// Per-job state must NOT be templated into the script -- the
+	// runner fetches it via /api/runner/bootstrap at boot.
+	// Regressions here would reintroduce per-spawn LT-version churn.
+	for _, forbidden := range []string{
+		"{{.JobID",
+		"{{.CallbackToken",
+		"JOB_ID='",           // shellEscape of an injected JobID
+		"CALLBACK_TOKEN='",   // shellEscape of an injected token
+		"/meta-data/tags/instance/gha-callback-token", // dropped IMDS-tag path
+		"/meta-data/tags/instance/gha:callback-token",
+	} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("rendered user-data must not contain %q", forbidden)
+		}
+	}
+	for _, want := range []string{
+		"SERVER_URL='https://pacer.example'",
+		"RUNNER_VERSION='2.319.1'",
+		"RUNNER_USER='runner'",
+		"BOOTSTRAP_API_TOKEN='deadbeef'",
+		"/api/runner/bootstrap",
+		"Authorization: Bearer $BOOTSTRAP_API_TOKEN",
+		"/api/runner/register",
+		"echo tail",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("rendered user-data missing %q\n---\n%s", want, got)
+		}
+	}
+}
 
 func TestMergeTags(t *testing.T) {
 	t.Run("empty input returns empty map", func(t *testing.T) {

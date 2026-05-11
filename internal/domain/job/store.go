@@ -31,6 +31,12 @@ var errNotImpl = errors.New("job.Store: not implemented yet")
 // roll-back signal: the orchestrator unwinds an in-flight spawn.
 var ErrJobMissing = errors.New("job: row missing")
 
+// ErrBootstrapUnavailable is returned by ConsumeBootstrap when no
+// valid job row matches the requested instance_id (missing,
+// already-consumed, stale, or no longer in claimed state). Handler
+// surfaces this as 410 Gone so the runner doesn't retry.
+var ErrBootstrapUnavailable = errors.New("job: bootstrap unavailable")
+
 func (s *Store) Put(ctx context.Context, j *jobmodel.Job) error {
 	if j.QueuedAt.IsZero() {
 		j.QueuedAt = time.Now().UTC()
@@ -119,10 +125,10 @@ func (s *Store) Claim(ctx context.Context, now time.Time) (*jobmodel.Job, error)
 	return s.Get(ctx, id)
 }
 
-func (s *Store) StampSpawn(ctx context.Context, id, instanceID, callbackTokenHash string) error {
+func (s *Store) StampSpawn(ctx context.Context, id, instanceID, callbackTokenHash, bootstrapToken string) error {
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE jobs SET instance_id = ?, callback_token_hash = ? WHERE id = ?`,
-		instanceID, callbackTokenHash, id)
+		`UPDATE jobs SET instance_id = ?, callback_token_hash = ?, bootstrap_token = ? WHERE id = ?`,
+		instanceID, callbackTokenHash, bootstrapToken, id)
 	if err != nil {
 		return err
 	}
@@ -134,6 +140,59 @@ func (s *Store) StampSpawn(ctx context.Context, id, instanceID, callbackTokenHas
 		return ErrJobMissing
 	}
 	return nil
+}
+
+// ConsumeBootstrap atomically reads-and-clears the bootstrap_token for
+// the job stamped with this instance_id. Returns the raw callback
+// token (the value the orchestrator stashed at spawn) or
+// ErrBootstrapUnavailable when:
+//
+//   - no job exists with this instance_id, OR
+//   - the job is no longer in status 'claimed' (already registered,
+//     failed, or reaped), OR
+//   - claimed_at is older than ttl (stale spawn), OR
+//   - bootstrap_token is NULL (already consumed -- single-use).
+//
+// Single-use is enforced by the UPDATE clearing bootstrap_token; a
+// concurrent second call will find NULL and return ErrBootstrapUnavailable.
+func (s *Store) ConsumeBootstrap(ctx context.Context, instanceID string, ttl time.Duration, now time.Time) (token, jobID string, err error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", "", err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	cutoff := now.Add(-ttl)
+	row := tx.QueryRowContext(ctx, `
+        SELECT id, bootstrap_token
+        FROM jobs
+        WHERE instance_id = ?
+          AND status = 'claimed'
+          AND bootstrap_token IS NOT NULL
+          AND claimed_at IS NOT NULL
+          AND claimed_at >= ?
+    `, instanceID, cutoff)
+	var (
+		id   string
+		btok sql.NullString
+	)
+	if err := row.Scan(&id, &btok); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", "", ErrBootstrapUnavailable
+		}
+		return "", "", err
+	}
+	if !btok.Valid || btok.String == "" {
+		return "", "", ErrBootstrapUnavailable
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE jobs SET bootstrap_token = NULL WHERE id = ?`, id); err != nil {
+		return "", "", err
+	}
+	if err := tx.Commit(); err != nil {
+		return "", "", err
+	}
+	return btok.String, id, nil
 }
 
 func (s *Store) MarkRunning(ctx context.Context, id, instanceID string, now time.Time) error {
@@ -332,7 +391,7 @@ SELECT id, gh_job_id, gh_run_id, installation_id, repo_full_name,
        project_id, pool_id, status, instance_id, callback_token_hash,
        queued_at, claimed_at, started_at, completed_at,
        failure_stage, failure_message, failure_log, estimated_cost_usd,
-       attempts, next_retry_at, sender_login, payload
+       attempts, next_retry_at, sender_login, payload, bootstrap_token
 FROM jobs`
 
 func (s *Store) scanOne(ctx context.Context, where string, args ...any) (*jobmodel.Job, error) {
@@ -346,7 +405,7 @@ func (s *Store) scanOne(ctx context.Context, where string, args ...any) (*jobmod
 
 func scanJobRow(r interface{ Scan(...any) error }) (*jobmodel.Job, error) {
 	var j jobmodel.Job
-	var poolID, instID, callbackHash, failStage, failMsg, failLog sql.NullString
+	var poolID, instID, callbackHash, failStage, failMsg, failLog, bootstrapTok sql.NullString
 	var claimedAt, startedAt, completedAt, nextRetryAt sql.NullTime
 	var costUSD sql.NullFloat64
 	var status, senderLogin, payload string
@@ -355,9 +414,10 @@ func scanJobRow(r interface{ Scan(...any) error }) (*jobmodel.Job, error) {
 		&status, &instID, &callbackHash,
 		&j.QueuedAt, &claimedAt, &startedAt, &completedAt,
 		&failStage, &failMsg, &failLog, &costUSD,
-		&j.Attempts, &nextRetryAt, &senderLogin, &payload); err != nil {
+		&j.Attempts, &nextRetryAt, &senderLogin, &payload, &bootstrapTok); err != nil {
 		return nil, err
 	}
+	_ = bootstrapTok // raw token is read-and-cleared via ConsumeBootstrap; not surfaced on the model
 	j.SenderLogin = senderLogin
 	j.PoolID = poolID.String
 	j.Status = jobmodel.Status(status)

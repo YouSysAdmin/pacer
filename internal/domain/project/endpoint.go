@@ -192,7 +192,13 @@ func (h *Handler) rematerializePools(ctx context.Context, p *projectmodel.Projec
 }
 
 func (h *Handler) rematerializeOne(ctx context.Context, pl *poolmodel.Pool, p *projectmodel.Project) error {
-	if err := ec2lt.CreateOrUpdate(ctx, h.Runtime.EC2, h.Runtime.IAM, pl, p.Name, p.Tags); err != nil {
+	runnerVersion := pl.RunnerVersion
+	if h.Runtime.RunnerVersion != nil {
+		runnerVersion = h.Runtime.RunnerVersion.Resolve(pl.RunnerVersion)
+	}
+	bootstrapToken, _ := h.Runtime.BootstrapAPIToken.Load().(string)
+	if err := ec2lt.CreateOrUpdate(ctx, h.Runtime.EC2, h.Runtime.IAM, pl, p.Name, p.Tags,
+		h.Runtime.Config.Server.PublicURL, runnerVersion, bootstrapToken); err != nil {
 		return fmt.Errorf("ec2lt: %w", err)
 	}
 	if err := h.Runtime.Store.Pool.Put(ctx, pl); err != nil {

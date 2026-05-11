@@ -20,6 +20,7 @@ import (
 	"github.com/yousysadmin/pacer/internal/models/pool"
 	"github.com/yousysadmin/pacer/internal/models/project"
 	"github.com/yousysadmin/pacer/internal/models/repo"
+	settingsmodel "github.com/yousysadmin/pacer/internal/models/settings"
 	"github.com/yousysadmin/pacer/internal/models/stats"
 	"github.com/yousysadmin/pacer/internal/models/user"
 )
@@ -36,6 +37,7 @@ type Store struct {
 	Audit    AuditStore
 	Stats    StatsStore
 	Webhook  WebhookStore
+	Settings SettingsStore
 }
 
 type UserStore interface {
@@ -102,9 +104,17 @@ type JobStore interface {
 	// Returns (nil, nil) when no eligible job is available - caller
 	// backs off + polls.
 	Claim(ctx context.Context, now time.Time) (*job.Job, error)
-	// StampSpawn records the spawned EC2 instance ID + the sha256
-	// hash of the runner self-registration callback token.
-	StampSpawn(ctx context.Context, id, instanceID, callbackTokenHash string) error
+	// StampSpawn records the spawned EC2 instance ID, the sha256
+	// hash of the runner self-registration callback token, and the
+	// raw token cached for the bootstrap endpoint to return.
+	// ConsumeBootstrap clears the raw column on first read so the
+	// secret has at most single-use exposure.
+	StampSpawn(ctx context.Context, id, instanceID, callbackTokenHash, bootstrapToken string) error
+	// ConsumeBootstrap atomically reads-and-clears the cached
+	// bootstrap token for the job stamped with this instance_id.
+	// Returns ErrBootstrapUnavailable when no valid row matches
+	// (already consumed, stale, missing, or not in claimed state).
+	ConsumeBootstrap(ctx context.Context, instanceID string, ttl time.Duration, now time.Time) (token, jobID string, err error)
 	// UpdatePayload overwrites jobs.payload with a newer webhook body.
 	// Used so the in_progress / completed workflow_job payloads -- which
 	// carry the populated steps[] array -- replace the queued-action
@@ -188,4 +198,13 @@ type StatsStore interface {
 // table doesn't grow without bound.
 type WebhookStore interface {
 	DeleteOlderThan(ctx context.Context, cutoff time.Time) (int, error)
+}
+
+// SettingsStore is the generic key-value store for pacer-managed
+// config that needs to live outside YAML (auto-generated secrets,
+// UI-rotatable values). Today: just the bootstrap API token. The
+// store is intentionally minimal -- callers interpret the value.
+type SettingsStore interface {
+	Get(ctx context.Context, key string) (*settingsmodel.Setting, error)
+	Put(ctx context.Context, key, value string) error
 }

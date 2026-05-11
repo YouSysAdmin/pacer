@@ -314,7 +314,33 @@ func (h *Handler) materializeLT(ctx context.Context, p *poolmodel.Pool, projectN
 		}
 		return nil
 	}
-	return ec2lt.CreateOrUpdate(ctx, h.Runtime.EC2, h.Runtime.IAM, p, projectName, projectTags)
+	return ec2lt.CreateOrUpdate(ctx, h.Runtime.EC2, h.Runtime.IAM, p, projectName, projectTags,
+		h.Runtime.Config.Server.PublicURL, h.resolveRunnerVersion(p), h.bootstrapAPIToken())
+}
+
+// bootstrapAPIToken returns the current value from Runtime's atomic
+// cache. The cache is loaded at startup and replaced on rotation, so
+// pool save always bakes the latest token.
+func (h *Handler) bootstrapAPIToken() string {
+	v := h.Runtime.BootstrapAPIToken.Load()
+	if v == nil {
+		return ""
+	}
+	return v.(string)
+}
+
+// resolveRunnerVersion returns the actions/runner tag to bake into
+// the LT's user-data. Per-pool pin wins; otherwise the server's
+// cached latest; otherwise empty (the script falls back to whatever
+// the AMI baked).
+//
+// Resolved at LT-materialize time, frozen in the LT until the next
+// pool save. To pick up an upstream runner release, re-save the pool.
+func (h *Handler) resolveRunnerVersion(p *poolmodel.Pool) string {
+	if h.Runtime.RunnerVersion == nil {
+		return p.RunnerVersion
+	}
+	return h.Runtime.RunnerVersion.Resolve(p.RunnerVersion)
 }
 
 // ensureSingleDefault clears the is_default flag from any other pool

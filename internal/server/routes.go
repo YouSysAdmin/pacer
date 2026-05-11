@@ -24,6 +24,7 @@ import (
 	"github.com/yousysadmin/pacer/internal/domain/project"
 	"github.com/yousysadmin/pacer/internal/domain/repo"
 	"github.com/yousysadmin/pacer/internal/domain/runner"
+	"github.com/yousysadmin/pacer/internal/domain/settings"
 	"github.com/yousysadmin/pacer/internal/domain/stats"
 	"github.com/yousysadmin/pacer/internal/domain/webhook"
 )
@@ -87,6 +88,12 @@ func registerRoutes(app *fiber.App, rt *env.Runtime) {
 			GHApp:   rt.GHApp,
 			HMACKey: []byte(rt.Config.GitHub.CallbackHMACSecret),
 		}
+		// /runner/bootstrap is authenticated by the global bootstrap
+		// API token (Authorization: Bearer ...) rather than per-job
+		// HMAC, since the in-instance script doesn't yet have its
+		// per-job callback token at this point -- that's what
+		// bootstrap returns.
+		api.Post("/runner/bootstrap", rnH.Bootstrap)
 		api.Post("/runner/register", rnH.Register)
 		api.Post("/runner/complete", rnH.Complete)
 		api.Post("/runner/error", rnH.Error)
@@ -159,6 +166,14 @@ func registerRoutes(app *fiber.App, rt *env.Runtime) {
 	apiAuth.Get("/backup/export", bh.Export)
 	apiAuth.Post("/backup/import", bh.Import)
 
+	// Settings - operator-managed DB-backed config. Today: just the
+	// bootstrap API token (status read + rotate). Rotation also
+	// re-materializes every pool's LT so the new token lands in
+	// user-data without a manual pool-save click-fest.
+	seH := &settings.Handler{Runtime: rt}
+	apiAuth.Get("/settings/bootstrap-token", seH.GetBootstrapToken)
+	apiAuth.Post("/settings/bootstrap-token/rotate", seH.RotateBootstrapToken)
+
 	// SPA (embedded prerendered Svelte build).
 	// Register LAST so
 	// /api/* and /healthz match before this catch-all.
@@ -197,6 +212,7 @@ var spaRoutePrefixes = []string{
 	"/audit",
 	"/backup",
 	"/login",
+	"/settings",
 }
 
 // spaAllowlist gates the embedded filesystem middleware: only requests

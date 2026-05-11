@@ -41,8 +41,7 @@
       "Action": [
         "ec2:CreateLaunchTemplateVersion",
         "ec2:ModifyLaunchTemplate",
-        "ec2:DeleteLaunchTemplate",
-        "ec2:DeleteLaunchTemplateVersions"
+        "ec2:DeleteLaunchTemplate"
       ],
       "Resource": "arn:aws:ec2:REPLACE_AWS_REGION:*:launch-template/*",
       "Condition": {
