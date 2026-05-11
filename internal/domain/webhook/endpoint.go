@@ -319,7 +319,11 @@ func (h *Handler) markCompleted(ctx context.Context, c *fiber.Ctx, p *workflowJo
 	}
 	now := time.Now().UTC()
 	switch p.WorkflowJob.Conclusion {
-	case "failure", "cancelled", "timed_out":
+	case "cancelled":
+		if err := h.Runtime.Store.Job.MarkCancelled(ctx, j.ID, "github", "conclusion=cancelled", now); err != nil {
+			return response.Internal(c, err)
+		}
+	case "failure", "timed_out":
 		if err := h.Runtime.Store.Job.MarkFailed(ctx, j.ID, "github", "conclusion="+p.WorkflowJob.Conclusion, now); err != nil {
 			return response.Internal(c, err)
 		}

@@ -17,6 +17,7 @@ const (
 	StatusRunning   Status = "running"   // GitHub reports the job in_progress
 	StatusCompleted Status = "completed" // workflow_job.completed received
 	StatusFailed    Status = "failed"    // RunInstances failed, callback failed, or reap before run
+	StatusCancelled Status = "cancelled" // workflow_job.completed with conclusion=cancelled (user-initiated)
 	StatusReaped    Status = "reaped"    // sweeper terminated a stuck instance after timeout
 )
 
@@ -80,5 +81,6 @@ type DayBucket struct {
 	Day       string `json:"day"`
 	Completed int64  `json:"completed"`
 	Failed    int64  `json:"failed"`
+	Cancelled int64  `json:"cancelled"`
 	Reaped    int64  `json:"reaped"`
 }

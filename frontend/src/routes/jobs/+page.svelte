@@ -16,6 +16,7 @@
     "running",
     "completed",
     "failed",
+    "cancelled",
     "reaped",
   ];
 
@@ -39,6 +40,7 @@
     if (s === "running") return "info";
     if (s === "completed") return "ok";
     if (s === "failed" || s === "reaped") return "crit";
+    if (s === "cancelled") return "warn";
     if (s === "queued" || s === "claimed" || s === "starting") return "warn";
     return "";
   }

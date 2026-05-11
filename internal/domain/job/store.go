@@ -210,6 +210,22 @@ func (s *Store) MarkFailed(ctx context.Context, id, stage, message string, now t
 	return err
 }
 
+// MarkCancelled is the user-initiated-cancellation variant: GitHub
+// reports workflow_job.completed with conclusion=cancelled when the
+// user aborts a run from the UI / API. Lifecycle-wise identical to
+// MarkFailed (terminal state, cost rollup runs) -- the separate
+// status lets the UI distinguish "the job blew up" from "the user
+// cancelled it" without parsing failure_message.
+func (s *Store) MarkCancelled(ctx context.Context, id, stage, message string, now time.Time) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE jobs SET status = 'cancelled', failure_stage = ?, failure_message = ?,
+		    completed_at = ?,
+		    estimated_cost_usd = `+costSubquery+`
+		 WHERE id = ?`,
+		stage, message, now, now, id)
+	return err
+}
+
 // MarkFailedWithLog is the runner-bootstrap-error variant: the
 // spawned instance posts the captured stdout/stderr to
 // /api/runner/error and the handler routes here so the operator can
@@ -419,9 +435,10 @@ func (s *Store) StatusTimeseries(ctx context.Context, from, to time.Time) ([]job
         SELECT substr(j.completed_at, 1, 10)                           AS day,
                SUM(CASE WHEN j.status = 'completed' THEN 1 ELSE 0 END) AS completed,
                SUM(CASE WHEN j.status = 'failed'    THEN 1 ELSE 0 END) AS failed,
+               SUM(CASE WHEN j.status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
                SUM(CASE WHEN j.status = 'reaped'    THEN 1 ELSE 0 END) AS reaped
         FROM jobs j
-        WHERE j.status IN ('completed','failed','reaped')
+        WHERE j.status IN ('completed','failed','cancelled','reaped')
           AND j.completed_at IS NOT NULL
           AND j.completed_at >= ?
           AND j.completed_at <  ?
@@ -436,7 +453,7 @@ func (s *Store) StatusTimeseries(ctx context.Context, from, to time.Time) ([]job
 	var out []jobmodel.DayBucket
 	for rows.Next() {
 		var b jobmodel.DayBucket
-		if err := rows.Scan(&b.Day, &b.Completed, &b.Failed, &b.Reaped); err != nil {
+		if err := rows.Scan(&b.Day, &b.Completed, &b.Failed, &b.Cancelled, &b.Reaped); err != nil {
 			return nil, err
 		}
 		out = append(out, b)

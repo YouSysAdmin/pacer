@@ -55,7 +55,7 @@ func (s *Store) Rollup(ctx context.Context, by statsmodel.GroupBy, from, to time
         FROM jobs j
         LEFT JOIN instances i ON i.id = j.instance_id
         %s
-        WHERE j.status IN ('completed','failed','reaped')
+        WHERE j.status IN ('completed','failed','cancelled','reaped')
           AND j.completed_at IS NOT NULL
           AND j.completed_at >= ?
           AND j.completed_at <  ?
@@ -131,7 +131,7 @@ func (s *Store) TopUsers(ctx context.Context, from, to time.Time, limit int) ([]
         FROM jobs j
         LEFT JOIN instances i ON i.id = j.instance_id
         WHERE j.sender_login != ''
-          AND j.status IN ('completed','failed','reaped')
+          AND j.status IN ('completed','failed','cancelled','reaped')
           AND j.completed_at IS NOT NULL
           AND j.completed_at >= ?
           AND j.completed_at <  ?

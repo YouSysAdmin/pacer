@@ -124,6 +124,11 @@ type JobStore interface {
 	// the captured user-data log so operators can see what blew up
 	// before the runner ever registered.
 	MarkFailedWithLog(ctx context.Context, id, stage, message, log string, now time.Time) error
+	// MarkCancelled is the user-initiated-cancellation variant of
+	// MarkFailed. GitHub reports conclusion=cancelled when the user
+	// aborts a run; the distinct status lets the UI separate "broke"
+	// from "user cancelled" without text parsing.
+	MarkCancelled(ctx context.Context, id, stage, message string, now time.Time) error
 	MarkReaped(ctx context.Context, id string, now time.Time) error
 	// Reschedule sends a job back to 'queued' with a backoff and bumped
 	// attempts counter. Used when capacity-class spawn failures should

@@ -41,7 +41,7 @@
   const seriesMax = $derived(
     Math.max(
       1,
-      ...series.map((d) => d.completed + d.failed + d.reaped),
+      ...series.map((d) => d.completed + d.failed + d.cancelled + d.reaped),
     ),
   );
 
@@ -84,7 +84,7 @@
         queued: byStatus("queued") + byStatus("claimed") + byStatus("starting"),
         running: byStatus("running"),
         completed: byStatus("completed"),
-        failed: byStatus("failed") + byStatus("reaped"),
+        failed: byStatus("failed") + byStatus("cancelled") + byStatus("reaped"),
       };
     } catch (e) {
       liveError = e.message;
@@ -168,9 +168,9 @@
         {:else}
           <div class="bar-chart" aria-label="Daily completed and failed jobs">
             {#each series as d (d.day)}
-              {@const total = d.completed + d.failed + d.reaped}
-              {@const failTotal = d.failed + d.reaped}
-              <div class="bar-col" title="{d.day}: {d.completed} ok, {failTotal} failed">
+              {@const total = d.completed + d.failed + d.cancelled + d.reaped}
+              {@const failTotal = d.failed + d.cancelled + d.reaped}
+              <div class="bar-col" title="{d.day}: {d.completed} ok, {failTotal} failed/cancelled">
                 <div class="bar" style="height: {(total / seriesMax) * 100}%">
                   {#if failTotal > 0}
                     <div class="bar-fail" style="height: {(failTotal / total) * 100}%"></div>
