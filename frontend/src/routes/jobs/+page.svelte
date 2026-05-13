@@ -5,7 +5,7 @@
 -->
 
 <script>
-  import { jobs } from "$lib/api.js";
+  import { jobs, systemHealth } from "$lib/api.js";
   import Modal from "$lib/Modal.svelte";
 
   const STATUSES = [
@@ -24,6 +24,10 @@
   let loading = $state(false);
   let error = $state(null);
   let filter = $state("");
+  // Reconcile-now state: separate from `loading` so the table can
+  // keep its own refresh affordance independent of the reaper sweep.
+  let reconciling = $state(false);
+  let reconcileMsg = $state(null);
 
   // Detail modal state. `detailOpen` drives the Modal's bind:open.
   // `detail` is the bundle returned by GET /api/jobs/:id (job +
@@ -85,11 +89,67 @@
     return `${h}h ${m % 60}m`;
   }
 
+  // Heartbeat staleness classifier for instances. The reaper stamps
+  // last_seen_at every ~60s for every alive instance; a row whose
+  // last_seen_at is older than that means the reaper isn't visiting
+  // it (panic, IAM revoke, region mismatch, etc).
+  //
+  //   < 90s   -> ok   ("the reaper just touched this")
+  //   < 180s  -> warn ("one tick missed, could be transient")
+  //   >= 180s -> crit ("multiple ticks missed -- something is wrong")
+  //
+  // Only meaningful for in-flight states (starting/running).
+  // Terminated rows freeze last_seen_at at termination time, which
+  // would always trip the crit class -- skip the colorization for
+  // those (state itself already tells the operator it's done).
+  function heartbeat(instance) {
+    if (!instance || !instance.last_seen_at) {
+      return { text: "never", cls: "crit" };
+    }
+    const inFlight =
+      instance.state === "starting" || instance.state === "running";
+    const ageMs = Date.now() - new Date(instance.last_seen_at).getTime();
+    const ageStr = age(instance.last_seen_at, null) + " ago";
+    if (!inFlight) return { text: ageStr, cls: "" };
+    if (ageMs < 90_000)  return { text: ageStr, cls: "ok" };
+    if (ageMs < 180_000) return { text: ageStr, cls: "warn" };
+    return { text: ageStr, cls: "crit" };
+  }
+
   function cost(usd) {
     if (usd == null) return "";
     if (usd === 0) return "$0.00";
     if (Math.abs(usd) < 0.01) return "$" + usd.toFixed(4);
     return "$" + usd.toFixed(2);
+  }
+
+  // Force an immediate reaper sweep server-side. Useful right after
+  // an operator terminates an instance in the AWS console -- the
+  // next scheduled tick is up to 60s away, this collapses that to
+  // ~one round trip. On success, refresh the list so any newly-
+  // marked-failed rows show up immediately.
+  async function reconcile() {
+    reconciling = true;
+    reconcileMsg = null;
+    error = null;
+    try {
+      const r = await systemHealth.reconcile();
+      const checked = r?.checked ?? 0;
+      if (r?.issue) {
+        // Tick ran but checkEC2Health or the panic-recover path
+        // wrote Health. Surface that here in addition to the banner
+        // so the operator who just clicked the button sees the
+        // verdict immediately.
+        reconcileMsg = `reaper sweep returned an issue: ${r.issue.message}`;
+      } else {
+        reconcileMsg = `reaper swept ${checked} instance${checked === 1 ? "" : "s"}.`;
+      }
+      await refresh();
+    } catch (e) {
+      error = e.message;
+    } finally {
+      reconciling = false;
+    }
   }
 
   async function refresh() {
@@ -208,10 +268,17 @@
         {/each}
       </select>
       <button class="btn" onclick={refresh} disabled={loading}>refresh</button>
+      <button
+        class="btn"
+        onclick={reconcile}
+        disabled={reconciling}
+        title="Force an immediate reaper sweep instead of waiting for the next 60s tick. Useful right after terminating an instance from the AWS console."
+      >{reconciling ? "reconciling..." : "reconcile now"}</button>
     </div>
   </div>
 
   {#if error}<div class="banner err">{error}</div>{/if}
+  {#if reconcileMsg}<div class="banner ok">{reconcileMsg}</div>{/if}
 
   {#if list.length === 0}
     <div class="empty">
@@ -367,6 +434,17 @@
           <tr><th>Market</th><td class="mono">{i.spot ? "spot" : "on-demand"}{i.price_model ? ` (${i.price_model})` : ""}</td></tr>
           <tr><th>Price/hour</th><td class="mono">{i.price_per_hour != null ? "$" + i.price_per_hour.toFixed(4) : "—"}</td></tr>
           <tr><th>State</th><td class="mono">{i.state}</td></tr>
+          <tr>
+            <th>Last seen</th>
+            <td class="mono">
+              {#if i.last_seen_at}
+                {@const hb = heartbeat(i)}
+                <span class="tag {hb.cls}" title={fmt(i.last_seen_at) + " UTC"}>{hb.text}</span>
+              {:else}
+                <span class="muted">never</span>
+              {/if}
+            </td>
+          </tr>
           <tr><th>Launched</th><td class="mono">{fmt(i.launched_at)}</td></tr>
           {#if i.terminated_at}
             <tr><th>Terminated</th><td class="mono">{fmt(i.terminated_at)}</td></tr>

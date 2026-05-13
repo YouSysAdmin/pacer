@@ -165,6 +165,11 @@ type InstanceStore interface {
 	Get(ctx context.Context, id string) (*instance.Instance, error)
 	UpdateState(ctx context.Context, id string, state instance.State, now time.Time) error
 	StampRegistration(ctx context.Context, id, instanceType, az string, ghRunnerID int64, now time.Time) error
+	// Touch is the reaper heartbeat: bumps last_seen_at on every
+	// instance the reaper just confirmed via DescribeInstances.
+	// Lets the UI distinguish "row is current" from "row hasn't been
+	// reconciled in N minutes -- something is wrong."
+	Touch(ctx context.Context, ids []string, now time.Time) error
 	ListAlive(ctx context.Context) ([]*instance.Instance, error)
 	ListStuck(ctx context.Context, cutoff time.Time) ([]*instance.Instance, error)
 }

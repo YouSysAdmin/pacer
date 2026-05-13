@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/yousysadmin/pacer/internal/core/dbutil"
@@ -79,6 +80,35 @@ func (s *Store) Get(ctx context.Context, id string) (*instancemodel.Instance, er
 		return nil, nil
 	}
 	return i, err
+}
+
+// Touch bumps last_seen_at on the given instance rows. The reaper
+// calls this on every alive instance AWS confirmed in its DescribeInstances
+// response so the UI can distinguish "row is current" from "row hasn't
+// been reconciled in N minutes -- something is wrong with the reaper."
+//
+// Empty ids list is a no-op (saves a needless transaction on idle
+// sweeps). State is intentionally not touched -- this is purely a
+// heartbeat. Rows whose state would actually change ride through
+// UpdateState or markLost, both of which already stamp last_seen_at.
+func (s *Store) Touch(ctx context.Context, ids []string, now time.Time) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	// Batch UPDATE via a single statement with an IN clause. sqlite
+	// caps placeholders at 999; the reaper only sweeps alive
+	// instances, which are bounded by total concurrent runners
+	// across all pools -- effectively under a few hundred for any
+	// realistic install. If that ever grows, chunk here.
+	q := `UPDATE instances SET last_seen_at = ? WHERE id IN (?` +
+		strings.Repeat(",?", len(ids)-1) + `)`
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, now)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	_, err := s.db.ExecContext(ctx, q, args...)
+	return err
 }
 
 func (s *Store) UpdateState(ctx context.Context, id string, state instancemodel.State, now time.Time) error {

@@ -169,3 +169,12 @@ export const settings = {
 };
 
 export const health = () => call("/healthz");
+
+// System health: in-process status of background workers (reaper,
+// preflight). Polled by the top-level layout to drive the banner.
+// reconcile() forces an immediate reaper sweep so an operator who's
+// just fixed an IAM perm doesn't wait for the next 60s tick.
+export const systemHealth = {
+  list: () => call("/api/health"),
+  reconcile: () => call("/api/reconcile", { method: "POST" }),
+};

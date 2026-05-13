@@ -232,6 +232,29 @@ main {
   min-width: 0;
 }
 
+/* Wraps the optional health banner above each page's <main>.
+   No layout-affecting styles; min-width:0 keeps grid children
+   from forcing the second column wider than 1fr. */
+.shell-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* The health banner shares <main>'s horizontal inset so it lines up
+   visually with the page header below it. Margin (not padding) so
+   the banner element itself keeps its banner-class border + radius
+   without having to wrestle .shell-main's box. */
+.health-banner {
+  margin: 16px 32px 0;
+}
+@media (max-width: 1280px) {
+  .health-banner { margin: 16px 20px 0; }
+}
+@media (max-width: 720px) {
+  .health-banner { margin: 12px 14px 0; }
+}
+
 .page-header {
   display: flex;
   align-items: flex-start;

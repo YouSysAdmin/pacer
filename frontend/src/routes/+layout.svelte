@@ -9,12 +9,17 @@
     import { page } from "$app/state";
     import { goto } from "$app/navigation";
     import { base } from "$app/paths";
-    import { auth } from "$lib/api.js";
+    import { auth, systemHealth } from "$lib/api.js";
     import ConfirmDialog from "$lib/ConfirmDialog.svelte";
 
     let { children } = $props();
     let user = $state(null);
     let authDisabled = $state(false);
+    // Background-worker issues from GET /api/health. Polled every
+    // 30s so a failure (missing IAM perm, panicked reaper) becomes
+    // visible without operator action; cleared automatically when
+    // the next clean reaper tick clears Health server-side.
+    let healthIssues = $state([]);
 
     // /login renders full-screen with no sidebar.  Detect via path so
     // we don't have to set up a separate route group.
@@ -63,6 +68,28 @@
                 else if (r.user) user = r.user;
             })
             .catch(() => {});
+    });
+
+    // Background-worker health poll. 30s cadence is the sweet spot:
+    // fast enough that a freshly-fixed IAM perm or a fresh panic
+    // surfaces within one screen-refresh cycle, slow enough that the
+    // tab doesn't hammer /api/health while idle. Skip on /login (no
+    // session yet) and swallow errors silently -- the api.js wrapper
+    // already handles the 401 redirect.
+    $effect(() => {
+        if (isLogin) return;
+        async function tick() {
+            try {
+                const r = await systemHealth.list();
+                healthIssues = (r && r.issues) || [];
+            } catch {
+                // Don't surface fetch errors as banners -- a flaky
+                // poll shouldn't look like a server-side problem.
+            }
+        }
+        tick();
+        const t = setInterval(tick, 30000);
+        return () => clearInterval(t);
     });
 
     async function logout() {
@@ -134,7 +161,16 @@
             </div>
         </aside>
 
-        {@render children()}
+        <div class="shell-main">
+            {#if healthIssues.length > 0}
+                <div class="banner err health-banner" role="status">
+                    {#each healthIssues as i (i.component)}
+                        <div><strong>{i.component}:</strong> {i.message}</div>
+                    {/each}
+                </div>
+            {/if}
+            {@render children()}
+        </div>
     </div>
 {/if}
 

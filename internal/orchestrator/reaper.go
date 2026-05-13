@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -19,11 +20,26 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/yousysadmin/pacer/internal/core/env"
+	"github.com/yousysadmin/pacer/internal/core/health"
 	"github.com/yousysadmin/pacer/internal/models/audit"
 	"github.com/yousysadmin/pacer/internal/models/instance"
 	jobmodel "github.com/yousysadmin/pacer/internal/models/job"
 	projectmodel "github.com/yousysadmin/pacer/internal/models/project"
 )
+
+// healthComponent is the key the reaper uses on Runtime.Health so the
+// /api/health endpoint and the UI banner can pick out the reaper's
+// failures specifically. Centralized as a constant so the manual
+// reconcile endpoint reads from the same key.
+const healthComponent = "reaper"
+
+// ec2API is the slice of the EC2 client surface the reaper uses.
+// Narrow on purpose so tests can stub it without spinning up the full
+// *ec2.Client. *ec2.Client satisfies this naturally.
+type ec2API interface {
+	DescribeInstances(ctx context.Context, in *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
+	TerminateInstances(ctx context.Context, in *ec2.TerminateInstancesInput, optFns ...func(*ec2.Options)) (*ec2.TerminateInstancesOutput, error)
+}
 
 const ReapInterval = 60 * time.Second
 
@@ -62,32 +78,86 @@ func (r *Reaper) Run(ctx context.Context) {
 	t := time.NewTicker(ReapInterval)
 	defer t.Stop()
 
-	r.tick(ctx)
+	_, _ = r.Tick(ctx)
 	for {
 		select {
 		case <-ctx.Done():
 			slog.Info("reaper stopping")
 			return
 		case <-t.C:
-			r.tick(ctx)
+			_, _ = r.Tick(ctx)
 		}
 	}
 }
 
-func (r *Reaper) tick(ctx context.Context) {
+// Tick runs one sweep under panic recovery. A recovered panic flips
+// Runtime.Health to "panic: ..." and is returned as an error so the
+// HTTP reconcile path can surface it synchronously. The goroutine
+// driving Run survives -- the next ticker fire calls Tick again.
+//
+// Returns (checked, err) where checked is the number of alive rows
+// inspected this sweep (zero on panic or ListAlive failure).
+func (r *Reaper) Tick(ctx context.Context) (checked int, err error) {
+	err = safeTick(r.Runtime, func() error {
+		c, e := r.doTick(ctx)
+		checked = c
+		return e
+	})
+	return checked, err
+}
+
+// safeTick wraps do under recover(). On panic: log stack, write
+// healthComponent on Runtime.Health, return the panic as an error.
+// On clean exit: return do's error untouched. The Runtime + Health
+// guards keep tests that pass a bare *Reaper (no Runtime) from
+// crashing here before the panic-recovery path can fire.
+func safeTick(rt *env.Runtime, do func() error) (err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			stack := debug.Stack()
+			slog.Error("reaper: panic recovered in tick", "panic", rec, "stack", string(stack))
+			if rt != nil && rt.Health != nil {
+				rt.Health.Set(healthComponent, fmt.Sprintf("panic: %v", rec))
+			}
+			err = fmt.Errorf("reaper panic: %v", rec)
+		}
+	}()
+	return do()
+}
+
+// doTick is the original tick body, hoisted to a method so safeTick
+// can call it under recover. Returns the number of alive rows seen +
+// any fatal error (today only ListAlive can fatal-error; per-instance
+// errors are logged and the sweep continues).
+func (r *Reaper) doTick(ctx context.Context) (int, error) {
 	insts, err := r.Runtime.Store.Instance.ListAlive(ctx)
 	if err != nil {
 		slog.Error("reaper: list alive failed", "err", err)
-		return
+		return 0, err
 	}
 	if len(insts) == 0 {
-		return
+		// Nothing alive means nothing to reconcile: not evidence the
+		// EC2 path is healthy, so we don't touch Health here.
+		return 0, nil
 	}
 
-	dead := r.checkEC2Health(ctx, insts)
+	view := checkEC2HealthVia(ctx, r.Runtime.EC2, r.Runtime.Health, insts)
+
+	// Stamp the per-row heartbeat for every instance AWS just
+	// confirmed alive. This is the signal the UI uses to flag a
+	// stale row -- "running for 20m but last_seen_at = 20m ago"
+	// means the reaper isn't visiting this row, regardless of
+	// whether the global health banner shows green. Best-effort:
+	// a Touch failure logs + we still run the maybeReap loop.
+	if len(view.SeenAlive) > 0 {
+		if err := r.Runtime.Store.Instance.Touch(ctx, view.SeenAlive, time.Now().UTC()); err != nil {
+			slog.Warn("reaper: heartbeat touch failed",
+				"count", len(view.SeenAlive), "err", err)
+		}
+	}
 
 	for _, i := range insts {
-		if d, isDead := dead[i.ID]; isDead {
+		if d, isDead := view.Dead[i.ID]; isDead {
 			r.markLost(ctx, i, d)
 			continue
 		}
@@ -95,6 +165,7 @@ func (r *Reaper) tick(ctx context.Context) {
 			slog.Error("reaper: failed", "instance_id", i.ID, "err", err)
 		}
 	}
+	return len(insts), nil
 }
 
 // deadState carries AWS's verdict for an instance that is no longer
@@ -105,6 +176,21 @@ type deadState struct {
 	StateName       string
 	StateReasonCode string
 	StateReason     string
+}
+
+// sweepView is the structured output of one EC2-side health pass.
+// Dead is the subset AWS considers gone (terminated/stopping/...);
+// SeenAlive is every ID AWS confirmed in any non-dead state. The
+// reaper bumps last_seen_at on SeenAlive so the UI can show a
+// per-row heartbeat -- the signal the operator needs to spot
+// "instance X hasn't been reconciled in 30 minutes" without
+// trusting the absence of a global error banner.
+//
+// Dead-state rows already get their last_seen_at stamped through
+// markLost -> UpdateState, so they're intentionally NOT in SeenAlive.
+type sweepView struct {
+	Dead      map[string]deadState
+	SeenAlive []string
 }
 
 // checkEC2Health batches DescribeInstances over every alive instance
@@ -118,58 +204,87 @@ type deadState struct {
 // them lost, and re-batch the survivors. On any other error we log
 // and skip the health pass; the max-runtime check below still runs,
 // so a flaky describe call doesn't strand a dead row.
-func (r *Reaper) checkEC2Health(ctx context.Context, insts []*instance.Instance) map[string]deadState {
-	out := map[string]deadState{}
+// checkEC2HealthVia is the testable form of the EC2-side health check.
+// Separated from the *Reaper method so tests can swap a fake ec2API
+// without standing up a Runtime. The production path is the
+// one-line *Reaper.checkEC2Health wrapper below.
+//
+// h is optional. When non-nil, this function is also the gate that
+// keeps Runtime.Health in sync with the reaper's view of AWS: a
+// successful describe call clears the "reaper" entry, a non-NotFound
+// error writes it. NotFound is treated as a normal outcome (AWS
+// purged a row we used to know about) and does NOT toggle Health.
+//
+// Returns a sweepView with both AWS's "dead" verdicts AND the IDs
+// AWS confirmed are still alive -- the caller stamps last_seen_at
+// on the alive set so the UI gets a per-row heartbeat.
+func checkEC2HealthVia(ctx context.Context, c ec2API, h *health.Health, insts []*instance.Instance) sweepView {
+	view := sweepView{Dead: map[string]deadState{}}
 	if len(insts) == 0 {
-		return out
+		return view
 	}
 	ids := make([]string, 0, len(insts))
 	for _, i := range insts {
 		ids = append(ids, i.ID)
 	}
 
-	resp, err := r.Runtime.EC2.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+	resp, err := c.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
 		InstanceIds: ids,
 	})
 	if err == nil {
-		mergeDead(out, resp)
-		return out
+		mergeSweep(&view, resp)
+		if h != nil {
+			h.Clear(healthComponent)
+		}
+		return view
 	}
 
 	var ae smithy.APIError
 	if !errors.As(err, &ae) || ae.ErrorCode() != "InvalidInstanceID.NotFound" {
 		slog.Warn("reaper: describe instances failed; skipping ec2 health pass", "err", err)
-		return out
+		if h != nil {
+			h.Set(healthComponent, fmt.Sprintf("describe instances failed: %v", err))
+		}
+		return view
 	}
 
 	missing := parseNotFoundIDs(ae.ErrorMessage())
 	for _, id := range missing {
-		out[id] = deadState{} // empty StateName -- vanished from AWS
+		view.Dead[id] = deadState{} // empty StateName -- vanished from AWS
 	}
 	remaining := excludeIDs(ids, missing)
 	if len(remaining) == 0 {
-		return out
+		if h != nil {
+			h.Clear(healthComponent)
+		}
+		return view
 	}
-	resp2, err2 := r.Runtime.EC2.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+	resp2, err2 := c.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
 		InstanceIds: remaining,
 	})
 	if err2 != nil {
 		slog.Warn("reaper: describe instances retry failed; partial ec2 health pass",
 			"err", err2, "missing", len(missing), "remaining", len(remaining))
-		return out
+		if h != nil {
+			h.Set(healthComponent, fmt.Sprintf("describe instances retry failed: %v", err2))
+		}
+		return view
 	}
-	mergeDead(out, resp2)
-	return out
+	mergeSweep(&view, resp2)
+	if h != nil {
+		h.Clear(healthComponent)
+	}
+	return view
 }
 
-func mergeDead(out map[string]deadState, resp *ec2.DescribeInstancesOutput) {
+func mergeSweep(view *sweepView, resp *ec2.DescribeInstancesOutput) {
 	for _, res := range resp.Reservations {
 		for _, inst := range res.Instances {
-			if inst.State == nil {
-				continue
-			}
 			id := aws.ToString(inst.InstanceId)
 			if id == "" {
+				continue
+			}
+			if inst.State == nil {
 				continue
 			}
 			switch inst.State.Name {
@@ -182,7 +297,11 @@ func mergeDead(out map[string]deadState, resp *ec2.DescribeInstancesOutput) {
 					ds.StateReasonCode = aws.ToString(inst.StateReason.Code)
 					ds.StateReason = aws.ToString(inst.StateReason.Message)
 				}
-				out[id] = ds
+				view.Dead[id] = ds
+			default:
+				// pending / running / anything else AWS confirms is
+				// not dead is treated as alive for heartbeat purposes.
+				view.SeenAlive = append(view.SeenAlive, id)
 			}
 		}
 	}

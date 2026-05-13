@@ -26,6 +26,7 @@ import (
 	"github.com/yousysadmin/pacer/internal/domain/runner"
 	"github.com/yousysadmin/pacer/internal/domain/settings"
 	"github.com/yousysadmin/pacer/internal/domain/stats"
+	"github.com/yousysadmin/pacer/internal/domain/systemhealth"
 	"github.com/yousysadmin/pacer/internal/domain/webhook"
 )
 
@@ -173,6 +174,14 @@ func registerRoutes(app *fiber.App, rt *env.Runtime) {
 	seH := &settings.Handler{Runtime: rt}
 	apiAuth.Get("/settings/bootstrap-token", seH.GetBootstrapToken)
 	apiAuth.Post("/settings/bootstrap-token/rotate", seH.RotateBootstrapToken)
+
+	// System health - background-worker status surfaced for the UI
+	// banner, plus a manual reconcile trigger that forces an
+	// immediate reaper sweep (so an operator who just fixed an IAM
+	// perm doesn't wait the full 60s for the next tick).
+	shH := &systemhealth.Handler{Runtime: rt}
+	apiAuth.Get("/health", shH.List)
+	apiAuth.Post("/reconcile", shH.Reconcile)
 
 	// SPA (embedded prerendered Svelte build).
 	// Register LAST so

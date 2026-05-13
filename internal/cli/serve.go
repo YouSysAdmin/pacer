@@ -19,9 +19,11 @@ import (
 
 	"github.com/yousysadmin/pacer/internal/core/authenticator"
 	"github.com/yousysadmin/pacer/internal/core/awscfg"
+	"github.com/yousysadmin/pacer/internal/core/awspreflight"
 	"github.com/yousysadmin/pacer/internal/core/env"
 	"github.com/yousysadmin/pacer/internal/core/ghapp"
 	"github.com/yousysadmin/pacer/internal/core/ghrunner"
+	"github.com/yousysadmin/pacer/internal/core/health"
 	"github.com/yousysadmin/pacer/internal/core/logger"
 	pacoidc "github.com/yousysadmin/pacer/internal/core/oidc"
 	corepricing "github.com/yousysadmin/pacer/internal/core/pricing"
@@ -163,6 +165,18 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Pricing:       priceFetcher,
 		RunnerVersion: runnerRes,
 		OIDC:          oidcProvider,
+		Health:        health.New(),
+	}
+
+	// AWS preflight: exercise the reaper's IAM perms via EC2 DryRun
+	// so missing permissions surface as a UI banner BEFORE any
+	// orphan instance accumulates. Skipped in UI-only dev. Result
+	// failures land on rt.Health but do NOT abort startup -- an
+	// operator with intentionally trimmed perms keeps a usable
+	// console; the banner makes the cost explicit.
+	if !cfg.AWS.Disabled && ec2Client != nil {
+		results := awspreflight.Run(context.Background(), ec2Client, rt.Health)
+		awspreflight.LogResults(log, results)
 	}
 
 	// Auth bootstrap: when local login is enabled and there's no
@@ -195,6 +209,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 		}
 		orch := orchestrator.New(rt)
 		reaper := orchestrator.NewReaper(rt)
+		// Expose the reaper through Runtime so the /api/reconcile
+		// endpoint can trigger an immediate Tick instead of waiting
+		// for the next 60s window. Must happen after Reaper has its
+		// own Runtime pointer wired by NewReaper to avoid a half-
+		// constructed cycle.
+		rt.Reaper = reaper
 		bgWG.Add(2)
 		go func() { defer bgWG.Done(); orch.Run(bgCtx) }()
 		go func() { defer bgWG.Done(); reaper.Run(bgCtx) }()
