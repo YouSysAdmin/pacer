@@ -5,10 +5,31 @@
 package pool
 
 import (
+	"errors"
 	"testing"
 
 	poolmodel "github.com/yousysadmin/pacer/internal/models/pool"
 )
+
+func TestIsFKConstraint(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"unrelated", errors.New("some other failure"), false},
+		{"sqlite fk", errors.New("constraint failed: FOREIGN KEY constraint failed (1811)"), true},
+		{"sqlite unique", errors.New("constraint failed: UNIQUE constraint failed: pools.name"), false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := isFKConstraint(c.err); got != c.want {
+				t.Fatalf("isFKConstraint(%v) = %v, want %v", c.err, got, c.want)
+			}
+		})
+	}
+}
 
 func TestSanitizeLabel(t *testing.T) {
 	cases := []struct {

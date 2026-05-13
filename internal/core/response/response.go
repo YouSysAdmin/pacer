@@ -58,6 +58,14 @@ func NotFound(c *fiber.Ctx, msg string) error {
 	return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": msg})
 }
 
+// Conflict is for state-conflict failures the operator can fix
+// themselves (FK constraint violations on delete, unique-key
+// collisions, etc.) - distinct from BadRequest (which connotes
+// "your input is wrong") and Internal (which connotes "server bug").
+func Conflict(c *fiber.Ctx, msg string) error {
+	return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": msg})
+}
+
 // Internal logs the underlying error server-side and returns a generic
 // 500 to the caller. The raw err is intentionally NOT echoed back - it
 // commonly contains stack-revealing detail (file paths, SQL state,

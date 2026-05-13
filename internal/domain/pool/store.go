@@ -119,9 +119,28 @@ func (s *Store) Put(ctx context.Context, p *poolmodel.Pool) error {
 	return err
 }
 
+// Delete removes a pool. Historical jobs and instances reference the pool via
+// FK ON DELETE RESTRICT, so this transactionally NULLs out their pool_id
+// first (preserving the rows for audit/cost rollups, severing only the link)
+// then drops the pool row. The handler still blocks delete while *active*
+// jobs exist; this only handles terminated rows that would otherwise wedge
+// the FK.
 func (s *Store) Delete(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM pools WHERE id = ?`, id)
-	return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `UPDATE jobs SET pool_id = NULL WHERE pool_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE instances SET pool_id = NULL WHERE pool_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM pools WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) List(ctx context.Context) ([]*poolmodel.Pool, error) {

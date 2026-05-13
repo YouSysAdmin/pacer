@@ -263,6 +263,13 @@ func (h *Handler) Delete(c *fiber.Ctx) error {
 		return response.BadRequest(c, fmt.Sprintf("pool has %d active jobs; wait or cancel first", inflight))
 	}
 	if err := h.Runtime.Store.Pool.Delete(c.UserContext(), id); err != nil {
+		// FK constraint = something we don't yet null-out in Pool.Delete
+		// is still pointing at this pool. Surface a friendly 409 instead
+		// of a generic 500 so the operator knows it's a relationship
+		// problem, not a bug.
+		if isFKConstraint(err) {
+			return response.Conflict(c, "pool is still referenced by other records; remove dependents first")
+		}
 		return response.Internal(c, err)
 	}
 	ltDeleted := h.deleteLaunchTemplate(c.UserContext(), p)
@@ -392,6 +399,15 @@ func poolFromInput(in *input, projectID string) *poolmodel.Pool {
 		UserDataExtra:        in.UserDataExtra,
 		Disabled:             in.Disabled,
 	}
+}
+
+// isFKConstraint matches modernc/sqlite's FK-violation error string.
+// Used by Delete handlers to turn a 500 into a 409 when a child row is
+// blocking the cascade. modernc/sqlite is the only backend, so a string
+// match is fine; revisit if/when a postgres backend lands and we need
+// errors.Is on a typed error.
+func isFKConstraint(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "FOREIGN KEY constraint failed")
 }
 
 // poolDetailJSON renders the operationally-meaningful pool fields for
