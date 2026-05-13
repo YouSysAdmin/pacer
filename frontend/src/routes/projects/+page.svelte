@@ -10,6 +10,13 @@
   import TagsEditor from "$lib/TagsEditor.svelte";
   import Modal from "$lib/Modal.svelte";
   import { confirmDialog } from "$lib/confirm.svelte.js";
+  import { fieldErrorsFrom, isReservedTagKey, noSlashOrSpace } from "$lib/validators.js";
+
+  // Caps mirror the Go DTO tags on project/endpoint.go::input. Keep
+  // these in sync when the backend rules move; drift shows up as a
+  // green client tick followed by a server 400.
+  const NAME_MAX = 128;
+  const ORG_NAME_MAX = 39;
 
   let list = $state([]);
   let poolCounts = $state({}); // project_id -> number
@@ -18,6 +25,13 @@
   let success = $state(null);
   let editing = $state(null); // project being edited, or null
   let formOpen = $state(false);
+
+  // fieldErrors maps a json field name (matches the backend's
+  // validator.RegisterTagNameFunc(json)) to an inline message rendered
+  // under the offending input. Server-side errors populate this in
+  // submit()'s catch; user input clears the specific entry on each
+  // keystroke so stale errors don't linger after a fix.
+  let fieldErrors = $state({});
 
   let form = $state(emptyForm());
 
@@ -56,6 +70,7 @@
     form = emptyForm();
     error = null;
     success = null;
+    fieldErrors = {};
     formOpen = true;
   }
 
@@ -72,6 +87,7 @@
     };
     error = null;
     success = null;
+    fieldErrors = {};
     formOpen = true;
   }
 
@@ -79,7 +95,73 @@
     editing = null;
     form = emptyForm();
     error = null;
+    fieldErrors = {};
     formOpen = false;
+  }
+
+  // clearFieldError drops a single entry from fieldErrors as the user
+  // types so the inline warning disappears the moment they start
+  // fixing the offending input.
+  function clearFieldError(name) {
+    if (fieldErrors[name]) {
+      const next = { ...fieldErrors };
+      delete next[name];
+      fieldErrors = next;
+    }
+  }
+
+  // numericLt0 detects a number-input that's been driven negative
+  // (Svelte's `bind:value` on type=number stores numbers but the
+  // user can still paste / keyboard in a negative). The backend
+  // silently clamps negatives via Normalize(), so without an inline
+  // hint the value the user typed would disappear without comment.
+  function numericLt0(v) {
+    const n = Number(v);
+    return Number.isFinite(n) && n < 0;
+  }
+
+  // Live derived hints. These mirror the backend rules at
+  // project/endpoint.go::input -- name length, org_name shape, and
+  // the "required_if scope=org" conditional. The map is keyed by
+  // the json field name (so server-side err.fields overlays cleanly
+  // in hintFor()), but the messages themselves are written for the
+  // operator using the labels they see in the form.
+  let liveHints = $derived(buildHints());
+  function buildHints() {
+    const h = {};
+    if (form.name && form.name.length > NAME_MAX) {
+      h.name = `Name must be at most ${NAME_MAX} characters`;
+    }
+    if (numericLt0(form.max_concurrent_runners)) {
+      h.max_concurrent_runners = "Max concurrent runners must be 0 or greater";
+    }
+    if (numericLt0(form.runner_group_id)) {
+      h.runner_group_id = "Runner group id must be 0 or greater";
+    }
+    if (form.scope === "org") {
+      if (!form.org_name) {
+        h.org_name = "Org login is required when scope is set to org";
+      } else if (!noSlashOrSpace(form.org_name)) {
+        h.org_name = "Org login must not contain slashes or spaces";
+      } else if (form.org_name.length > ORG_NAME_MAX) {
+        h.org_name = `Org login must be at most ${ORG_NAME_MAX} characters`;
+      }
+    }
+    for (const k of Object.keys(form.tags || {})) {
+      if (isReservedTagKey(k)) {
+        h.tags = `Tag keys starting with "gha:" are reserved; pick a different prefix`;
+        break;
+      }
+    }
+    return h;
+  }
+
+  // hintFor returns the live hint, falling back to the server-side
+  // field error if there's no client-side issue. Server errors win
+  // when they cover a rule the client doesn't (length / uniqueness /
+  // anything cross-row).
+  function hintFor(name) {
+    return liveHints[name] || fieldErrors[name] || "";
   }
 
   function buildBody() {
@@ -99,6 +181,17 @@
     e.preventDefault();
     error = null;
     success = null;
+    fieldErrors = {};
+    // Re-run the live derived hints synchronously so a click on
+    // submit-with-an-empty-org-name surfaces the same inline message
+    // the user would see when focused on the input. This isn't a
+    // hard gate (the server still validates), but it gives faster
+    // feedback than waiting for the round-trip.
+    const hints = buildHints();
+    if (Object.keys(hints).length > 0) {
+      error = "Please fix the highlighted fields";
+      return;
+    }
     try {
       const body = buildBody();
       if (editing) {
@@ -112,6 +205,7 @@
       await refresh();
     } catch (e) {
       error = e.message;
+      fieldErrors = fieldErrorsFrom(e);
     }
   }
 
@@ -223,12 +317,23 @@
     <div class="field-row">
       <div class="field">
         <label for="name">Name</label>
-        <input id="name" class="input" bind:value={form.name}
-          disabled={!!editing} placeholder="my-app" required />
+        <div>
+          <input id="name" class="input" bind:value={form.name}
+            oninput={() => clearFieldError("name")}
+            disabled={!!editing} placeholder="my-app" required
+            maxlength={NAME_MAX}
+            aria-invalid={!!hintFor("name")} />
+          {#if hintFor("name")}<span class="field-warn">{hintFor("name")}</span>{/if}
+        </div>
       </div>
       <div class="field">
         <label for="cap">Max concurrent runners <span class="muted">(0 = no project-wide ceiling; per-pool caps still apply)</span></label>
-        <input id="cap" class="input" type="number" min="0" bind:value={form.max_concurrent_runners} />
+        <div>
+          <input id="cap" class="input" type="number" min="0" bind:value={form.max_concurrent_runners}
+            oninput={() => clearFieldError("max_concurrent_runners")}
+            aria-invalid={!!hintFor("max_concurrent_runners")} />
+          {#if hintFor("max_concurrent_runners")}<span class="field-warn">{hintFor("max_concurrent_runners")}</span>{/if}
+        </div>
       </div>
     </div>
 
@@ -242,15 +347,26 @@
               : "bind individual repos; runners narrow to <owner>-<repo>"})
           </span>
         </label>
-        <select id="scope" class="select" bind:value={form.scope}>
-          <option value="repo">repo</option>
-          <option value="org">org</option>
-        </select>
+        <div>
+          <select id="scope" class="select" bind:value={form.scope}
+            onchange={() => clearFieldError("scope")}
+            aria-invalid={!!hintFor("scope")}>
+            <option value="repo">repo</option>
+            <option value="org">org</option>
+          </select>
+          {#if hintFor("scope")}<span class="field-warn">{hintFor("scope")}</span>{/if}
+        </div>
       </div>
       {#if form.scope === "org"}
         <div class="field">
           <label for="org">Org login <span class="muted">(GitHub org name; case-insensitive match against repository.owner.login)</span></label>
-          <input id="org" class="input mono" bind:value={form.org_name} placeholder="acme-inc" required />
+          <div>
+            <input id="org" class="input mono" bind:value={form.org_name} placeholder="acme-inc" required
+              oninput={() => clearFieldError("org_name")}
+              maxlength={ORG_NAME_MAX}
+              aria-invalid={!!hintFor("org_name")} />
+            {#if hintFor("org_name")}<span class="field-warn">{hintFor("org_name")}</span>{/if}
+          </div>
         </div>
       {/if}
     </div>
@@ -258,7 +374,10 @@
     {#if form.scope === "org"}
       <div class="field">
         <label for="rg">Runner group id <span class="muted">(0 = GitHub's "Default" group, id 1; look up org-specific groups via <code>GET /orgs/&lt;org&gt;/actions/runner-groups</code>)</span></label>
-        <input id="rg" class="input" type="number" min="0" bind:value={form.runner_group_id} />
+        <input id="rg" class="input" type="number" min="0" bind:value={form.runner_group_id}
+          oninput={() => clearFieldError("runner_group_id")}
+          aria-invalid={!!hintFor("runner_group_id")} />
+        {#if hintFor("runner_group_id")}<span class="field-warn">{hintFor("runner_group_id")}</span>{/if}
       </div>
     {/if}
 
@@ -270,6 +389,7 @@
         </span>
       </label>
       <TagsEditor bind:value={form.tags} />
+      {#if hintFor("tags")}<span class="field-warn">{hintFor("tags")}</span>{/if}
     </div>
     <div class="field">
       <label class="chk"><input type="checkbox" bind:checked={form.disabled} /> disabled</label>

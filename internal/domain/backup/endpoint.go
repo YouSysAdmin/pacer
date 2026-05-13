@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -17,6 +18,8 @@ import (
 	"github.com/yousysadmin/pacer/internal/core/ec2lt"
 	"github.com/yousysadmin/pacer/internal/core/env"
 	"github.com/yousysadmin/pacer/internal/core/response"
+	"github.com/yousysadmin/pacer/internal/core/validation"
+	pooldomain "github.com/yousysadmin/pacer/internal/domain/pool"
 	"github.com/yousysadmin/pacer/internal/models/audit"
 	poolmodel "github.com/yousysadmin/pacer/internal/models/pool"
 	projectmodel "github.com/yousysadmin/pacer/internal/models/project"
@@ -42,45 +45,112 @@ type snapshot struct {
 	Projects   []project `json:"projects"`
 }
 
+// project, pool, and repo carry the same validate / normalize tags
+// the live CRUD DTOs in domain/project, domain/pool, and domain/repo
+// use. The Import handler runs validation.NormalizeAndValidate on
+// every row before persisting, so an imported snapshot cannot bypass
+// the same reserved-namespace / shell-charset / shape rules a regular
+// API client has to satisfy. Keep these tag lists in sync with the
+// endpoint input DTOs (project/endpoint.go::input,
+// pool/endpoint.go::input, repo/endpoint.go::bindInput).
 type project struct {
-	Name                 string            `json:"name"`
-	MaxConcurrentRunners int               `json:"max_concurrent_runners"`
-	Tags                 map[string]string `json:"tags,omitempty"`
-	Scope                string            `json:"scope,omitempty"`
-	OrgName              string            `json:"org_name,omitempty"`
-	RunnerGroupID        int               `json:"runner_group_id,omitempty"`
+	Name                 string            `json:"name"                   validate:"required,min=1,max=128"`
+	MaxConcurrentRunners int               `json:"max_concurrent_runners" validate:"min=0"`
+	Tags                 map[string]string `json:"tags,omitempty"         validate:"omitempty,max=50,dive,keys,required,min=1,max=128,gha_safe,endkeys,max=256"`
+	Scope                string            `json:"scope,omitempty"        validate:"oneof=repo org"                                                  normalize:"normalize"`
+	OrgName              string            `json:"org_name,omitempty"     validate:"required_if=Scope org,omitempty,max=39,no_slash_or_space"        normalize:"trim"`
+	RunnerGroupID        int               `json:"runner_group_id,omitempty" validate:"min=0"`
 	Disabled             bool              `json:"disabled,omitempty"`
 	Pools                []pool            `json:"pools,omitempty"`
 	Repos                []repo            `json:"repos,omitempty"`
 }
 
+// Normalize mirrors project/endpoint.go::input.Normalize so the
+// import path applies the same default-and-coerce pass before the
+// validator runs (e.g. empty scope -> "repo"). Pools and Repos are
+// validated per row in their own handlers so they're skipped here.
+func (p *project) Normalize() {
+	if p.Scope == "" {
+		p.Scope = projectmodel.ScopeRepo
+	}
+	if p.Scope == projectmodel.ScopeRepo {
+		p.OrgName = ""
+		p.RunnerGroupID = 0
+	}
+	if p.MaxConcurrentRunners < 0 {
+		p.MaxConcurrentRunners = 0
+	}
+	if p.Tags == nil {
+		p.Tags = map[string]string{}
+	}
+}
+
 type pool struct {
-	Name                 string            `json:"name"`
+	Name                 string            `json:"name"                   validate:"required,min=1,max=128,runner_label_strict"`
 	IsDefault            bool              `json:"is_default,omitempty"`
-	Priority             int               `json:"priority"`
-	AMIID                string            `json:"ami_id"`
-	InstanceTypes        []string          `json:"instance_types"`
-	SubnetIDs            []string          `json:"subnet_ids"`
-	SecurityGroupIDs     []string          `json:"security_group_ids"`
-	IAMInstanceProfile   string            `json:"iam_instance_profile,omitempty"`
-	RootVolumeGB         int               `json:"root_volume_gb"`
-	MaxRuntimeMinutes    int               `json:"max_runtime_minutes"`
-	MaxConcurrentRunners int               `json:"max_concurrent_runners"`
+	Priority             int               `json:"priority"               validate:"min=0"`
+	AMIID                string            `json:"ami_id"                 validate:"required,min=1,max=32"`
+	InstanceTypes        []string          `json:"instance_types"         validate:"required,min=1,max=32,dive,min=1,max=64"`
+	SubnetIDs            []string          `json:"subnet_ids"             validate:"required,min=1,max=32,dive,min=1,max=32"`
+	SecurityGroupIDs     []string          `json:"security_group_ids"     validate:"required,min=1,max=32,dive,min=1,max=32"`
+	IAMInstanceProfile   string            `json:"iam_instance_profile,omitempty" validate:"omitempty,max=128"                                    normalize:"trim"`
+	RootVolumeGB         int               `json:"root_volume_gb"         validate:"min=0"`
+	MaxRuntimeMinutes    int               `json:"max_runtime_minutes"    validate:"min=0"`
+	MaxConcurrentRunners int               `json:"max_concurrent_runners" validate:"min=0"`
 	Spot                 bool              `json:"spot,omitempty"`
-	SpawnMethod          string            `json:"spawn_method,omitempty"`
-	AllocationStrategy   string            `json:"allocation_strategy,omitempty"`
-	ExtraLabels          []string          `json:"extra_labels,omitempty"`
-	Tags                 map[string]string `json:"tags,omitempty"`
-	RunnerVersion        string            `json:"runner_version,omitempty"`
-	RunnerUser           string            `json:"runner_user,omitempty"`
-	UserDataExtra        string            `json:"user_data_extra,omitempty"`
+	SpawnMethod          string            `json:"spawn_method,omitempty"     validate:"oneof=fleet run_instances"                                    normalize:"normalize"`
+	AllocationStrategy   string            `json:"allocation_strategy,omitempty" validate:"oneof=cost lowest_price capacity priority"                    normalize:"normalize"`
+	ExtraLabels          []string          `json:"extra_labels,omitempty"         validate:"omitempty,max=32,dive,min=1,max=64,gha_safe,runner_label,not_self_hosted"`
+	Tags                 map[string]string `json:"tags,omitempty"                 validate:"omitempty,max=50,dive,keys,required,min=1,max=128,gha_safe,endkeys,max=256"`
+	RunnerVersion        string            `json:"runner_version,omitempty"       validate:"omitempty,max=32"`
+	RunnerUser           string            `json:"runner_user,omitempty"          validate:"omitempty,max=32,posix_user"                                   normalize:"trim"`
+	UserDataExtra        string            `json:"user_data_extra,omitempty"      validate:"omitempty,max=32768"`
 	Disabled             bool              `json:"disabled,omitempty"`
 }
 
+// Normalize mirrors pool/endpoint.go::input.Normalize. Defaults that
+// SpawnMethod / AllocationStrategy / MaxRuntimeMinutes etc fall back
+// to come from the live pool handler so a backup row missing those
+// fields validates the same way a partial UI submission would.
+func (p *pool) Normalize() {
+	if p.SpawnMethod == "" {
+		p.SpawnMethod = "fleet"
+	}
+	if p.AllocationStrategy == "" {
+		p.AllocationStrategy = "cost"
+	}
+	if p.MaxRuntimeMinutes <= 0 {
+		p.MaxRuntimeMinutes = 60
+	}
+	if p.MaxConcurrentRunners <= 0 {
+		p.MaxConcurrentRunners = 5
+	}
+	if p.RootVolumeGB < 0 {
+		p.RootVolumeGB = 0
+	}
+	if p.Priority <= 0 {
+		p.Priority = 100
+	}
+	if p.Tags == nil {
+		p.Tags = map[string]string{}
+	}
+	if len(p.ExtraLabels) > 0 {
+		trimmed := make([]string, 0, len(p.ExtraLabels))
+		for _, raw := range p.ExtraLabels {
+			raw = strings.TrimSpace(raw)
+			if raw == "" {
+				continue
+			}
+			trimmed = append(trimmed, raw)
+		}
+		p.ExtraLabels = trimmed
+	}
+}
+
 type repo struct {
-	FullName             string            `json:"full_name"`
+	FullName             string            `json:"full_name"                  validate:"required,max=140,repo_full_name"`
 	MaxConcurrentRunners *int              `json:"max_concurrent_runners,omitempty"`
-	Tags                 map[string]string `json:"tags,omitempty"`
+	Tags                 map[string]string `json:"tags,omitempty"             validate:"omitempty,max=50,dive,keys,required,min=1,max=128,gha_safe,endkeys,max=256"`
 }
 
 // Export is GET /api/backup/export.
@@ -195,8 +265,12 @@ func (h *Handler) Import(c *fiber.Ctx) error {
 // since a partial pool list under one project is preferable to
 // abandoning the rest of the import.
 func (h *Handler) applyProject(ctx context.Context, bp *project, result *importResult) {
-	if bp.Name == "" {
-		result.Errors = append(result.Errors, "project: name required")
+	// Mirror the CRUD endpoint's validate pass so an imported row
+	// can't bypass rules like gha_safe / no_slash_or_space / scope
+	// enum. Normalize first so default-coerced fields (e.g. empty
+	// scope -> "repo") pass oneof.
+	if err := validation.NormalizeAndValidate(bp); err != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("project %q: %s", bp.Name, validation.Summary(validation.Humanize(err))))
 		return
 	}
 	existing, err := h.Runtime.Store.Project.GetByName(ctx, bp.Name)
@@ -236,10 +310,16 @@ func (h *Handler) applyProject(ctx context.Context, bp *project, result *importR
 }
 
 func (h *Handler) applyPool(ctx context.Context, pmodel *projectmodel.Project, ip *pool, poolByName map[string]*poolmodel.Pool, result *importResult) {
-	if ip.Name == "" {
-		result.Errors = append(result.Errors, fmt.Sprintf("project %s: pool name required", pmodel.Name))
+	if err := validation.NormalizeAndValidate(ip); err != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("project %s pool %q: %s", pmodel.Name, ip.Name, validation.Summary(validation.Humanize(err))))
 		return
 	}
+	// Mirror pool/endpoint.go::input.finalizeLabels: sanitize + dedupe
+	// extra_labels after validation so the persisted row matches what
+	// the runner will actually register with. Run after Validate so
+	// the raw operator input is still rejected on charset / reserved
+	// grounds.
+	ip.ExtraLabels = sanitizeAndDedupeLabels(ip.ExtraLabels)
 	existing := poolByName[ip.Name]
 	plmodel := poolModelFor(existing, pmodel.ID, ip)
 	if existing == nil {
@@ -258,8 +338,8 @@ func (h *Handler) applyPool(ctx context.Context, pmodel *projectmodel.Project, i
 }
 
 func (h *Handler) applyRepo(ctx context.Context, pmodel *projectmodel.Project, ir *repo, result *importResult) {
-	if ir.FullName == "" {
-		result.Errors = append(result.Errors, fmt.Sprintf("project %s: repo full_name required", pmodel.Name))
+	if err := validation.NormalizeAndValidate(ir); err != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("project %s repo %q: %s", pmodel.Name, ir.FullName, validation.Summary(validation.Humanize(err))))
 		return
 	}
 	existing, err := h.Runtime.Store.Repo.Get(ctx, ir.FullName)
@@ -282,6 +362,27 @@ func (h *Handler) applyRepo(ctx context.Context, pmodel *projectmodel.Project, i
 	if err := h.Runtime.Store.Repo.Put(ctx, r); err != nil {
 		result.Errors = append(result.Errors, fmt.Sprintf("repo %s: %v", ir.FullName, err))
 	}
+}
+
+// sanitizeAndDedupeLabels mirrors pool/endpoint.go::input.finalizeLabels.
+// Returned slice is fresh; the caller's input is not aliased. Empty
+// post-sanitize entries and duplicates collapse so the persisted
+// extra_labels exactly match what the runner registers with.
+func sanitizeAndDedupeLabels(in []string) []string {
+	if len(in) == 0 {
+		return in
+	}
+	out := make([]string, 0, len(in))
+	seen := make(map[string]bool, len(in))
+	for _, raw := range in {
+		s := pooldomain.SanitizeLabel(raw)
+		if s == "" || seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
 }
 
 // materializeLT mirrors pool.endpoint.materializeLT - kept inline

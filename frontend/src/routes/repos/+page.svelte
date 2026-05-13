@@ -10,6 +10,10 @@
   import TagsEditor from "$lib/TagsEditor.svelte";
   import Modal from "$lib/Modal.svelte";
   import { confirmDialog } from "$lib/confirm.svelte.js";
+  import { fieldErrorsFrom, isRepoFullName, isReservedTagKey } from "$lib/validators.js";
+
+  // Caps mirror domain/repo/endpoint.go::bindInput.
+  const FULL_NAME_MAX = 140;
 
   let list = $state([]);
   let projectList = $state([]);
@@ -18,6 +22,7 @@
   let success = $state(null);
   let editing = $state(null); // full_name being edited, or null
   let formOpen = $state(false);
+  let fieldErrors = $state({});
 
   let form = $state(emptyForm());
 
@@ -65,6 +70,7 @@
     form.project_id = bindableProjects[0].id;
     error = null;
     success = null;
+    fieldErrors = {};
     formOpen = true;
   }
 
@@ -78,6 +84,7 @@
     };
     error = null;
     success = null;
+    fieldErrors = {};
     formOpen = true;
   }
 
@@ -86,13 +93,69 @@
     form = emptyForm();
     if (projectList.length > 0) form.project_id = projectList[0].id;
     error = null;
+    fieldErrors = {};
     formOpen = false;
+  }
+
+  function clearFieldError(name) {
+    if (fieldErrors[name]) {
+      const next = { ...fieldErrors };
+      delete next[name];
+      fieldErrors = next;
+    }
+  }
+
+  // numericLt0 detects a number-input that's been driven negative.
+  // Mirrors the same helper in projects / pools forms; the backend
+  // does not have an explicit rule for max_concurrent_runners on
+  // repos (the field is *int with omitempty) but the operator
+  // intent is unambiguous.
+  function numericLt0(v) {
+    if (v === "" || v == null) return false;
+    const n = Number(v);
+    return Number.isFinite(n) && n < 0;
+  }
+
+  // Live hints mirror domain/repo/endpoint.go::bindInput rules.
+  // Messages reference the labels the operator sees on the form
+  // ("Repository", "Max concurrent runners") rather than the json
+  // field names.
+  let liveHints = $derived(buildHints());
+  function buildHints() {
+    const h = {};
+    if (form.full_name) {
+      if (!isRepoFullName(form.full_name)) {
+        h.full_name = `Repository must be in "owner/name" form (e.g. octocat/hello-world)`;
+      } else if (form.full_name.length > FULL_NAME_MAX) {
+        h.full_name = `Repository must be at most ${FULL_NAME_MAX} characters`;
+      }
+    }
+    if (numericLt0(form.max_concurrent_runners)) {
+      h.max_concurrent_runners = "Max concurrent runners must be 0 or greater (leave blank to inherit the project cap)";
+    }
+    for (const k of Object.keys(form.tags || {})) {
+      if (isReservedTagKey(k)) {
+        h.tags = `Tag keys starting with "gha:" are reserved; pick a different prefix`;
+        break;
+      }
+    }
+    return h;
+  }
+
+  function hintFor(name) {
+    return liveHints[name] || fieldErrors[name] || "";
   }
 
   async function bind(e) {
     e.preventDefault();
     error = null;
     success = null;
+    fieldErrors = {};
+    const hints = buildHints();
+    if (Object.keys(hints).length > 0) {
+      error = "Please fix the highlighted fields";
+      return;
+    }
     const body = {
       full_name: form.full_name.trim(),
       project_id: form.project_id,
@@ -107,6 +170,7 @@
       await refresh();
     } catch (e) {
       error = e.message;
+      fieldErrors = fieldErrorsFrom(e);
     }
   }
 
@@ -206,21 +270,35 @@
     <div class="field-row">
       <div class="field">
         <label for="fn">Repository <span class="muted">(owner/name)</span></label>
-        <input id="fn" class="input" bind:value={form.full_name}
-          disabled={!!editing} placeholder="octocat/hello-world" required />
+        <div>
+          <input id="fn" class="input" bind:value={form.full_name}
+            disabled={!!editing} placeholder="octocat/hello-world" required
+            oninput={() => clearFieldError("full_name")}
+            maxlength={FULL_NAME_MAX}
+            aria-invalid={!!hintFor("full_name")} />
+          {#if hintFor("full_name")}<span class="field-warn">{hintFor("full_name")}</span>{/if}
+        </div>
       </div>
       <div class="field">
         <label for="pj">Project</label>
-        <select id="pj" class="select" bind:value={form.project_id} required>
-          {#each bindableProjects as p (p.id)}
-            <option value={p.id}>{p.name}</option>
-          {/each}
-        </select>
+        <div>
+          <select id="pj" class="select" bind:value={form.project_id} required
+            onchange={() => clearFieldError("project_id")}
+            aria-invalid={!!hintFor("project_id")}>
+            {#each bindableProjects as p (p.id)}
+              <option value={p.id}>{p.name}</option>
+            {/each}
+          </select>
+          {#if hintFor("project_id")}<span class="field-warn">{hintFor("project_id")}</span>{/if}
+        </div>
       </div>
     </div>
     <div class="field">
       <label for="cap">Max concurrent runners <span class="muted">(blank = inherit project cap)</span></label>
-      <input id="cap" class="input" type="number" min="0" bind:value={form.max_concurrent_runners} />
+      <input id="cap" class="input" type="number" min="0" bind:value={form.max_concurrent_runners}
+        oninput={() => clearFieldError("max_concurrent_runners")}
+        aria-invalid={!!hintFor("max_concurrent_runners")} />
+      {#if hintFor("max_concurrent_runners")}<span class="field-warn">{hintFor("max_concurrent_runners")}</span>{/if}
     </div>
     <div class="field">
       <label for="tags-repo">
@@ -230,6 +308,7 @@
         </span>
       </label>
       <TagsEditor bind:value={form.tags} />
+      {#if hintFor("tags")}<span class="field-warn">{hintFor("tags")}</span>{/if}
     </div>
     <div class="row-actions">
       <button class="btn primary" type="submit">{editing ? "save" : "bind"}</button>

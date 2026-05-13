@@ -92,8 +92,10 @@ func TestProjectCreate_OrgScopeRequiresOrgName(t *testing.T) {
 	if resp.StatusCode != 400 {
 		t.Fatalf("status: want 400, got %d", resp.StatusCode)
 	}
-	if !strings.Contains(bodyText(t, resp), "org_name") {
-		t.Fatal("response should explain org_name required")
+	// Friendly label is "Org login"; message should mention it so the
+	// SPA's summary banner explains which field needs attention.
+	if !strings.Contains(bodyText(t, resp), "Org login") {
+		t.Fatal("response should explain that the org login is required")
 	}
 }
 

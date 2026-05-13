@@ -61,38 +61,93 @@ func Summary(fes []FieldError) string {
 }
 
 func defaultMessage(fe validator.FieldError) string {
-	field := fe.Field()
+	field := friendlyField(fe.Field())
 	switch fe.Tag() {
 	case "required":
 		return field + " is required"
 	case "required_if", "required_unless", "required_with", "required_without":
-		return field + " is required (conditional rule " + fe.Tag() + "=" + fe.Param() + " not satisfied)"
+		return field + " is required when other fields change"
 	case "email":
 		return field + " must be a valid email"
 	case "uuid", "uuid4", "uuid5":
 		return field + " must be a valid UUID"
 	case "min":
+		// Numeric vs string min/max are surfaced with the same tag
+		// in validator/v10; the parameter is unitless. Keep the
+		// message neutral ("at least N") so it reads both for
+		// counts ("at least 1") and lengths ("at least 1 character").
 		return fmt.Sprintf("%s must be at least %s", field, fe.Param())
 	case "max":
 		return fmt.Sprintf("%s must be at most %s", field, fe.Param())
 	case "oneof":
 		return fmt.Sprintf("%s must be one of: %s", field, strings.ReplaceAll(fe.Param(), " ", ", "))
 	case "gha_safe":
-		return field + " uses the reserved gha:* prefix (tool-managed)"
+		return field + " uses the reserved \"gha:\" prefix; pick a different prefix"
 	case "posix_user":
-		return field + " must match POSIX user-name charset [a-z_][a-z0-9_-]*"
+		return field + " must use only lowercase letters, digits, underscore, or dash, and may not start with a digit or dash"
 	case "runner_label":
-		return field + " must contain at least one alphanumeric or underscore character"
+		return field + " must contain at least one letter, digit, or underscore"
 	case "no_slash_or_space":
-		return field + " must not contain slashes or whitespace"
+		return field + " must not contain slashes or spaces"
 	case "repo_full_name":
-		return field + ` must be "owner/name" with non-empty halves`
+		return field + ` must be in "owner/name" form (e.g. octocat/hello-world)`
 	case "not_self_hosted":
-		return field + ` must not be "self-hosted" (auto-derived)`
+		return field + ` must not be "self-hosted" -- that label is added automatically`
 	case "runner_label_strict":
-		return field + " must be lowercase alphanumeric / underscore / dash, and not start or end with a dash (use the same form your workflows reference in runs-on)"
+		return field + " must use only lowercase letters, digits, underscore, or dash, and not start or end with a dash"
 	default:
 		// Fallback: validator's library message with quotes stripped.
 		return strings.ReplaceAll(fe.Error(), "\"", "")
 	}
+}
+
+// friendlyLabels overrides the auto-titlecase for json tags that
+// expand to unidiomatic English ("Ami Id" -> "AMI ID", "Iam Instance
+// Profile" -> "IAM instance profile name"). Add an entry here when a
+// new field's auto-rendered form reads awkwardly in error messages.
+var friendlyLabels = map[string]string{
+	"ami_id":                 "AMI ID",
+	"subnet_ids":             "Subnet IDs",
+	"security_group_ids":     "Security group IDs",
+	"iam_instance_profile":   "IAM instance profile name",
+	"runner_group_id":        "Runner group ID",
+	"org_name":               "Org login",
+	"full_name":              "Repository",
+	"project_id":             "Project",
+	"max_concurrent_runners": "Max concurrent runners",
+	"max_runtime_minutes":    "Max runtime",
+	"root_volume_gb":         "Root volume GB",
+	"user_data_extra":        "Extra user-data",
+	"extra_labels":           "Extra runner labels",
+	"runner_user":            "Run runner as",
+	"runner_version":         "Runner version",
+	"instance_types":         "Instance types",
+	"spawn_method":           "Spawn method",
+	"allocation_strategy":    "Allocation strategy",
+	"is_default":             "Default pool",
+}
+
+// friendlyField converts a json tag name to a human-readable label
+// suitable for an end-user-facing error message. Known cases come
+// from the friendlyLabels map; everything else falls through to a
+// sentence-cased version with underscores replaced by spaces
+// ("max_concurrent_runners" -> "Max concurrent runners").
+//
+// The structured FieldError envelope keeps the original json tag in
+// FieldError.Field so the SPA can still route the error to the
+// matching input -- only the Message is humanized.
+func friendlyField(jsonField string) string {
+	if jsonField == "" {
+		return "This field"
+	}
+	if v, ok := friendlyLabels[jsonField]; ok {
+		return v
+	}
+	parts := strings.Split(jsonField, "_")
+	for i, p := range parts {
+		if i == 0 && len(p) > 0 {
+			parts[i] = strings.ToUpper(p[:1]) + p[1:]
+		}
+	}
+	return strings.Join(parts, " ")
 }

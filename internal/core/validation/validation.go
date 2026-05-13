@@ -137,6 +137,23 @@ func BindAndValidate[T any](c fiberCtx) (T, error) {
 	return payload, nil
 }
 
+// NormalizeAndValidate runs the same normalize-tag pass + Normalizer
+// hook + validator.Struct check that BindAndValidate runs, but on a
+// value that already exists in memory (i.e. wasn't decoded from a
+// Fiber request body). The argument MUST be a non-nil pointer to a
+// struct so the normalize-tag pass can mutate string fields in place.
+//
+// Use this when validating rows that arrived through a different
+// channel than HTTP -- e.g. a row nested inside a backup snapshot
+// import body -- so the same rules apply consistently to both paths.
+func NormalizeAndValidate(payload any) error {
+	applyNormalizeTags(reflect.ValueOf(payload))
+	if n, ok := payload.(Normalizer); ok {
+		n.Normalize()
+	}
+	return V().Struct(payload)
+}
+
 // applyNormalizeTags walks v and runs normalize:"..." tags on every
 // settable string field (recursing into structs / slices / arrays /
 // string-keyed maps). Map values are NOT mutated in place because
