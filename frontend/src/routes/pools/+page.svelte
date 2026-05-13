@@ -868,7 +868,7 @@
                 class="input mono"
                 bind:value={form.runner_user}
                 placeholder="(root)"
-                pattern="^[a-z_][a-z0-9_-]{'{0,31}'}$"
+                pattern="^[a-z_][a-z0-9_\-]{'{0,31}'}$"
             />
         </div>
 
