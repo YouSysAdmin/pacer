@@ -59,7 +59,7 @@ type input struct {
 	MaxConcurrentRunners int               `json:"max_concurrent_runners" validate:"min=0"`
 	Spot                 bool              `json:"spot"`
 	SpawnMethod          string            `json:"spawn_method"           validate:"oneof=fleet run_instances"                                    normalize:"normalize"`
-	AllocationStrategy   string            `json:"allocation_strategy"    validate:"oneof=cost priority"                                          normalize:"normalize"`
+	AllocationStrategy   string            `json:"allocation_strategy"    validate:"oneof=cost lowest_price capacity priority"                    normalize:"normalize"`
 	ExtraLabels          []string          `json:"extra_labels"           validate:"omitempty,max=32,dive,min=1,max=64,gha_safe,runner_label,not_self_hosted"`
 	Tags                 map[string]string `json:"tags"                   validate:"omitempty,max=50,dive,keys,required,min=1,max=128,gha_safe,endkeys,max=256"`
 	RunnerVersion        string            `json:"runner_version"         validate:"omitempty,max=32"`

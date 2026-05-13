@@ -181,23 +181,46 @@ func buildFleetOverrides(instanceTypes, subnetIDs []string, priorityMode bool) [
 	return out
 }
 
-// allocationStrategies maps the pool's coarse cost-vs-priority knob
-// to AWS's per-market allocation strategy enums.
+// allocationStrategies maps the pool's coarse strategy knob to AWS's
+// per-market allocation strategy enums.
 //
-//	"cost"     -> lowest-price (on-demand) + price-capacity-optimized (spot)
-//	"priority" -> prioritized  (on-demand) + capacity-optimized-prioritized (spot)
+//	"cost"         -> lowest-price (on-demand) + price-capacity-optimized (spot)   [default]
+//	"lowest_price" -> lowest-price (on-demand) + lowest-price (spot)               [pure cheapest; higher interruption]
+//	"capacity"     -> lowest-price (on-demand) + capacity-optimized (spot)         [deepest pool; ignore price]
+//	"priority"     -> prioritized  (on-demand) + capacity-optimized-prioritized (spot)
+//
+// On-demand has no "capacity" concept (it's always available), so the
+// "capacity" preset still maps OD to lowest-price -- the strategy is
+// only meaningful for spot pools.
+//
+// "lowest_price" for spot is the deprecated AWS strategy: it picks the
+// instantaneously cheapest pool with no capacity signal, so it'll
+// happily land in shallow pools that interrupt soon after launch.
+// Useful when cost trumps reliability (short throwaway jobs); avoid
+// for long-running workloads.
 //
 // For spot, capacity-optimized-prioritized respects the operator's
 // list order on a best-effort basis but optimizes capacity first --
 // using plain "prioritized" for spot is an anti-pattern (it ignores
 // capacity signals and risks high-interruption pools).
+//
+// Unknown strategies fall back to "cost" so an inbound backup row
+// with a typo still launches.
 func allocationStrategies(strategy string) (ec2types.FleetOnDemandAllocationStrategy, ec2types.SpotAllocationStrategy) {
-	if strategy == "priority" {
+	switch strategy {
+	case "lowest_price":
+		return ec2types.FleetOnDemandAllocationStrategyLowestPrice,
+			ec2types.SpotAllocationStrategyLowestPrice
+	case "capacity":
+		return ec2types.FleetOnDemandAllocationStrategyLowestPrice,
+			ec2types.SpotAllocationStrategyCapacityOptimized
+	case "priority":
 		return ec2types.FleetOnDemandAllocationStrategyPrioritized,
 			ec2types.SpotAllocationStrategyCapacityOptimizedPrioritized
+	default: // "cost" or empty
+		return ec2types.FleetOnDemandAllocationStrategyLowestPrice,
+			ec2types.SpotAllocationStrategyPriceCapacityOptimized
 	}
-	return ec2types.FleetOnDemandAllocationStrategyLowestPrice,
-		ec2types.SpotAllocationStrategyPriceCapacityOptimized
 }
 
 // postTagInstance applies per-spawn tags Fleet can't include in the

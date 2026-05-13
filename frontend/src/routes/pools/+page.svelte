@@ -291,7 +291,13 @@
             max_concurrent_runners: Number(form.max_concurrent_runners) || 5,
             spot: !!form.spot,
             spawn_method: form.spawn_method || "fleet",
-            allocation_strategy: form.allocation_strategy || "cost",
+            // allocation_strategy is Fleet-only; force 'cost' on
+            // run_instances so a stale value (left over from toggling
+            // away from Fleet) never reaches the validator.
+            allocation_strategy:
+                (form.spawn_method || "fleet") === "fleet"
+                    ? form.allocation_strategy || "cost"
+                    : "cost",
             extra_labels: parseList(form.extra_labels || ""),
             tags: form.tags || {},
             runner_version: (form.runner_version || "").trim(),
@@ -736,50 +742,120 @@
             </div>
         </div>
 
-        <div class="field-row">
-            <div class="field">
-                <label for="conc">Max concurrent runners</label>
-                <input
-                    id="conc"
-                    class="input"
-                    type="number"
-                    min="1"
-                    bind:value={form.max_concurrent_runners}
-                />
-            </div>
-            <div class="field">
-                <label for="spot">Spot</label>
-                <label class="chk"
-                    ><input
-                        id="spot"
-                        type="checkbox"
-                        bind:checked={form.spot}
-                    />
-                    use spot instances
-                </label>
+        <div class="field">
+            <label for="conc">Max concurrent runners</label>
+            <input
+                id="conc"
+                class="input"
+                type="number"
+                min="1"
+                bind:value={form.max_concurrent_runners}
+            />
+        </div>
+
+        <div class="field">
+            <label>Spawn method</label>
+            <div class="method-toggle">
+                <div
+                    class="method-card"
+                    class:sel={form.spawn_method === "fleet"}
+                    role="radio"
+                    tabindex="0"
+                    aria-checked={form.spawn_method === "fleet"}
+                    onclick={() => (form.spawn_method = "fleet")}
+                    onkeydown={(e) => {
+                        if (e.key === " " || e.key === "Enter") {
+                            e.preventDefault();
+                            form.spawn_method = "fleet";
+                        }
+                    }}
+                >
+                    <div class="n">Fleet</div>
+                    <div class="d">
+                        CreateFleet, multi-type + multi-AZ. AWS picks an
+                        available (instance_type x subnet) combo using your
+                        allocation strategy.
+                    </div>
+                    <div class="rec">RECOMMENDED</div>
+                </div>
+                <div
+                    class="method-card"
+                    class:sel={form.spawn_method === "run_instances"}
+                    role="radio"
+                    tabindex="0"
+                    aria-checked={form.spawn_method === "run_instances"}
+                    onclick={() => (form.spawn_method = "run_instances")}
+                    onkeydown={(e) => {
+                        if (e.key === " " || e.key === "Enter") {
+                            e.preventDefault();
+                            form.spawn_method = "run_instances";
+                        }
+                    }}
+                >
+                    <div class="n">RunInstances</div>
+                    <div class="d">
+                        Serial loop; single instance type per call, first
+                        subnet only. Legacy path kept for parity with older
+                        deployments.
+                    </div>
+                </div>
             </div>
         </div>
 
-        <div class="field-row">
-            <div class="field">
-                <label for="sm">
-                    Spawn method <span class="muted">
-                        (how launches are driven)
-                    </span>
-                </label>
-                <select id="sm" class="select" bind:value={form.spawn_method}>
-                    <option value="fleet">
-                        fleet — CreateFleet, multi-type + multi-AZ (recommended)
-                    </option>
-                    <option value="run_instances">
-                        run_instances — serial, first subnet only (legacy)
-                    </option>
-                </select>
+        <div class="field">
+            <label>Market</label>
+            <div class="method-toggle">
+                <div
+                    class="method-card"
+                    class:sel={form.spot}
+                    role="radio"
+                    tabindex="0"
+                    aria-checked={form.spot}
+                    onclick={() => (form.spot = true)}
+                    onkeydown={(e) => {
+                        if (e.key === " " || e.key === "Enter") {
+                            e.preventDefault();
+                            form.spot = true;
+                        }
+                    }}
+                >
+                    <div class="n">Spot</div>
+                    <div class="d">
+                        Cheaper, interruptible. AWS guarantees price will not
+                        exceed on-demand. Right for ephemeral CI runners.
+                    </div>
+                    <div class="rec">RECOMMENDED</div>
+                </div>
+                <div
+                    class="method-card"
+                    class:sel={!form.spot}
+                    role="radio"
+                    tabindex="0"
+                    aria-checked={!form.spot}
+                    onclick={() => (form.spot = false)}
+                    onkeydown={(e) => {
+                        if (e.key === " " || e.key === "Enter") {
+                            e.preventDefault();
+                            form.spot = false;
+                        }
+                    }}
+                >
+                    <div class="n">On-demand</div>
+                    <div class="d">
+                        Stable, full price. Pick when interruption mid-job
+                        would break the workflow.
+                    </div>
+                </div>
             </div>
+        </div>
+
+        {#if form.spawn_method === "fleet"}
             <div class="field">
                 <label for="alloc">
                     Allocation strategy
-                    <span class="muted">(only affects fleet) </span>
+                    <span class="muted">
+                        (Fleet picks among instance_type x subnet combos)
+                    </span>
                 </label>
                 <select
                     id="alloc"
@@ -787,15 +863,23 @@
                     bind:value={form.allocation_strategy}
                 >
                     <option value="cost"
-                        >cost — AWS picks cheapest + capacity-safe (ignores list
-                        order)</option
+                        >cost — cheapest + capacity-safe (default; AWS skips
+                        shallow pools even if they're cheaper)</option
+                    >
+                    <option value="lowest_price"
+                        >lowest_price — pure cheapest (ignores capacity; spot
+                        may interrupt soon)</option
+                    >
+                    <option value="capacity"
+                        >capacity — deepest spot pool, ignore price (production
+                        reliability)</option
                     >
                     <option value="priority"
                         >priority — honors instance_types list order</option
                     >
                 </select>
             </div>
-        </div>
+        {/if}
 
         <div class="field">
             <label for="extra-labels">
