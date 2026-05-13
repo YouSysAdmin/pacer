@@ -78,6 +78,18 @@ data "aws_iam_policy_document" "orchestrator" {
     resources = ["*"]
   }
 
+  # Reaper batches DescribeInstances every 60s to detect spawned
+  # instances that AWS has already terminated (spot reclaim,
+  # store-failure, manual termination from the console) so the row
+  # gets marked lost immediately instead of waiting for the
+  # max-runtime cutoff. Resource-level scoping isn't available for
+  # this action, so it's "*" -- read-only, no mutation risk.
+  statement {
+    sid       = "DescribeInstancesForReaper"
+    actions   = ["ec2:DescribeInstances"]
+    resources = ["*"]
+  }
+
   # On-demand price lookups for cost rollups.
   statement {
     sid       = "ReadOnDemandPricing"

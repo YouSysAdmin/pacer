@@ -70,6 +70,12 @@ makes.
       "Resource": "*"
     },
     {
+      "Sid": "DescribeInstancesForReaper",
+      "Effect": "Allow",
+      "Action": "ec2:DescribeInstances",
+      "Resource": "*"
+    },
+    {
       "Sid": "ReadOnDemandPricing",
       "Effect": "Allow",
       "Action": "pricing:GetProducts",

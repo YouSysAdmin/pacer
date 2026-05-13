@@ -97,6 +97,12 @@ Fill in the three fields below. The policy regenerates as you type. Nothing is s
         "Resource": "*"
       },
       {
+        "Sid": "DescribeInstancesForReaper",
+        "Effect": "Allow",
+        "Action": "ec2:DescribeInstances",
+        "Resource": "*"
+      },
+      {
         "Sid": "ReadOnDemandPricing",
         "Effect": "Allow",
         "Action": "pricing:GetProducts",
@@ -336,7 +342,7 @@ aws iam get-role-policy \
   --query 'PolicyDocument.Statement[].Sid' --output table
 ```
 
-You should see the Sids that were generated — `DescribeForValidation`, `ReadOnDemandPricing`, `ValidateInstanceProfileAtPoolSave`, `CreateTaggedLaunchTemplate`, `ModifyOnlyOurLaunchTemplates`, `RunInstancesReadOnlyResources`, `RunInstancesFromOurLaunchTemplate`, `RunInstancesTaggedInstanceAndVolume`, `TagOnCreate`, `TerminateOnlyOurInstances`, and (only when you provided a runner instance role above) `PassRunnerInstanceProfile`.
+You should see the Sids that were generated — `DescribeForValidation`, `DescribeInstancesForReaper`, `ReadOnDemandPricing`, `ValidateInstanceProfileAtPoolSave`, `CreateTaggedLaunchTemplate`, `ModifyOnlyOurLaunchTemplates`, `RunInstancesReadOnlyResources`, `RunInstancesFromOurLaunchTemplate`, `RunInstancesTaggedInstanceAndVolume`, `TagOnCreate`, `TerminateOnlyOurInstances`, and (only when you provided a runner instance role above) `PassRunnerInstanceProfile`.
 
 ## Notes
 
