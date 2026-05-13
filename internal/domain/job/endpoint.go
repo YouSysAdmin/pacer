@@ -49,10 +49,16 @@ type Handler struct {
 // (head_branch, head_sha, html_url, steps[], etc.) without us
 // committing to a specific schema in Go.
 type detail struct {
-	Job      *jobmodel.Job           `json:"job"`
-	Payload  json.RawMessage         `json:"payload,omitempty"`
-	Instance *instancemodel.Instance `json:"instance,omitempty"`
-	Audit    []*auditmodel.Entry     `json:"audit"`
+	Job *jobmodel.Job `json:"job"`
+	// ProjectName + PoolName are joined in for the modal so the UI
+	// can render human-readable labels instead of the UUIDs carried
+	// on Job.ProjectID / Job.PoolID. Empty string when the source row
+	// has been deleted out from under the job.
+	ProjectName string                  `json:"project_name,omitempty"`
+	PoolName    string                  `json:"pool_name,omitempty"`
+	Payload     json.RawMessage         `json:"payload,omitempty"`
+	Instance    *instancemodel.Instance `json:"instance,omitempty"`
+	Audit       []*auditmodel.Entry     `json:"audit"`
 }
 
 // List is GET /api/jobs.
@@ -111,6 +117,17 @@ func (h *Handler) Get(c *fiber.Ctx) error {
 	d := detail{Job: j, Audit: []*auditmodel.Entry{}}
 	if len(payload) > 0 && json.Valid(payload) {
 		d.Payload = json.RawMessage(payload)
+	}
+
+	if j.ProjectID != "" {
+		if pr, err := h.Runtime.Store.Project.Get(ctx, j.ProjectID); err == nil && pr != nil {
+			d.ProjectName = pr.Name
+		}
+	}
+	if j.PoolID != "" {
+		if po, err := h.Runtime.Store.Pool.Get(ctx, j.PoolID); err == nil && po != nil {
+			d.PoolName = po.Name
+		}
 	}
 
 	if j.InstanceID != "" {

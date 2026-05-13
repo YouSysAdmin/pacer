@@ -325,8 +325,8 @@
         <tr><th>GH job ID</th><td class="mono">{j.gh_job_id}</td></tr>
         <tr><th>GH run ID</th><td class="mono">{j.gh_run_id}</td></tr>
         <tr><th>Pacer ID</th><td class="mono">{j.id}</td></tr>
-        <tr><th>Project</th><td class="mono">{j.project_id}</td></tr>
-        <tr><th>Pool</th><td class="mono">{j.pool_id || "—"}</td></tr>
+        <tr><th>Project</th><td class="mono" title={j.project_id}>{detail.project_name || j.project_id || "—"}</td></tr>
+        <tr><th>Pool</th><td class="mono" title={j.pool_id}>{detail.pool_name || j.pool_id || "—"}</td></tr>
         <tr><th>Attempts</th><td class="mono">{j.attempts}</td></tr>
       </tbody>
     </table>
