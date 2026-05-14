@@ -279,6 +279,82 @@ func TestJob_UpdatePayloadIfRunning_OnlyUpdatesRunningRows(t *testing.T) {
 	}
 }
 
+// TestJob_ListCountPaginate_Consistent locks in the pagination
+// contract the jobs-page pager relies on: List+Offset returns
+// non-overlapping subsets, Count agrees with List ignoring pagination,
+// and the filter is applied symmetrically to both.
+func TestJob_ListCountPaginate_Consistent(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	base := time.Now().UTC().Truncate(time.Second)
+
+	// 10 jobs: 6 completed, 4 failed. Older queued_at first so the
+	// DESC order on queued_at produces a deterministic sequence.
+	for i := 0; i < 6; i++ {
+		mustPut(t, f, "c-"+idN("", i), jobmodel.StatusCompleted, base.Add(time.Duration(i)*time.Second), nil, 0)
+	}
+	for i := 0; i < 4; i++ {
+		mustPut(t, f, "f-"+idN("", i), jobmodel.StatusFailed, base.Add(time.Duration(i+6)*time.Second), nil, 0)
+	}
+
+	// Filter: completed only. Count = 6.
+	filt := jobmodel.ListFilter{Status: jobmodel.StatusCompleted}
+	n, err := f.store.Count(ctx, filt)
+	if err != nil {
+		t.Fatalf("Count: %v", err)
+	}
+	if n != 6 {
+		t.Fatalf("Count: want 6, got %d", n)
+	}
+
+	// Two pages of size 4 -- pages must concat to Count, no overlap.
+	page1, err := f.store.List(ctx, jobmodel.ListFilter{Status: filt.Status, Limit: 4, Offset: 0})
+	if err != nil {
+		t.Fatalf("List page 1: %v", err)
+	}
+	page2, err := f.store.List(ctx, jobmodel.ListFilter{Status: filt.Status, Limit: 4, Offset: 4})
+	if err != nil {
+		t.Fatalf("List page 2: %v", err)
+	}
+	if len(page1)+len(page2) != n {
+		t.Fatalf("pagination drift: page1=%d + page2=%d != count=%d",
+			len(page1), len(page2), n)
+	}
+	seen := map[string]bool{}
+	for _, j := range page1 {
+		seen[j.ID] = true
+		if j.Status != jobmodel.StatusCompleted {
+			t.Errorf("filter leak on page1: %s status=%s", j.ID, j.Status)
+		}
+	}
+	for _, j := range page2 {
+		if seen[j.ID] {
+			t.Errorf("duplicate across pages: %s", j.ID)
+		}
+		if j.Status != jobmodel.StatusCompleted {
+			t.Errorf("filter leak on page2: %s status=%s", j.ID, j.Status)
+		}
+	}
+
+	// Offset past the end returns empty, not error.
+	tail, err := f.store.List(ctx, jobmodel.ListFilter{Status: filt.Status, Limit: 4, Offset: 100})
+	if err != nil {
+		t.Fatalf("List past end: %v", err)
+	}
+	if len(tail) != 0 {
+		t.Fatalf("past-end list: want 0, got %d", len(tail))
+	}
+
+	// No-filter Count covers every row.
+	all, err := f.store.Count(ctx, jobmodel.ListFilter{})
+	if err != nil {
+		t.Fatalf("Count(all): %v", err)
+	}
+	if all != 10 {
+		t.Fatalf("Count(all): want 10, got %d", all)
+	}
+}
+
 // --- helpers ---
 
 func idN(prefix string, i int) string {

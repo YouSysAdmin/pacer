@@ -611,6 +611,20 @@ textarea {
   border-color: rgba(239, 68, 68, 0.30);
   color: var(--crit);
 }
+
+/* ------------------------------------------------------------------
+   Pager — shared by paginated tables (audit, jobs, ...). Sits below
+   the table; left side carries the "showing X-Y of Z" label, right
+   side carries prev/next buttons.
+   ------------------------------------------------------------------ */
+.pager {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 16px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
 .banner.ok {
   background: rgba(74, 222, 128, 0.06);
   border-color: rgba(74, 222, 128, 0.30);

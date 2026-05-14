@@ -6,7 +6,8 @@
 
 <script>
   import { audit, projects, pools } from "$lib/api.js";
-  import { onMount } from "svelte";
+  import { confirmDialog } from "$lib/confirm.svelte.js";
+  import { onMount, untrack } from "svelte";
 
   // UTC-aligned date helpers (match the stats page convention).
   function todayUTC() {
@@ -34,6 +35,13 @@
   ];
 
   let range = $state("7");
+  // q is the free-text search across target_id, detail JSON,
+  // client_ip, actor_email, request_id, and action. This is the
+  // primary search affordance -- paste an instance id, an IP, a
+  // job id, or part of an action name and find it. actionFilter
+  // is kept around for power users who want an exact action match
+  // (and is what `select` widgets would feed into).
+  let q = $state("");
   let actionFilter = $state("");
   let limit = $state(50);
   let offset = $state(0);
@@ -41,6 +49,23 @@
   let loading = $state(false);
   let error = $state(null);
   let data = $state(null);
+
+  // Manual prune state. pruneDays drives the dropdown; pruneMsg is
+  // the toast-style banner shown after success. Failures land in
+  // `error` (same surface as list failures).
+  const PRUNE_OPTIONS = [
+    { value: 1,   label: "1 day"    },
+    { value: 7,   label: "7 days"   },
+    { value: 15,  label: "15 days"  },
+    { value: 30,  label: "30 days"  },
+    { value: 90,  label: "90 days"  },
+    { value: 180, label: "180 days" },
+    { value: 365, label: "1 year"   },
+    { value: 730, label: "2 years"  },
+  ];
+  let pruneDays = $state(90);
+  let pruning = $state(false);
+  let pruneMsg = $state(null);
 
   // One row open at a time -- toggling a different row closes the
   // previous one. Set semantics from the prior version were richer
@@ -99,6 +124,7 @@
     try {
       data = await audit.list({
         ...windowParams(),
+        q: q.trim() || undefined,
         action: actionFilter || undefined,
         limit,
         offset,
@@ -107,6 +133,42 @@
       error = e.message;
     } finally {
       loading = false;
+    }
+  }
+
+  // Manual prune. Confirms first because audit deletes are
+  // irreversible -- shows the cutoff date (in operator-local time)
+  // and the period so the user can sanity-check before the click.
+  async function runPrune() {
+    const days = Number(pruneDays);
+    if (!Number.isFinite(days) || days <= 0) return;
+    const cutoff = new Date(Date.now() - days * 86400_000);
+    const ok = await confirmDialog({
+      title: "Prune audit log",
+      message:
+        `Delete every audit entry older than ${days} day${days === 1 ? "" : "s"} ` +
+        `(before ${cutoff.toLocaleString()})?\n\n` +
+        `This cannot be undone. The prune itself will be recorded ` +
+        `in the audit log.`,
+      confirmLabel: "Delete",
+      cancelLabel: "Cancel",
+      confirmDanger: true,
+    });
+    if (!ok) return;
+    pruning = true;
+    pruneMsg = null;
+    error = null;
+    try {
+      const r = await audit.prune(days);
+      const n = r?.deleted ?? 0;
+      const ago = r?.cutoff ? new Date(r.cutoff).toLocaleString() : `${days} days ago`;
+      pruneMsg = `Deleted ${n.toLocaleString()} audit entr${n === 1 ? "y" : "ies"} older than ${ago}.`;
+      offset = 0;
+      await refresh();
+    } catch (e) {
+      error = e.message;
+    } finally {
+      pruning = false;
     }
   }
 
@@ -121,11 +183,31 @@
     refresh();
   }
 
-  // Reset paging + reload when any filter changes.
+  // Reset paging + reload when any filter changes. q is debounced
+  // (300ms) so typing into the search box doesn't fire one request
+  // per keystroke.
+  //
+  // untrack() is load-bearing: without it Svelte 5 picks up
+  // `offset` as a tracked dep via refresh()'s internal read, and
+  // clicking Next would re-run this effect and rewind offset back
+  // to 0 -- the pager would silently do nothing. See the same
+  // pattern (and the same fix) on the jobs page.
   $effect(() => {
     range; actionFilter; limit;
-    offset = 0;
-    refresh();
+    untrack(() => {
+      offset = 0;
+      refresh();
+    });
+  });
+  let qDebounce = null;
+  $effect(() => {
+    q;
+    if (qDebounce) clearTimeout(qDebounce);
+    qDebounce = setTimeout(() => {
+      offset = 0;
+      refresh();
+    }, 300);
+    return () => { if (qDebounce) clearTimeout(qDebounce); };
   });
 
   // ----- Cell formatters --------------------------------------------
@@ -292,6 +374,27 @@
     </div>
   </div>
 
+  <!-- Manual prune. Sits between the page header and the KPI tiles
+       so the destructive action stays away from the search/filter
+       toolbar where misclicks would be more likely. -->
+  <div class="prune-bar">
+    <span class="prune-label">Prune entries older than</span>
+    <select class="select" bind:value={pruneDays} disabled={pruning}>
+      {#each PRUNE_OPTIONS as o (o.value)}
+        <option value={o.value}>{o.label}</option>
+      {/each}
+    </select>
+    <button
+      class="btn danger"
+      onclick={runPrune}
+      disabled={pruning}
+      title="Permanently delete audit entries older than the selected period."
+    >{pruning ? "pruning..." : "prune"}</button>
+    {#if pruneMsg}
+      <span class="prune-msg">{pruneMsg}</span>
+    {/if}
+  </div>
+
   <div class="stats kpi-row">
     <div class="stat">
       <div class="label">Events (window)</div>
@@ -316,9 +419,16 @@
   <div class="tbl-toolbar">
     <input
       class="input"
+      type="search"
+      placeholder="search instance id / job id / ip / email / request id / action / detail..."
+      bind:value={q}
+    />
+    <input
+      class="input action-input"
       type="text"
-      placeholder="filter by action (exact match, e.g. job.spawn_retry)"
+      placeholder="action (exact, e.g. job.spawn_retry)"
       bind:value={actionFilter}
+      title="Exact action match. For partial matches, use the search box -- it covers action too."
     />
     <select class="select" bind:value={range}>
       {#each RANGES as r (r.value)}
@@ -348,7 +458,8 @@
         <h3>No audit entries in this window</h3>
         <p>
           Nothing matched
-          {#if range === "all"}across the whole log{:else}within the last <strong>{range}</strong> day{range === "1" ? "" : "s"}{/if}{actionFilter ? ` for action ${actionFilter}` : ""}. Try a wider range or clear the action filter.
+          {#if q.trim()}for <strong>"{q.trim()}"</strong>{/if}
+          {#if range === "all"}across the whole log{:else}within the last <strong>{range}</strong> day{range === "1" ? "" : "s"}{/if}{actionFilter ? ` for action ${actionFilter}` : ""}. Try a wider range or clear the search.
         </p>
       </div>
     {:else}
@@ -455,10 +566,15 @@
     flex-wrap: wrap;
   }
   .tbl-toolbar > .input {
-    flex: 1 1 220px;
+    flex: 2 1 280px;
     min-width: 0;
     height: 32px;
     font-size: 13px;
+  }
+  /* The action-exact input is a power-user affordance; give it less
+     room than the main search box so it doesn't compete visually. */
+  .tbl-toolbar > .action-input {
+    flex: 1 1 180px;
   }
   .tbl-toolbar > .select {
     width: auto;
@@ -530,12 +646,25 @@
     overflow-y: auto;
   }
 
-  .pager {
+  /* .pager lives in app.css now (shared across paginated pages). */
+
+  /* Prune control bar. Inline strip; not styled as a card so the
+     destructive action doesn't feel like a setting. */
+  .prune-bar {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-top: 16px;
-    gap: 12px;
+    gap: 10px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    color: var(--fg-2);
     flex-wrap: wrap;
+  }
+  .prune-bar .select { height: 32px; width: auto; }
+  .prune-label { font-family: var(--font-mono); font-size: 12px; color: var(--fg-3); }
+  .prune-msg {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ok);
   }
 </style>

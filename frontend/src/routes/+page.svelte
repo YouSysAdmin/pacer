@@ -75,9 +75,13 @@
       const [ps, rs, js] = await Promise.all([
         projects.list(),
         repos.list(),
-        jobs.list(undefined, 200),
+        jobs.list({ limit: 200 }),
       ]);
-      const byStatus = (s) => (js || []).filter((j) => j.status === s).length;
+      // jobs.list returns the envelope {entries, total, ...}; the
+      // overview chips count by status within the most-recent
+      // window only, which is the prior behavior preserved.
+      const entries = (js && js.entries) || [];
+      const byStatus = (s) => entries.filter((j) => j.status === s).length;
       counts = {
         projects: (ps || []).length,
         repos: (rs || []).length,

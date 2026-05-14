@@ -61,11 +61,15 @@ type detail struct {
 	Audit       []*auditmodel.Entry     `json:"audit"`
 }
 
-// List is GET /api/jobs.
-// Optional query params:
+// List is GET /api/jobs. Optional query params:
 //
 //	status=<status>   filter by job status
 //	limit=<n>         clamp at 500; default 100
+//	offset=<n>        skip n rows for pagination; default 0
+//
+// Response envelope: {entries, total, limit, offset}. total is the
+// matching-row count ignoring pagination so the UI can render
+// "showing X-Y of Z" without a follow-up call.
 func (h *Handler) List(c *fiber.Ctx) error {
 	limit := 100
 	if v := c.Query("limit"); v != "" {
@@ -76,15 +80,34 @@ func (h *Handler) List(c *fiber.Ctx) error {
 			limit = n
 		}
 	}
+	offset := 0
+	if v := c.Query("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			offset = n
+		}
+	}
 	f := jobmodel.ListFilter{
 		Status: jobmodel.Status(c.Query("status")),
 		Limit:  limit,
+		Offset: offset,
 	}
 	js, err := h.Runtime.Store.Job.List(c.UserContext(), f)
 	if err != nil {
 		return response.Internal(c, err)
 	}
-	return response.Success(c, js)
+	total, err := h.Runtime.Store.Job.Count(c.UserContext(), f)
+	if err != nil {
+		return response.Internal(c, err)
+	}
+	if js == nil {
+		js = []*jobmodel.Job{}
+	}
+	return response.Success(c, fiber.Map{
+		"entries": js,
+		"total":   total,
+		"limit":   limit,
+		"offset":  offset,
+	})
 }
 
 // Get is GET /api/jobs/:id. Returns the enriched detail bundle: the

@@ -117,6 +117,22 @@ func buildAuditWhere(f auditmodel.ListFilter) (string, []any) {
 		clauses = append(clauses, "target_id = ?")
 		args = append(args, f.TargetID)
 	}
+	if f.Q != "" {
+		// Escape LIKE meta-chars so an operator pasting an IP
+		// (1.2.3.4) or a job ID with underscores doesn't get
+		// unintended wildcard behavior. SQLite's LIKE accepts
+		// ESCAPE '\' to opt out of metachar interpretation per-char.
+		needle := "%" + escapeLike(f.Q) + "%"
+		clauses = append(clauses, `(
+            target_id LIKE ? ESCAPE '\' OR
+            detail LIKE ? ESCAPE '\' OR
+            client_ip LIKE ? ESCAPE '\' OR
+            actor_email LIKE ? ESCAPE '\' OR
+            request_id LIKE ? ESCAPE '\' OR
+            action LIKE ? ESCAPE '\'
+        )`)
+		args = append(args, needle, needle, needle, needle, needle, needle)
+	}
 	if !f.Since.IsZero() {
 		clauses = append(clauses, "occurred_at >= ?")
 		args = append(args, f.Since)
@@ -129,6 +145,19 @@ func buildAuditWhere(f auditmodel.ListFilter) (string, []any) {
 		return "", args
 	}
 	return " WHERE " + strings.Join(clauses, " AND "), args
+}
+
+// escapeLike backslash-escapes the three characters SQLite's LIKE
+// treats as metacharacters so a free-text needle behaves like a
+// literal substring search. Paired with LIKE ? ESCAPE '\' in the
+// query string.
+func escapeLike(s string) string {
+	r := strings.NewReplacer(
+		`\`, `\\`,
+		`%`, `\%`,
+		`_`, `\_`,
+	)
+	return r.Replace(s)
 }
 
 func scanAudit(r interface{ Scan(...any) error }) (*auditmodel.Entry, error) {

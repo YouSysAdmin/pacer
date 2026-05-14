@@ -152,12 +152,12 @@ func registerRoutes(app *fiber.App, rt *env.Runtime) {
 	apiAuth.Get("/stats/timeseries", sh.Timeseries)
 	apiAuth.Get("/stats/top-users", sh.TopUsers)
 
-	// Audit log - read-only, paginated, time-windowed.
-	// Append-only;
-	// pruning is the only mutation and goes through Store.DeleteOlderThan
-	// (no UI yet).
+	// Audit log - read-only, paginated, time-windowed. Append-only;
+	// the prune endpoint is the only mutation path and it logs its
+	// own action so the trace survives the cleanup it describes.
 	auh := &audit.Handler{Runtime: rt}
 	apiAuth.Get("/audit", auh.List)
+	apiAuth.Post("/audit/prune", auh.Prune)
 
 	// Config backup - export the full project/pool/repo set as a
 	// single JSON document, or import one back. Import is upsert by

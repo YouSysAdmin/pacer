@@ -9,10 +9,14 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 
 	"github.com/yousysadmin/pacer/internal/core/env"
 	"github.com/yousysadmin/pacer/internal/core/response"
+	"github.com/yousysadmin/pacer/internal/core/validation"
+	authdomain "github.com/yousysadmin/pacer/internal/domain/auth"
 	auditmodel "github.com/yousysadmin/pacer/internal/models/audit"
+	usermodel "github.com/yousysadmin/pacer/internal/models/user"
 )
 
 type Handler struct {
@@ -42,6 +46,8 @@ func (h *Handler) List(c *fiber.Ctx) error {
 		Action:     c.Query("action"),
 		Actor:      c.Query("actor"),
 		TargetType: c.Query("target_type"),
+		TargetID:   c.Query("target_id"),
+		Q:          c.Query("q"),
 		Since:      since,
 		Until:      until,
 		Limit:      limit,
@@ -122,3 +128,75 @@ type errString string
 
 func (e errString) Error() string { return string(e) }
 func errMsg(s string) error       { return errString(s) }
+
+// pruneInput is the body of POST /api/audit/prune. OlderThanDays is
+// the only knob: rows with occurred_at < (now - N*24h) are deleted.
+// Range guard: at least 1 day so a misclick can't wipe today's
+// activity; capped at 3650 (10y) so the value stays sane.
+type pruneInput struct {
+	OlderThanDays int `json:"older_than_days" validate:"required,min=1,max=3650"`
+}
+
+// pruneResponse reports what happened. Cutoff is the absolute
+// timestamp DeleteOlderThan was called with -- echoed back so the
+// UI can render "deleted N events older than YYYY-MM-DD HH:MM" with
+// no client-side timezone math.
+type pruneResponse struct {
+	Deleted       int       `json:"deleted"`
+	Cutoff        time.Time `json:"cutoff"`
+	OlderThanDays int       `json:"older_than_days"`
+}
+
+// Prune is POST /api/audit/prune. Manual operator-driven cleanup
+// of the audit log. The action itself is audited (with actor +
+// detail showing the cutoff + delete count), so the log retains a
+// self-documenting trace of who cleaned what -- the prune-record
+// row is necessarily after the cutoff it describes, so it survives.
+func (h *Handler) Prune(c *fiber.Ctx) error {
+	in, err := validation.BindAndValidate[pruneInput](c)
+	if err != nil {
+		fes := validation.Humanize(err)
+		return response.BadRequestFields(c, validation.Summary(fes), fes)
+	}
+
+	cutoff := time.Now().UTC().Add(-time.Duration(in.OlderThanDays) * 24 * time.Hour)
+	deleted, err := h.Runtime.Store.Audit.DeleteOlderThan(c.UserContext(), cutoff)
+	if err != nil {
+		return response.Internal(c, err)
+	}
+
+	// Audit the prune itself. Hand-written (not via auditing.PutCtx)
+	// because we want to attach actor info -- deleting audit rows
+	// is the kind of action where "who did this" matters more than
+	// the average state change.
+	actorEmail, actorID := actorFromLocals(c)
+	_ = h.Runtime.Store.Audit.Put(c.UserContext(), &auditmodel.Entry{
+		ID:          uuid.NewString(),
+		Action:      auditmodel.ActionAuditPruned,
+		ActorEmail:  actorEmail,
+		ActorUserID: actorID,
+		ClientIP:    c.IP(),
+		Detail: auditmodel.Detail(map[string]any{
+			"older_than_days": in.OlderThanDays,
+			"cutoff":          cutoff.Format(time.RFC3339),
+			"deleted":         deleted,
+		}),
+		OccurredAt: time.Now().UTC(),
+	})
+
+	return response.Success(c, pruneResponse{
+		Deleted:       deleted,
+		Cutoff:        cutoff,
+		OlderThanDays: in.OlderThanDays,
+	})
+}
+
+// actorFromLocals reads the auth-middleware-populated user. Returns
+// empty strings when auth.disabled=true (no user attached) -- the
+// audit row still lands with action + ip, just without attribution.
+func actorFromLocals(c *fiber.Ctx) (email, userID string) {
+	if u, ok := c.Locals(authdomain.UserLocalKey).(*usermodel.User); ok && u != nil {
+		return u.Email, u.ID
+	}
+	return "", ""
+}

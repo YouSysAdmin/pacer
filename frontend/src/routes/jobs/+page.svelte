@@ -5,6 +5,7 @@
 -->
 
 <script>
+  import { onMount, untrack } from "svelte";
   import { jobs, systemHealth } from "$lib/api.js";
   import Modal from "$lib/Modal.svelte";
 
@@ -21,6 +22,12 @@
   ];
 
   let list = $state([]);
+  // Pagination envelope from GET /api/jobs. total drives the pager
+  // copy; limit/offset round-trip into the next request. Reset to
+  // page 1 whenever a filter or page-size changes.
+  let total = $state(0);
+  let limit = $state(50);
+  let offset = $state(0);
   let loading = $state(false);
   let error = $state(null);
   let filter = $state("");
@@ -152,16 +159,53 @@
     }
   }
 
+  // refreshGen is a monotonic counter used to discard stale fetch
+  // results. With auto-refresh + manual paging both calling refresh(),
+  // responses can arrive out of order -- a slower page-1 reply
+  // landing after a faster page-2 reply would rewind the table.
+  // Each refresh() call captures its gen at start and bails before
+  // applying results if a newer call has since taken over.
+  let refreshGen = 0;
   async function refresh() {
+    const myGen = ++refreshGen;
     loading = true;
     error = null;
     try {
-      list = (await jobs.list(filter || undefined, 100)) || [];
+      const r = await jobs.list({
+        status: filter || undefined,
+        limit,
+        offset,
+      });
+      if (myGen !== refreshGen) return; // newer refresh in flight -- abandon
+      list = (r && r.entries) || [];
+      total = r?.total ?? list.length;
     } catch (e) {
+      if (myGen !== refreshGen) return;
       error = e.message;
     } finally {
-      loading = false;
+      if (myGen === refreshGen) loading = false;
     }
+  }
+
+  function prevPage() {
+    if (offset === 0) return;
+    offset = Math.max(0, offset - limit);
+    refresh();
+  }
+  function nextPage() {
+    if (offset + limit >= total) return;
+    offset = offset + limit;
+    refresh();
+  }
+  // firstPage is the "show me the latest" shortcut. Used by both the
+  // explicit "first" button and the "refresh" button -- with
+  // auto-refresh paused past page 1, the operator needs a quick way
+  // back, and refresh-while-paginating is a no-op otherwise (the
+  // historical pages don't change). Setting offset before refresh()
+  // is important: refresh() reads offset to build the URL.
+  function firstPage() {
+    offset = 0;
+    refresh();
   }
 
   async function openDetail(id) {
@@ -192,20 +236,51 @@
     }
   }
 
-  $effect(() => {
+  // Auto-refresh is set up once on mount via setInterval -- NOT via
+  // $effect -- because $effect tracks every state read inside its
+  // body (including reads inside the called refresh()), which would
+  // recreate the interval on every offset/filter/limit change. Each
+  // recreation reset the 5s window AND racing against direct
+  // refresh() calls from the pager produced out-of-order responses
+  // that visibly rewound the page.
+  //
+  // Auto-refresh is also gated on offset === 0: when the operator
+  // is browsing past page 1 they want the data to stay put while
+  // they read it, not shuffle every 5s. The detail modal still
+  // refreshes on its own cadence because the modal is per-job and
+  // doesn't move out from under the cursor.
+  onMount(() => {
     refresh();
-    const t = setInterval(async () => {
-      await refresh();
-      await refreshDetailIfOpen();
+    const t = setInterval(() => {
+      if (offset === 0) refresh();
+      refreshDetailIfOpen();
     }, 5000);
     return () => clearInterval(t);
   });
 
-  // re-fetch when filter changes
+  // Re-fetch when filter or page size changes; reset to page 1 so
+  // a narrower filter doesn't leave the pager pointing past the
+  // new (smaller) total.
+  //
+  // The body MUST be wrapped in untrack(). Svelte 5 tracks every
+  // $state read inside an effect, including reads that happen
+  // inside called functions -- so a bare refresh() call would pick
+  // up `offset` (which it reads to build the request URL) as a
+  // tracked dep. Clicking Next would then re-trigger this effect,
+  // which would reset offset back to 0 and fetch page 1, making
+  // the Next button effectively a no-op. We only want the effect
+  // to fire on filter / limit transitions; offset writes are
+  // owned by the pager.
   $effect(() => {
-    filter;
-    refresh();
+    filter; limit;
+    untrack(() => {
+      offset = 0;
+      refresh();
+    });
   });
+
+  let totalPages = $derived(total > 0 ? Math.max(1, Math.ceil(total / limit)) : 1);
+  let currentPage = $derived(Math.floor(offset / limit) + 1);
 
   // ----- Modal-side derived fields. ---------------------------------
   // The webhook payload is parsed once via $derived rather than
@@ -267,7 +342,24 @@
           <option value={s}>{s || "all"}</option>
         {/each}
       </select>
-      <button class="btn" onclick={refresh} disabled={loading}>refresh</button>
+      <select class="select" bind:value={limit}>
+        <option value={25}>Per page: 25</option>
+        <option value={50}>Per page: 50</option>
+        <option value={100}>Per page: 100</option>
+        <option value={250}>Per page: 250</option>
+      </select>
+      <button
+        class="btn"
+        onclick={firstPage}
+        disabled={loading || offset === 0}
+        title="Jump back to page 1 (latest activity)."
+      >first</button>
+      <button
+        class="btn"
+        onclick={firstPage}
+        disabled={loading}
+        title="Reload from page 1 (resets pagination)."
+      >refresh</button>
       <button
         class="btn"
         onclick={reconcile}
@@ -332,9 +424,28 @@
         {/each}
       </tbody>
     </table>
+
+    <div class="pager">
+      <span class="muted">
+        Showing {offset + 1}-{Math.min(offset + limit, total)} of {total.toLocaleString()}
+        {#if totalPages > 1}<span class="muted"> -- page {currentPage} of {totalPages}</span>{/if}
+      </span>
+      <div class="row-actions">
+        <button class="btn xs" onclick={firstPage} disabled={offset === 0 || loading}>first</button>
+        <button class="btn xs" onclick={prevPage} disabled={offset === 0 || loading}>prev</button>
+        <button class="btn xs" onclick={nextPage}
+                disabled={offset + limit >= total || loading}>next</button>
+      </div>
+    </div>
   {/if}
 
-  <p class="muted" style="margin-top: 1rem;">Auto-refreshes every 5 s.</p>
+  <p class="muted" style="margin-top: 1rem;">
+    {#if offset === 0}
+      Auto-refreshes every 5 s.
+    {:else}
+      Auto-refresh paused while paging -- click <strong>prev</strong> back to page 1 (or <strong>refresh</strong>) to resume.
+    {/if}
+  </p>
 </main>
 
 <Modal bind:open={detailOpen} title={detail ? `Job ${detail.job.gh_job_id}` : "Job"}>

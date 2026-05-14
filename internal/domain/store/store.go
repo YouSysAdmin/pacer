@@ -146,6 +146,9 @@ type JobStore interface {
 	Reschedule(ctx context.Context, id string, attempts int, nextRetryAt time.Time) error
 	ReclaimStale(ctx context.Context, cutoff time.Time) (int, error)
 	List(ctx context.Context, f job.ListFilter) ([]*job.Job, error)
+	// Count returns the number of rows matching f, ignoring Limit
+	// and Offset. Powers the "X of Y" pager on the jobs page.
+	Count(ctx context.Context, f job.ListFilter) (int, error)
 	// StatusTimeseries returns one bucket per UTC calendar day with
 	// terminal-status counts (completed / failed / reaped). Powers
 	// the Overview page's success-vs-failed chart.

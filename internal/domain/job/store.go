@@ -334,7 +334,8 @@ func (s *Store) Reschedule(ctx context.Context, id string, attempts int, nextRet
 }
 
 // List returns jobs filtered by Status / ProjectID / PoolID / Repo,
-// newest first, capped at f.Limit (default 100, max 500).
+// newest first, capped at f.Limit (default 100, max 500) and skipping
+// f.Offset rows.
 func (s *Store) List(ctx context.Context, f jobmodel.ListFilter) ([]*jobmodel.Job, error) {
 	limit := f.Limit
 	if limit <= 0 {
@@ -343,31 +344,14 @@ func (s *Store) List(ctx context.Context, f jobmodel.ListFilter) ([]*jobmodel.Jo
 	if limit > 500 {
 		limit = 500
 	}
+	offset := f.Offset
+	if offset < 0 {
+		offset = 0
+	}
 
-	q := jobSelect
-	args := []any{}
-	conds := []string{}
-	if f.Status != "" {
-		conds = append(conds, "status = ?")
-		args = append(args, string(f.Status))
-	}
-	if f.ProjectID != "" {
-		conds = append(conds, "project_id = ?")
-		args = append(args, f.ProjectID)
-	}
-	if f.PoolID != "" {
-		conds = append(conds, "pool_id = ?")
-		args = append(args, f.PoolID)
-	}
-	if f.Repo != "" {
-		conds = append(conds, "repo_full_name = ?")
-		args = append(args, f.Repo)
-	}
-	if len(conds) > 0 {
-		q += " WHERE " + strings.Join(conds, " AND ")
-	}
-	q += " ORDER BY queued_at DESC LIMIT ?"
-	args = append(args, limit)
+	where, args := buildJobWhere(f)
+	q := jobSelect + where + " ORDER BY queued_at DESC LIMIT ? OFFSET ?"
+	args = append(args, limit, offset)
 
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -384,6 +368,47 @@ func (s *Store) List(ctx context.Context, f jobmodel.ListFilter) ([]*jobmodel.Jo
 		out = append(out, j)
 	}
 	return out, rows.Err()
+}
+
+// Count returns the number of rows matching f, ignoring Limit + Offset.
+// Sharing buildJobWhere with List guarantees pagination math (showing
+// X-Y of total) reflects what's actually on the page.
+func (s *Store) Count(ctx context.Context, f jobmodel.ListFilter) (int, error) {
+	where, args := buildJobWhere(f)
+	var n int
+	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM jobs"+where, args...).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// buildJobWhere assembles the shared WHERE clause for List / Count
+// so pagination totals match the page contents.
+func buildJobWhere(f jobmodel.ListFilter) (string, []any) {
+	var (
+		conds []string
+		args  []any
+	)
+	if f.Status != "" {
+		conds = append(conds, "status = ?")
+		args = append(args, string(f.Status))
+	}
+	if f.ProjectID != "" {
+		conds = append(conds, "project_id = ?")
+		args = append(args, f.ProjectID)
+	}
+	if f.PoolID != "" {
+		conds = append(conds, "pool_id = ?")
+		args = append(args, f.PoolID)
+	}
+	if f.Repo != "" {
+		conds = append(conds, "repo_full_name = ?")
+		args = append(args, f.Repo)
+	}
+	if len(conds) == 0 {
+		return "", args
+	}
+	return " WHERE " + strings.Join(conds, " AND "), args
 }
 
 const jobSelect = `

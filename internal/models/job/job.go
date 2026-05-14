@@ -71,6 +71,7 @@ type ListFilter struct {
 	PoolID    string
 	Repo      string
 	Limit     int
+	Offset    int
 }
 
 // DayBucket is one row in the daily success/failed timeseries used

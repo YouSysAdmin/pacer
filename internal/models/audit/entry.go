@@ -64,6 +64,11 @@ const (
 	ActionOIDCLoginDenied    = "auth.oidc.login_denied"
 	ActionOIDCLoginFailed    = "auth.oidc.login_failed"
 	ActionUserOIDCLinked     = "user.oidc_linked"
+	// ActionAuditPruned records a manual operator-driven cleanup of
+	// the audit_log table. The entry survives the prune it describes
+	// (its occurred_at is by definition after the cutoff), so the
+	// log retains a self-documenting trace of who deleted what.
+	ActionAuditPruned = "audit.pruned"
 )
 
 type Entry struct {
@@ -84,6 +89,15 @@ type ListFilter struct {
 	Actor      string
 	TargetType string
 	TargetID   string
+	// Q is a substring search applied across the columns operators
+	// actually need to look up: target_id (job_id, instance_id,
+	// pool/project UUID), detail (the JSON blob -- instance_id,
+	// pool name, AWS state, etc. all live here), client_ip,
+	// actor_email, request_id, and action. SQLite LIKE is
+	// case-insensitive for ASCII, which is what every searchable
+	// audit field is in practice. Empty Q disables the search;
+	// combines with the other filters via AND.
+	Q string
 	// Since / Until form an inclusive-exclusive time window.
 	// Zero values disable that side of the filter.
 	Since  time.Time

@@ -87,10 +87,14 @@ export const repos = {
 };
 
 export const jobs = {
-  list: (status, limit = 50) => {
+  // Returns the envelope {entries, total, limit, offset}. The Jobs
+  // page paginates against `total`; older callers that just want a
+  // bare array can read `.entries` from the result.
+  list: ({ status, limit = 50, offset = 0 } = {}) => {
     const qs = new URLSearchParams();
     if (status) qs.set("status", status);
     if (limit) qs.set("limit", String(limit));
+    if (offset) qs.set("offset", String(offset));
     const q = qs.toString();
     return call(`/api/jobs${q ? "?" + q : ""}`);
   },
@@ -148,18 +152,33 @@ export const backup = {
 };
 
 export const audit = {
-  list: ({ since, until, action, actor, targetType, limit, offset } = {}) => {
+  // q is a free-text search hitting target_id, detail (JSON blob),
+  // client_ip, actor_email, request_id, and action all at once --
+  // the most common way operators look up an event when they have
+  // a clue (instance id, IP, job id) but not the exact action name.
+  list: ({ since, until, action, actor, targetType, targetID, q: query, limit, offset } = {}) => {
     const qs = new URLSearchParams();
     if (since) qs.set("since", since);
     if (until) qs.set("until", until);
     if (action) qs.set("action", action);
     if (actor) qs.set("actor", actor);
     if (targetType) qs.set("target_type", targetType);
+    if (targetID) qs.set("target_id", targetID);
+    if (query) qs.set("q", query);
     if (limit != null) qs.set("limit", String(limit));
     if (offset != null) qs.set("offset", String(offset));
-    const q = qs.toString();
-    return call(`/api/audit${q ? "?" + q : ""}`);
+    const s = qs.toString();
+    return call(`/api/audit${s ? "?" + s : ""}`);
   },
+  // Manual cleanup: delete every audit row older than N days.
+  // Returns {deleted, cutoff, older_than_days}. The prune itself
+  // lands an audit.pruned row so the log retains a trace of who
+  // cleaned what.
+  prune: (olderThanDays) =>
+    call("/api/audit/prune", {
+      method: "POST",
+      body: JSON.stringify({ older_than_days: olderThanDays }),
+    }),
 };
 
 export const settings = {
