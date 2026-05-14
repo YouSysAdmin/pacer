@@ -185,6 +185,15 @@ export const settings = {
   getBootstrapToken: () => call("/api/settings/bootstrap-token"),
   rotateBootstrapToken: () =>
     call("/api/settings/bootstrap-token/rotate", { method: "POST" }),
+  // Retention periods (in days) for audit_log + webhook_deliveries.
+  // GET returns effective + default values; PUT accepts either or
+  // both. Send 0 to clear an override (revert to YAML default).
+  getRetention: () => call("/api/settings/retention"),
+  putRetention: (body) =>
+    call("/api/settings/retention", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
 };
 
 export const health = () => call("/healthz");

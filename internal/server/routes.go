@@ -174,6 +174,8 @@ func registerRoutes(app *fiber.App, rt *env.Runtime) {
 	seH := &settings.Handler{Runtime: rt}
 	apiAuth.Get("/settings/bootstrap-token", seH.GetBootstrapToken)
 	apiAuth.Post("/settings/bootstrap-token/rotate", seH.RotateBootstrapToken)
+	apiAuth.Get("/settings/retention", seH.GetRetention)
+	apiAuth.Put("/settings/retention", seH.PutRetention)
 
 	// System health - background-worker status surfaced for the UI
 	// banner, plus a manual reconcile trigger that forces an

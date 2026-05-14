@@ -20,12 +20,30 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig   `mapstructure:"server"`
-	AWS      AWSConfig      `mapstructure:"aws"`
-	GitHub   GitHubConfig   `mapstructure:"github"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Logging  LoggingConfig  `mapstructure:"logging"`
-	Auth     AuthConfig     `mapstructure:"auth"`
+	Server    ServerConfig    `mapstructure:"server"`
+	AWS       AWSConfig       `mapstructure:"aws"`
+	GitHub    GitHubConfig    `mapstructure:"github"`
+	Database  DatabaseConfig  `mapstructure:"database"`
+	Logging   LoggingConfig   `mapstructure:"logging"`
+	Auth      AuthConfig      `mapstructure:"auth"`
+	Retention RetentionConfig `mapstructure:"retention"`
+}
+
+// RetentionConfig is the YAML default for DB-row retention. The
+// operator can override either field at runtime via the Settings UI;
+// the YAML value is the floor everyone starts at. The pruner reads
+// the effective value (DB override else this default) on every tick.
+//
+// Defaults applied in Load (audit_days=90, webhook_days=7). Both
+// must be >= 1; Validate rejects zero / negative.
+type RetentionConfig struct {
+	// AuditDays is how long audit_log rows are kept before the
+	// daily pruner deletes them. Default 90.
+	AuditDays int `mapstructure:"audit_days"`
+	// WebhookDays is how long webhook_deliveries rows are kept.
+	// Default 7. GitHub redelivery windows are minutes, so this
+	// only matters for operator debugging.
+	WebhookDays int `mapstructure:"webhook_days"`
 }
 
 // AuthConfig gates the operator-console auth surface. When enabled,
@@ -156,6 +174,8 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("logging.level", "info")
 	v.SetDefault("logging.format", "json")
 	v.SetDefault("logging.output", "stdout")
+	v.SetDefault("retention.audit_days", 90)
+	v.SetDefault("retention.webhook_days", 7)
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := errors.AsType[viper.ConfigFileNotFoundError](err); !ok {
@@ -192,6 +212,14 @@ func (c *Config) Validate() error {
 	}
 	if c.Database.Path == "" {
 		return fmt.Errorf("database.path required")
+	}
+	// Retention defaults are applied in Load; Validate enforces the
+	// minimum so a misconfigured override can't wipe today's rows.
+	if c.Retention.AuditDays < 1 {
+		return fmt.Errorf("retention.audit_days must be >= 1 (got %d)", c.Retention.AuditDays)
+	}
+	if c.Retention.WebhookDays < 1 {
+		return fmt.Errorf("retention.webhook_days must be >= 1 (got %d)", c.Retention.WebhookDays)
 	}
 	switch c.Server.TLS.Mode {
 	case "", tlsutils.ModeNone, tlsutils.ModeManual, tlsutils.ModeSelf, tlsutils.ModeACME:

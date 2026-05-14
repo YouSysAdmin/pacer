@@ -23,11 +23,17 @@ import (
 	"github.com/yousysadmin/pacer/internal/domain/pool"
 	"github.com/yousysadmin/pacer/internal/domain/project"
 	"github.com/yousysadmin/pacer/internal/domain/repo"
+	settingsstore "github.com/yousysadmin/pacer/internal/domain/settings"
 	"github.com/yousysadmin/pacer/internal/domain/stats"
 	"github.com/yousysadmin/pacer/internal/domain/store"
 	"github.com/yousysadmin/pacer/internal/domain/user"
 	"github.com/yousysadmin/pacer/internal/testutil"
 )
+// NOTE: webhook is intentionally NOT imported here. The webhook
+// package has internal _test.go files; pulling it in would create a
+// webhook (test binary) -> runtimeutil -> webhook import cycle.
+// Tests that need a Webhook store wire it themselves after calling
+// NewRuntime (see pruner_test.go).
 
 type dbWrapper struct{ db *sql.DB }
 
@@ -56,6 +62,7 @@ func NewRuntime(t *testing.T, cfg *env.Config) *env.Runtime {
 			Instance: instance.NewStore(db),
 			Audit:    audit.NewStore(db),
 			Stats:    stats.NewStore(db),
+			Settings: settingsstore.NewStore(db),
 		},
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -21,6 +22,7 @@ import (
 	"github.com/yousysadmin/pacer/internal/core/ec2lt"
 	"github.com/yousysadmin/pacer/internal/core/env"
 	"github.com/yousysadmin/pacer/internal/core/response"
+	"github.com/yousysadmin/pacer/internal/core/validation"
 	settingsmodel "github.com/yousysadmin/pacer/internal/models/settings"
 )
 
@@ -194,5 +196,105 @@ func maskToken(t string) string {
 		return "****"
 	}
 	return t[:4] + "..."
+}
+
+// retentionStatus is what GET /api/settings/retention returns.
+// audit / webhook are the EFFECTIVE values the pruner is using right
+// now; audit_default / webhook_default echo the YAML floor so the
+// UI can render "(default: 90)" next to the input. The pruner
+// re-resolves on every tick, so PUT takes effect at the next daily
+// sweep -- documented in the UI.
+type retentionStatus struct {
+	AuditDays         int  `json:"audit_days"`
+	WebhookDays       int  `json:"webhook_days"`
+	AuditDefault      int  `json:"audit_default"`
+	WebhookDefault    int  `json:"webhook_default"`
+	AuditOverridden   bool `json:"audit_overridden"`
+	WebhookOverridden bool `json:"webhook_overridden"`
+}
+
+// retentionInput is the body of PUT /api/settings/retention. Either
+// field may be omitted; a nil pointer means "leave that setting
+// alone." Use 0 to explicitly clear an override (revert to YAML
+// default) -- the handler distinguishes nil from 0 via the pointer.
+type retentionInput struct {
+	AuditDays   *int `json:"audit_days,omitempty"`
+	WebhookDays *int `json:"webhook_days,omitempty"`
+}
+
+// GetRetention returns the current effective retention periods and
+// the YAML defaults so the UI can show "(default: N)" hints.
+func (h *Handler) GetRetention(c *fiber.Ctx) error {
+	ctx := c.UserContext()
+	audit := EffectiveAuditDays(ctx, h.Runtime)
+	webhook := EffectiveWebhookDays(ctx, h.Runtime)
+	return response.Success(c, retentionStatus{
+		AuditDays:         audit,
+		WebhookDays:       webhook,
+		AuditDefault:      h.Runtime.Config.Retention.AuditDays,
+		WebhookDefault:    h.Runtime.Config.Retention.WebhookDays,
+		AuditOverridden:   audit != h.Runtime.Config.Retention.AuditDays,
+		WebhookOverridden: webhook != h.Runtime.Config.Retention.WebhookDays,
+	})
+}
+
+// PutRetention writes operator overrides for one or both retention
+// periods. Each field is optional (omit to leave unchanged) and
+// accepts 0 as the explicit "clear override / use YAML default"
+// sentinel. Out-of-range values are rejected so a misclicked Save
+// can't push a value the pruner will then fall back from on the
+// next tick.
+func (h *Handler) PutRetention(c *fiber.Ctx) error {
+	in, err := validation.BindAndValidate[retentionInput](c)
+	if err != nil {
+		fes := validation.Humanize(err)
+		return response.BadRequestFields(c, validation.Summary(fes), fes)
+	}
+	if in.AuditDays == nil && in.WebhookDays == nil {
+		return response.BadRequest(c, "at least one of audit_days / webhook_days required")
+	}
+
+	ctx := c.UserContext()
+	if in.AuditDays != nil {
+		v := *in.AuditDays
+		if v != 0 && (v < AuditMinDays || v > AuditMaxDays) {
+			return response.BadRequest(c, fmt.Sprintf(
+				"audit_days must be 0 (use default) or %d..%d, got %d",
+				AuditMinDays, AuditMaxDays, v))
+		}
+		val := ""
+		if v != 0 {
+			val = strconv.Itoa(v)
+		}
+		if err := h.Runtime.Store.Settings.Put(ctx, settingsmodel.KeyAuditRetentionDays, val); err != nil {
+			return response.Internal(c, err)
+		}
+	}
+	if in.WebhookDays != nil {
+		v := *in.WebhookDays
+		if v != 0 && (v < WebhookMinDays || v > WebhookMaxDays) {
+			return response.BadRequest(c, fmt.Sprintf(
+				"webhook_days must be 0 (use default) or %d..%d, got %d",
+				WebhookMinDays, WebhookMaxDays, v))
+		}
+		val := ""
+		if v != 0 {
+			val = strconv.Itoa(v)
+		}
+		if err := h.Runtime.Store.Settings.Put(ctx, settingsmodel.KeyWebhookRetentionDays, val); err != nil {
+			return response.Internal(c, err)
+		}
+	}
+
+	audit := EffectiveAuditDays(ctx, h.Runtime)
+	webhook := EffectiveWebhookDays(ctx, h.Runtime)
+	return response.Success(c, retentionStatus{
+		AuditDays:         audit,
+		WebhookDays:       webhook,
+		AuditDefault:      h.Runtime.Config.Retention.AuditDays,
+		WebhookDefault:    h.Runtime.Config.Retention.WebhookDays,
+		AuditOverridden:   audit != h.Runtime.Config.Retention.AuditDays,
+		WebhookOverridden: webhook != h.Runtime.Config.Retention.WebhookDays,
+	})
 }
 

@@ -10,24 +10,23 @@ import (
 	"time"
 
 	"github.com/yousysadmin/pacer/internal/core/env"
+	settingsdomain "github.com/yousysadmin/pacer/internal/domain/settings"
 )
 
 const (
 	// PruneInterval is the cadence at which the prune sweep runs. The
-	// table is small per row but inserts on every webhook delivery, so
-	// daily is plenty -- slower would still be correct, faster just
-	// burns a write.
+	// tables are small per row but insert on every webhook delivery
+	// and every state change, so daily is plenty -- slower would
+	// still be correct, faster just burns a write.
 	PruneInterval = 24 * time.Hour
-
-	// webhookDeliveryRetention is how long a delivery row sticks
-	// around. GitHub's redelivery window is on the order of minutes;
-	// keeping a week gives operators a useful debug trail without
-	// letting the table grow forever.
-	webhookDeliveryRetention = 7 * 24 * time.Hour
 )
 
-// Pruner sweeps housekeeping tables that grow with traffic.
-// Currently: webhook_deliveries.
+// Pruner sweeps housekeeping tables that grow with traffic:
+// webhook_deliveries (debug trail of incoming webhooks) and
+// audit_log (operator-visible state-change record). Retention
+// periods are resolved per-tick from Runtime.Config + the settings
+// table, so a Settings UI change takes effect on the next sweep
+// without a process restart.
 type Pruner struct {
 	Runtime *env.Runtime
 }
@@ -49,19 +48,37 @@ func (p *Pruner) Run(ctx context.Context) {
 			slog.Info("pruner stopping")
 			return
 		case <-t.C:
-			p.tick(ctx)
+			p.Tick(ctx)
 		}
 	}
 }
 
-func (p *Pruner) tick(ctx context.Context) {
-	cutoff := time.Now().UTC().Add(-webhookDeliveryRetention)
-	n, err := p.Runtime.Store.Webhook.DeleteOlderThan(ctx, cutoff)
-	if err != nil {
+// Tick is one sweep of all housekeeping tables. Exported so tests
+// (and a future manual "run pruner now" endpoint) can invoke it
+// without waiting for the daily cadence.
+func (p *Pruner) Tick(ctx context.Context) {
+	now := time.Now().UTC()
+
+	// Webhook deliveries: short retention, mostly for debugging
+	// duplicate-delivery / redelivery edge cases.
+	whDays := settingsdomain.EffectiveWebhookDays(ctx, p.Runtime)
+	whCutoff := now.Add(-time.Duration(whDays) * 24 * time.Hour)
+	if n, err := p.Runtime.Store.Webhook.DeleteOlderThan(ctx, whCutoff); err != nil {
 		slog.Error("pruner: webhook_deliveries failed", "err", err)
-		return
+	} else if n > 0 {
+		slog.Info("pruner: webhook_deliveries pruned",
+			"rows", n, "cutoff", whCutoff, "retention_days", whDays)
 	}
-	if n > 0 {
-		slog.Info("pruner: webhook_deliveries pruned", "rows", n, "cutoff", cutoff)
+
+	// Audit log: longer retention, operator-facing record of every
+	// state change. Effective period honors any DB override; YAML
+	// default applies when unset (90 days out of the box).
+	auditDays := settingsdomain.EffectiveAuditDays(ctx, p.Runtime)
+	auditCutoff := now.Add(-time.Duration(auditDays) * 24 * time.Hour)
+	if n, err := p.Runtime.Store.Audit.DeleteOlderThan(ctx, auditCutoff); err != nil {
+		slog.Error("pruner: audit_log failed", "err", err)
+	} else if n > 0 {
+		slog.Info("pruner: audit_log pruned",
+			"rows", n, "cutoff", auditCutoff, "retention_days", auditDays)
 	}
 }

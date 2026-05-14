@@ -15,6 +15,17 @@ import "time"
 // Auto-generated on first pacer start; rotatable via the Settings UI.
 const KeyBootstrapAPIToken = "bootstrap_api_token"
 
+// KeyAuditRetentionDays / KeyWebhookRetentionDays are operator
+// overrides for the YAML retention.audit_days / retention.webhook_days
+// defaults. Stored as decimal strings ("90"); the pruner reads them
+// on every tick so a Settings UI change takes effect at the next
+// daily sweep without a process restart. Missing key = use YAML
+// default; a malformed value logs a warning and falls back too.
+const (
+	KeyAuditRetentionDays   = "audit_retention_days"
+	KeyWebhookRetentionDays = "webhook_retention_days"
+)
+
 // Setting is one row in the settings table. Value is opaque to the
 // store (semantics live in callers).
 type Setting struct {
