@@ -80,6 +80,10 @@ logging:
   output: stdout         # stdout | /absolute/file/path
   color: false           # ANSI level prefixes; only honored when format=text
 
+retention:
+  audit_days: 90         # how many days the audit_log table is kept
+  webhook_days: 7        # how many days webhook_deliveries are kept
+
 auth:
   disabled: false        # true keeps the legacy pre-auth open behavior
   jwt_secret: <hex - generate with openssl rand -hex 32>
@@ -132,6 +136,8 @@ auth:
 | `logging.format`                        | `json` (default — production) or `text` (human-readable for dev).                                                                                                                              |
 | `logging.output`                        | `stdout` (default) or an absolute file path.                                                                                                                                                   |
 | `logging.color`                         | Adds ANSI level prefixes; only honored when `format=text`.                                                                                                                                     |
+| `retention.audit_days`                  | Default retention for `audit_log` rows. The daily pruner deletes anything older. Default `90`. Overridable at runtime in **Settings → Log retention** (UI override persists in the `settings` table and trumps this value at the next sweep). Range `1..3650`. |
+| `retention.webhook_days`                | Default retention for `webhook_deliveries` rows (dedup + redelivery debug trail). Default `7`. Same override semantics as `audit_days`. Range `1..365`.                                        |
 | `auth.disabled`                         | `true` keeps the pre-auth posture (deploy behind a private network or reverse-proxy auth). When `false`, the operator console is gated.                                                        |
 | `auth.jwt_secret`                       | Required when `!auth.disabled`. **Must be at least 32 characters.** Generate with `openssl rand -hex 32`. Rotating this invalidates every live session.                                        |
 | `auth.session_ttl`                      | Cookie lifetime. Empty defaults to `12h`. Validated at startup — typos like `12hours` fail-fast.                                                                                               |

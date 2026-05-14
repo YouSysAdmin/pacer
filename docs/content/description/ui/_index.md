@@ -7,9 +7,13 @@ weight: 20
 The Pacer console is a Svelte SPA served by the same Go binary that runs the orchestrator. Two top-level groups in the sidebar:
 
 - **Control** — read-only observation. `Overview`, `Jobs`, `Stats`, `Audit`.
-- **Config** — state-changing edits. `Projects`, `Repos`, `Pools`, `Backup`.
+- **Config** — state-changing edits. `Projects`, `Repos`, `Pools`, `Backup`, `Settings`.
 
 Screenshots below were captured against a development database with synthetic data (3 projects, 5 pools, 4 repos, ~80 jobs spanning every status). Real deployments will look the same — just with your data.
+
+### Health banner
+
+Every page reserves a slot above the content for a red **system health** banner. When the background reaper or the startup IAM preflight reports a problem (missing `ec2:DescribeInstances`, a recovered panic, a DescribeInstances API error), the banner shows the failing component + the reason. The banner self-clears once the next clean reaper tick (≤60 s) succeeds. The banner polls `/api/health` every 30 s.
 
 ## Sign in
 
@@ -33,11 +37,21 @@ The bar chart underneath plots **completed** (green) and **failed/reaped** (red)
 
 Every webhook Pacer has accepted, newest first. Status is colour-coded: `queued` (amber), `claimed`/`starting`/`running` (blue/info), `completed` (green), `failed`/`reaped` (red). Columns show the bound repo, GitHub job ID, sender (the GitHub user or bot that triggered the workflow), the EC2 instance ID Pacer placed the job on, the queue/launch timestamps, run duration, and the estimated cost.
 
-The **all** dropdown filters by status. The `details` button on each row opens the full timeline modal:
+The **status** dropdown filters by job state. A **per-page** dropdown (25 / 50 / 100 / 250) sets the page size; a pager at the bottom of the table carries **first / prev / next** controls plus a *Showing X-Y of Z* counter. The toolbar also has:
+
+- **first** — jump to page 1 (shortcut for "show me the latest").
+- **refresh** — re-fetch from page 1. Equivalent to **first** + a forced reload; with auto-refresh paused past page 1, this is how operators return to the live view.
+- **reconcile now** — forces an immediate reaper sweep so an instance terminated directly in the AWS console is reconciled within one round trip instead of waiting up to 60 s for the next tick. Useful for debugging stuck rows.
+
+Auto-refresh runs every 5 s on page 1. **It pauses automatically when the operator pages past 1**, so historical pages stay stable while you read them — click **first** or **refresh** to resume.
+
+The `details` button on each row opens the full timeline modal:
 
 ![Job detail modal](screenshots/04-job-detail.png)
 
-The detail modal shows everything Pacer knows about a single job: workflow + branch + commit, the GitHub job/run IDs, the project and pool that picked it up, the number of attempts, and a timeline of state transitions (`queued -> claimed -> running -> completed`). Click **open in GitHub** to jump to the run on github.com.
+The detail modal shows everything Pacer knows about a single job: workflow + branch + commit, the GitHub job/run IDs, the project and pool that picked it up, the number of attempts, a timeline of state transitions (`queued -> claimed -> running -> completed`), and the linked EC2 instance. The instance block includes a **Last seen** badge — the reaper stamps the row's `last_seen_at` on every successful DescribeInstances pass, so a green badge means "reaper is actively visiting this row" (`< 90 s`), amber means "one tick missed" (`< 3 min`), and red means "multiple ticks missed — something is wrong" (`>= 3 min`). The badge only colours in-flight states; terminated rows just show the final stamp time.
+
+Click **open in GitHub** to jump to the run on github.com.
 
 ## Stats
 
@@ -53,7 +67,19 @@ The lower table breaks the window down by your chosen group; below that, **Top 5
 
 Immutable record of state-changing actions: project / pool / repo edits, runner lifecycle transitions (`job.queued`, `job.claimed`, `job.spawn_launched`, `job.completed`, ...), and login attempts. Newest first.
 
-Filter by exact action name in the top input, or by a time range / page size on the right. The **info** badge on each row opens a side panel with the full event payload — useful when the headline cell can't fit the entire context (instance type, attempt count, error reason). Failures within the visible page are counted in the stat tile up top.
+### Search and filter
+
+The first input in the toolbar is a **free-text search** that hits every column an operator might know a clue for: `target_id` (instance ID, job ID, pool/project UUID), the `detail` JSON blob (instance IDs, pool names, AWS state reasons), `client_ip`, `actor_email`, `request_id`, and `action`. Paste any of those — `i-0abc...`, `203.0.113.42`, `req-abcdef`, an email, or `job.failed` — and matching rows surface. The search is debounced (300 ms) and case-insensitive, LIKE meta-characters (`%`, `_`) are escaped so they match literally. The second input is a strict-equality action filter for power users who know the exact action name. The time-range and page-size controls round out the toolbar.
+
+### Manual prune
+
+Above the table, the **Prune entries older than [period] [prune]** control deletes rows older than the selected window (1 / 7 / 15 / 30 / 90 / 180 days / 1 / 2 years). The button confirms with the absolute cutoff date and then deletes; the prune itself is recorded as an `audit.pruned` row (which by definition lands after its own cutoff and so survives).
+
+A **scheduled auto-prune** runs daily, governed by `retention.audit_days` (default 90 days) — see [Settings](#settings).
+
+### Detail panel
+
+The **info** badge on each row opens a side panel with the full event payload — useful when the headline cell can't fit the entire context (instance type, attempt count, error reason). Failures within the visible page are counted in the stat tile up top.
 
 ## Projects
 
@@ -103,3 +129,24 @@ Saving a pool re-materialises the LT (creates a new version + sets it default). 
 JSON export / import for the operator-edited slice of state: every project, pool, and repo binding. Operational data (jobs, instances, audit log, users, secrets) is intentionally excluded — backups are for moving config between environments, not for disaster recovery of the orchestrator's running state.
 
 Imports upsert by stable name: projects by `name`, pools by `(project, pool)`, repos by `full_name`. Existing rows are updated in place; new rows are created. Pool imports re-materialise the EC2 launch template, so an import of pool config against a fresh AWS account works end-to-end (assuming the AMI / subnets / security groups exist).
+
+## Settings
+
+Pacer-managed runtime config that lives in the database (not in YAML). Two cards:
+
+### Bootstrap API Token
+
+The shared secret baked into every pool's launch-template user-data. The in-instance bootstrap script presents it as `Authorization: Bearer <token>` when calling `POST /api/runner/bootstrap` to fetch its per-job callback token. The card shows a masked preview of the current value and the last rotation timestamp. **Rotate** generates a fresh 32-byte hex token, persists it, then re-materialises every pool's launch template so the new token is baked into future spawns. Instances launched against an older LT version will fail to bootstrap (`401` from the bootstrap endpoint) and be marked failed — drain pending jobs before rotating if you can't tolerate that.
+
+### Log retention
+
+How long the audit log and webhook delivery records are kept before the daily pruner deletes them. Each row carries:
+
+- the editable value (a day count),
+- the YAML default beside it (`retention.audit_days` / `retention.webhook_days`),
+- an `overridden` tag when the saved value differs from the YAML default, and
+- a **use default** button that clears the override and reverts to the YAML floor.
+
+Changes are stored in the `settings` table and take effect at the next daily prune sweep — the pruner re-reads the effective value (DB override else YAML default) on every tick, so a Settings UI change doesn't require a restart. For an immediate one-off cleanup, use the manual prune on the [Audit](#audit) page.
+
+Valid ranges: audit `1..3650` days, webhook `1..365` days. A malformed or out-of-range DB value logs a warning and falls back to the YAML default so a typo can't take the pruner offline.
