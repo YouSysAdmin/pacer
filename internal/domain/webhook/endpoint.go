@@ -213,6 +213,19 @@ func (h *Handler) enqueue(ctx context.Context, c *fiber.Ctx, p *workflowJobPaylo
 		return response.Success(c, fiber.Map{"status": "ignored", "reason": "no pool matches workflow labels"})
 	}
 
+	// Delivery-id dedup only covers GitHub's automatic retries (same
+	// GUID). A manual "Redeliver" from the App UI mints a fresh GUID,
+	// so catch the duplicate at the job level too -- otherwise Put hits
+	// the jobs.gh_job_id unique index and the operator sees a 500 for
+	// what is a logical drop.
+	if existing, err := h.Runtime.Store.Job.GetByGHJobID(ctx, p.WorkflowJob.ID); err != nil {
+		return response.Internal(c, err)
+	} else if existing != nil {
+		slog.Info("webhook drop: job already enqueued",
+			"job_id", existing.ID, "gh_job_id", p.WorkflowJob.ID, "delivery", delivery)
+		return response.Success(c, fiber.Map{"status": "duplicate", "job_id": existing.ID})
+	}
+
 	j := &job.Job{
 		ID:             uuid.NewString(),
 		GHJobID:        p.WorkflowJob.ID,
@@ -293,7 +306,15 @@ func (h *Handler) markRunning(ctx context.Context, c *fiber.Ctx, p *workflowJobP
 	if err := h.Runtime.Store.Job.UpdatePayload(ctx, j.ID, raw); err != nil {
 		slog.Warn("webhook.in_progress: payload refresh failed", "job_id", j.ID, "err", err)
 	}
-	if j.Status == job.StatusRunning || j.Status == job.StatusCompleted {
+	// Only pre-run states may transition to running. GitHub does not
+	// guarantee webhook ordering and retries can delay in_progress by
+	// minutes; a late one arriving after failed/cancelled/reaped must
+	// not resurrect the job -- a resurrected row counts against the
+	// pool/project ceiling in Job.Claim forever, since no further
+	// webhook will terminate it again.
+	switch j.Status {
+	case job.StatusQueued, job.StatusClaimed, job.StatusStarting:
+	default:
 		return response.NoContent(c)
 	}
 	if err := h.Runtime.Store.Job.MarkRunning(ctx, j.ID, j.InstanceID, time.Now().UTC()); err != nil {
