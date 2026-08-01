@@ -162,6 +162,9 @@ func TestRunner_Complete_HappyPath(t *testing.T) {
 	h := newHarness(t)
 	seedProjectAndPool(t, h.rt)
 	tok := seedClaimedJob(t, h.rt, "j-1", "i-1")
+	// Real flow: register moved the job to running before run.sh
+	// finished and the complete callback fired.
+	setJobStatus(t, h.rt, "j-1", jobmodel.StatusRunning)
 
 	resp := h.postJSON(t, "/api/runner/complete", map[string]any{
 		"job_id":         "j-1",
@@ -195,6 +198,160 @@ func TestRunner_Complete_RejectsBadToken(t *testing.T) {
 	})
 	if resp.StatusCode != 401 {
 		t.Fatalf("status: want 401, got %d", resp.StatusCode)
+	}
+}
+
+// setJobStatus flips a seeded job's status directly, bypassing the
+// Mark* helpers so tests can stage arbitrary lifecycle states.
+func setJobStatus(t *testing.T, rt *env.Runtime, jobID string, status jobmodel.Status) {
+	t.Helper()
+	if _, err := rt.DB.DB().ExecContext(context.Background(),
+		`UPDATE jobs SET status=? WHERE id=?`, string(status), jobID); err != nil {
+		t.Fatalf("set status: %v", err)
+	}
+}
+
+func TestRunner_Register_RejectsInstanceMismatch(t *testing.T) {
+	h := newHarness(t)
+	seedProjectAndPool(t, h.rt)
+	tok := seedClaimedJob(t, h.rt, "j-1", "i-1")
+	_ = seedClaimedJob(t, h.rt, "j-2", "i-2")
+
+	// Valid token for j-1, but claiming to be j-2's instance. Without
+	// the binding check this would repoint j-1 (and the i-2 instance
+	// row) at a machine that belongs to a different job.
+	resp := h.postJSON(t, "/api/runner/register", map[string]any{
+		"job_id":         "j-1",
+		"instance_id":    "i-2",
+		"callback_token": tok,
+	})
+	if resp.StatusCode != 401 {
+		t.Fatalf("status: want 401, got %d", resp.StatusCode)
+	}
+	j, _ := h.rt.Store.Job.Get(context.Background(), "j-1")
+	if j.Status != jobmodel.StatusClaimed {
+		t.Fatalf("job status: want claimed (untouched), got %q", j.Status)
+	}
+	if j.InstanceID != "i-1" {
+		t.Fatalf("job instance_id: want i-1 (untouched), got %q", j.InstanceID)
+	}
+}
+
+func TestRunner_Complete_RejectedBeforeRegistration(t *testing.T) {
+	h := newHarness(t)
+	seedProjectAndPool(t, h.rt)
+	tok := seedClaimedJob(t, h.rt, "j-1", "i-1")
+
+	// Job still claimed = the runner never registered; a complete
+	// callback here would stamp the instance terminated for a
+	// lifecycle it wasn't part of.
+	resp := h.postJSON(t, "/api/runner/complete", map[string]any{
+		"job_id":         "j-1",
+		"callback_token": tok,
+		"exit_code":      0,
+	})
+	if resp.StatusCode != 409 {
+		t.Fatalf("status: want 409, got %d", resp.StatusCode)
+	}
+	inst, _ := h.rt.Store.Instance.Get(context.Background(), "i-1")
+	if inst.State != instancemodel.StateStarting {
+		t.Fatalf("instance state: want starting (untouched), got %q", inst.State)
+	}
+}
+
+func TestRunner_Complete_AllowedAfterWebhookRacedAhead(t *testing.T) {
+	h := newHarness(t)
+	seedProjectAndPool(t, h.rt)
+	tok := seedClaimedJob(t, h.rt, "j-1", "i-1")
+	// The workflow_job completed webhook usually lands before the
+	// runner's own complete callback; the instance still needs its
+	// termination recorded.
+	setJobStatus(t, h.rt, "j-1", jobmodel.StatusCompleted)
+
+	resp := h.postJSON(t, "/api/runner/complete", map[string]any{
+		"job_id":         "j-1",
+		"callback_token": tok,
+		"exit_code":      0,
+	})
+	if resp.StatusCode != 204 {
+		t.Fatalf("status: want 204, got %d", resp.StatusCode)
+	}
+	inst, _ := h.rt.Store.Instance.Get(context.Background(), "i-1")
+	if inst.State != instancemodel.StateTerminated {
+		t.Fatalf("instance state: want terminated, got %q", inst.State)
+	}
+}
+
+func TestRunner_Complete_RejectedAfterReap(t *testing.T) {
+	h := newHarness(t)
+	seedProjectAndPool(t, h.rt)
+	tok := seedClaimedJob(t, h.rt, "j-1", "i-1")
+	setJobStatus(t, h.rt, "j-1", jobmodel.StatusReaped)
+
+	resp := h.postJSON(t, "/api/runner/complete", map[string]any{
+		"job_id":         "j-1",
+		"callback_token": tok,
+		"exit_code":      0,
+	})
+	if resp.StatusCode != 409 {
+		t.Fatalf("status: want 409, got %d", resp.StatusCode)
+	}
+}
+
+func TestRunner_Error_DoesNotRegressTerminalJob(t *testing.T) {
+	h := newHarness(t)
+	seedProjectAndPool(t, h.rt)
+
+	for _, status := range []jobmodel.Status{
+		jobmodel.StatusCompleted, jobmodel.StatusCancelled, jobmodel.StatusReaped,
+	} {
+		jobID := "j-term-" + string(status)
+		instID := "i-term-" + string(status)
+		tok := seedClaimedJob(t, h.rt, jobID, instID)
+		setJobStatus(t, h.rt, jobID, status)
+
+		// The callback token outlives the job by design; a late or
+		// replayed error callback must not flip a terminal job to
+		// failed or attach a failure log.
+		resp := h.postJSON(t, "/api/runner/error", map[string]any{
+			"job_id":         jobID,
+			"callback_token": tok,
+			"stage":          "run.sh",
+			"exit_code":      1,
+			"log":            "spoofed failure log",
+		})
+		if resp.StatusCode != 409 {
+			t.Fatalf("%s: status: want 409, got %d", status, resp.StatusCode)
+		}
+		j, _ := h.rt.Store.Job.Get(context.Background(), jobID)
+		if j.Status != status {
+			t.Fatalf("%s: job regressed to %q", status, j.Status)
+		}
+		if j.FailureLog != "" {
+			t.Fatalf("%s: failure log attached to terminal job", status)
+		}
+	}
+}
+
+func TestRunner_Error_AllowedWhileRunning(t *testing.T) {
+	h := newHarness(t)
+	seedProjectAndPool(t, h.rt)
+	tok := seedClaimedJob(t, h.rt, "j-1", "i-1")
+	setJobStatus(t, h.rt, "j-1", jobmodel.StatusRunning)
+
+	resp := h.postJSON(t, "/api/runner/error", map[string]any{
+		"job_id":         "j-1",
+		"callback_token": tok,
+		"stage":          "run.sh",
+		"exit_code":      1,
+		"log":            "runner crashed mid-job",
+	})
+	if resp.StatusCode != 204 {
+		t.Fatalf("status: want 204, got %d", resp.StatusCode)
+	}
+	j, _ := h.rt.Store.Job.Get(context.Background(), "j-1")
+	if j.Status != jobmodel.StatusFailed {
+		t.Fatalf("job status: want failed, got %q", j.Status)
 	}
 }
 

@@ -138,7 +138,7 @@ func (h *Handler) Bootstrap(c *fiber.Ctx) error {
 		if errors.Is(err, jobstore.ErrBootstrapUnavailable) {
 			slog.Info("runner.bootstrap: no eligible job row",
 				"instance_id", in.InstanceID, "client_ip", c.IP())
-			return c.Status(fiber.StatusGone).JSON(fiber.Map{"error": "bootstrap unavailable"})
+			return response.Gone(c, "bootstrap unavailable")
 		}
 		return response.Internal(c, err)
 	}
@@ -193,6 +193,18 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 	}
 	if j.Status != job.StatusClaimed {
 		return response.BadRequest(c, fmt.Sprintf("job in status %q, expected claimed", j.Status))
+	}
+	// Bind the caller to the instance the orchestrator actually
+	// launched for this job (stamped by StampSpawn). Without this, a
+	// caller holding a valid token could register under another
+	// in-flight job's instance_id -- repointing jobs.instance_id and
+	// the instance row at a machine that belongs to a different job,
+	// which later makes the reaper deregister the wrong runner while
+	// the original instance waits forever.
+	if j.InstanceID != "" && in.InstanceID != j.InstanceID {
+		slog.Warn("runner.register: instance_id mismatch",
+			"job_id", j.ID, "want", j.InstanceID, "got", in.InstanceID, "client_ip", c.IP())
+		return response.Unauthorized(c, "instance_id does not match job")
 	}
 
 	// Look up project + pool to derive runner labels.
@@ -286,6 +298,21 @@ func (h *Handler) Complete(c *fiber.Ctx) error {
 	if j == nil {
 		return nil
 	}
+	// Lifecycle gate (layer 3 of the callback contract). The webhook
+	// often lands first, so completed/failed/cancelled are normal here
+	// -- the instance really did run and its termination + final cost
+	// still need recording. queued/claimed means the runner never
+	// registered, and reaped means the reaper already terminated the
+	// instance and stamped terminated_at; accepting either would stamp
+	// state (and re-finalize cost off a fresh terminated_at) for a
+	// lifecycle this callback wasn't part of.
+	switch j.Status {
+	case job.StatusStarting, job.StatusRunning, job.StatusCompleted, job.StatusFailed, job.StatusCancelled:
+	default:
+		slog.Warn("runner.complete: rejected for job status",
+			"job_id", j.ID, "status", j.Status, "client_ip", c.IP())
+		return response.Conflict(c, fmt.Sprintf("job in status %q", j.Status))
+	}
 
 	now := time.Now().UTC()
 	if j.InstanceID != "" {
@@ -350,6 +377,21 @@ func (h *Handler) Error(c *fiber.Ctx) error {
 	j := h.authenticate(c, in.JobID, in.CallbackToken)
 	if j == nil {
 		return nil
+	}
+	// Lifecycle gate (layer 3 of the callback contract). Only in-flight
+	// jobs may be failed from the instance side. The callback token
+	// outlives the job by design (max_runtime + slack), so without this
+	// gate a late or replayed error callback would overwrite a
+	// completed/cancelled job's status, completed_at, and cost with an
+	// attacker-chosen failure log. The shipped user-data even does this
+	// innocently: cancel a workflow while the instance boots and the
+	// register 400 trips the ERR trap.
+	switch j.Status {
+	case job.StatusClaimed, job.StatusStarting, job.StatusRunning:
+	default:
+		slog.Warn("runner.error: rejected for job status",
+			"job_id", j.ID, "status", j.Status, "client_ip", c.IP())
+		return response.Conflict(c, fmt.Sprintf("job in status %q", j.Status))
 	}
 
 	stage := strings.TrimSpace(in.Stage)

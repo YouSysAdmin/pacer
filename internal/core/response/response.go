@@ -66,6 +66,13 @@ func Conflict(c *fiber.Ctx, msg string) error {
 	return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": msg})
 }
 
+// Gone is for single-use resources that have already been consumed
+// (or never existed) - the caller has no viable retry, unlike
+// Conflict where the operator can resolve the state and try again.
+func Gone(c *fiber.Ctx, msg string) error {
+	return c.Status(fiber.StatusGone).JSON(fiber.Map{"error": msg})
+}
+
 // Internal logs the underlying error server-side and returns a generic
 // 500 to the caller. The raw err is intentionally NOT echoed back - it
 // commonly contains stack-revealing detail (file paths, SQL state,
