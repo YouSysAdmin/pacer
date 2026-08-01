@@ -143,6 +143,138 @@ func TestJob_Claim_RespectsProjectCeiling(t *testing.T) {
 	}
 }
 
+func TestJob_Claim_RespectsRepoCap(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	// Bind the repo every test job uses, with a per-repo cap of 1.
+	// Pool cap stays 5 and no project ceiling -- the repo must be the
+	// binding constraint.
+	if _, err := f.db.ExecContext(ctx, `
+		INSERT INTO repos (full_name, project_id, max_concurrent_runners, tags)
+		VALUES ('octocat/hello-world', ?, 1, '{}')`, f.projectID); err != nil {
+		t.Fatalf("bind repo: %v", err)
+	}
+
+	now := time.Now().UTC()
+	mustPut(t, f, "active-1", jobmodel.StatusRunning, now.Add(-time.Hour), nil, 0)
+	mustPut(t, f, "blocked", jobmodel.StatusQueued, now, nil, 0)
+
+	got, err := f.store.Claim(ctx, now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("Claim: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("repo cap should block claim, got %q", got.ID)
+	}
+
+	// 0 means no repo cap.
+	if _, err := f.db.ExecContext(ctx,
+		`UPDATE repos SET max_concurrent_runners=0 WHERE full_name='octocat/hello-world'`); err != nil {
+		t.Fatalf("relax repo: %v", err)
+	}
+	got, err = f.store.Claim(ctx, now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("Claim after relax: %v", err)
+	}
+	if got == nil || got.ID != "blocked" {
+		t.Fatalf("expected blocked to be claimed after relax, got %v", got)
+	}
+}
+
+func TestJob_Claim_NullRepoCapDoesNotBlock(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	// repos.max_concurrent_runners is nullable; a bound repo with NULL
+	// cap must behave like "no cap", not exclude the row from Claim.
+	if _, err := f.db.ExecContext(ctx, `
+		INSERT INTO repos (full_name, project_id, max_concurrent_runners, tags)
+		VALUES ('octocat/hello-world', ?, NULL, '{}')`, f.projectID); err != nil {
+		t.Fatalf("bind repo: %v", err)
+	}
+
+	now := time.Now().UTC()
+	mustPut(t, f, "ready", jobmodel.StatusQueued, now, nil, 0)
+
+	got, err := f.store.Claim(ctx, now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("Claim: %v", err)
+	}
+	if got == nil || got.ID != "ready" {
+		t.Fatalf("NULL repo cap must not block claim, got %v", got)
+	}
+}
+
+func TestJob_FinalizeCost_NoOpWithoutTerminatedAt(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	mustPut(t, f, "j-1", jobmodel.StatusRunning, now.Add(-time.Hour), nil, 0)
+	if _, err := f.db.ExecContext(ctx,
+		`UPDATE jobs SET instance_id='i-1', estimated_cost_usd=0.42 WHERE id='j-1'`); err != nil {
+		t.Fatalf("stamp cost: %v", err)
+	}
+	// Instance exists with a price but no terminated_at yet.
+	if _, err := f.db.ExecContext(ctx, `
+		INSERT INTO instances (id, job_id, project_id, pool_id, state, spot, price_per_hour, launched_at)
+		VALUES ('i-1', 'j-1', ?, ?, 'running', 0, 0.5, ?)`,
+		f.projectID, f.poolID, now.Add(-time.Hour)); err != nil {
+		t.Fatalf("seed instance: %v", err)
+	}
+
+	if err := f.store.FinalizeCost(ctx, "i-1"); err != nil {
+		t.Fatalf("FinalizeCost: %v", err)
+	}
+	j, _ := f.store.Get(ctx, "j-1")
+	if j.EstimatedCostUSD == nil || *j.EstimatedCostUSD != 0.42 {
+		t.Fatalf("cost clobbered: want 0.42 untouched, got %v", j.EstimatedCostUSD)
+	}
+
+	// Once terminated_at lands, FinalizeCost recomputes for real.
+	if _, err := f.db.ExecContext(ctx,
+		`UPDATE instances SET terminated_at=? WHERE id='i-1'`, now); err != nil {
+		t.Fatalf("stamp terminated_at: %v", err)
+	}
+	if err := f.store.FinalizeCost(ctx, "i-1"); err != nil {
+		t.Fatalf("FinalizeCost after terminate: %v", err)
+	}
+	j, _ = f.store.Get(ctx, "j-1")
+	if j.EstimatedCostUSD == nil {
+		t.Fatal("cost should be recomputed once terminated_at is set")
+	}
+	// ~1h at 0.5/h = ~0.5, generous tolerance for the substr-second slicing.
+	if *j.EstimatedCostUSD < 0.4 || *j.EstimatedCostUSD > 0.6 {
+		t.Fatalf("recomputed cost out of range: %v", *j.EstimatedCostUSD)
+	}
+}
+
+func TestJob_FinalizeCost_NoOpWithoutPrice(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	mustPut(t, f, "j-1", jobmodel.StatusRunning, now.Add(-time.Hour), nil, 0)
+	if _, err := f.db.ExecContext(ctx,
+		`UPDATE jobs SET instance_id='i-1', estimated_cost_usd=0.42 WHERE id='j-1'`); err != nil {
+		t.Fatalf("stamp cost: %v", err)
+	}
+	// Terminated but the spawn-time pricing fetch failed (price NULL).
+	if _, err := f.db.ExecContext(ctx, `
+		INSERT INTO instances (id, job_id, project_id, pool_id, state, spot, price_per_hour, launched_at, terminated_at)
+		VALUES ('i-1', 'j-1', ?, ?, 'terminated', 0, NULL, ?, ?)`,
+		f.projectID, f.poolID, now.Add(-time.Hour), now); err != nil {
+		t.Fatalf("seed instance: %v", err)
+	}
+
+	if err := f.store.FinalizeCost(ctx, "i-1"); err != nil {
+		t.Fatalf("FinalizeCost: %v", err)
+	}
+	j, _ := f.store.Get(ctx, "j-1")
+	if j.EstimatedCostUSD == nil || *j.EstimatedCostUSD != 0.42 {
+		t.Fatalf("cost clobbered: want 0.42 untouched, got %v", j.EstimatedCostUSD)
+	}
+}
+
 func TestJob_Claim_SkipsDisabledProjectAndPool(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()

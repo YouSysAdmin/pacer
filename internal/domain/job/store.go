@@ -70,7 +70,8 @@ func (s *Store) GetByGHJobID(ctx context.Context, ghJobID int64) (*jobmodel.Job,
 
 // Claim atomically pops the oldest queued job whose POOL still has
 // capacity (active jobs < pool.max_concurrent_runners) AND whose
-// PROJECT-wide ceiling (when set non-zero) is not yet reached, then
+// PROJECT-wide ceiling (when set non-zero) is not yet reached AND
+// whose REPO cap (when bound and non-zero) is not yet reached, then
 // flips it to claimed.
 // MaxOpenConns(1) on the connection pool serializes this with all other writes;
 // explicit transaction kept for clarity and ease of porting to postgres.
@@ -87,6 +88,7 @@ func (s *Store) Claim(ctx context.Context, now time.Time) (*jobmodel.Job, error)
         FROM jobs j
         JOIN pools po ON po.id = j.pool_id AND po.disabled = 0
         JOIN projects pr ON pr.id = j.project_id AND pr.disabled = 0
+        LEFT JOIN repos re ON re.full_name = j.repo_full_name
         WHERE j.status = 'queued'
           AND (j.next_retry_at IS NULL OR j.next_retry_at <= ?)
           AND (
@@ -101,6 +103,15 @@ func (s *Store) Claim(ctx context.Context, now time.Time) (*jobmodel.Job, error)
                   WHERE jc.project_id = j.project_id
                     AND jc.status IN ('claimed','starting','running')
               ) < pr.max_concurrent_runners
+          )
+          AND (
+              re.full_name IS NULL
+              OR COALESCE(re.max_concurrent_runners, 0) = 0
+              OR (
+                  SELECT COUNT(*) FROM jobs jc
+                  WHERE jc.repo_full_name = j.repo_full_name
+                    AND jc.status IN ('claimed','starting','running')
+              ) < re.max_concurrent_runners
           )
         ORDER BY j.queued_at ASC
         LIMIT 1
@@ -484,6 +495,9 @@ func scanJobRow(r interface{ Scan(...any) error }) (*jobmodel.Job, error) {
 // No-op when the instance row is missing, its terminated_at is NULL
 // (instance not yet marked terminated), or its price is NULL (the
 // pricing fetch failed at spawn time -- nothing to multiply by).
+// The EXISTS guard in the outer WHERE is what makes those cases true
+// no-ops: without it the no-row subquery would overwrite a cost
+// already stamped by MarkCompleted/MarkFailed/MarkReaped with NULL.
 func (s *Store) FinalizeCost(ctx context.Context, instanceID string) error {
 	_, err := s.db.ExecContext(ctx, `
         UPDATE jobs
@@ -497,6 +511,12 @@ func (s *Store) FinalizeCost(ctx context.Context, instanceID string) error {
               AND i.price_per_hour IS NOT NULL
         )
         WHERE jobs.instance_id = ?
+          AND EXISTS (
+            SELECT 1 FROM instances i
+            WHERE i.id = jobs.instance_id
+              AND i.terminated_at  IS NOT NULL
+              AND i.price_per_hour IS NOT NULL
+          )
     `, instanceID)
 	return err
 }
