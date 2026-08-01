@@ -31,7 +31,9 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-const apiBase = "https://api.github.com"
+// apiBase is a var (not const) solely so tests can point the client
+// at an httptest server; production code never mutates it.
+var apiBase = "https://api.github.com"
 
 type Client struct {
 	appID      int64
@@ -118,7 +120,16 @@ func (c *Client) InstallationToken(ctx context.Context, installationID int64) (s
 		if t, ok := c.cachedTokenIfFresh(installationID); ok {
 			return t, nil
 		}
-		return c.fetchInstallationToken(ctx, installationID)
+		// The flight is shared by every concurrent caller, but this
+		// closure captures only the INITIATING caller's ctx -- if that
+		// request is aborted (browser poll disconnects), its
+		// cancellation would fail all waiters, including a runner's
+		// JIT-config mint. Detach from the initiator's cancellation
+		// and bound the fetch on its own timeout instead; the HTTP
+		// client's 30s cap backstops it either way.
+		fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		return c.fetchInstallationToken(fetchCtx, installationID)
 	})
 	if err != nil {
 		return "", err
