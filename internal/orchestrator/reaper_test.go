@@ -8,6 +8,8 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,6 +20,7 @@ import (
 
 	"github.com/yousysadmin/pacer/internal/core/env"
 	"github.com/yousysadmin/pacer/internal/core/health"
+	"github.com/yousysadmin/pacer/internal/domain/store"
 	"github.com/yousysadmin/pacer/internal/models/instance"
 )
 
@@ -328,6 +331,94 @@ func TestCheckEC2HealthVia_EmptyInputNoCalls(t *testing.T) {
 // Sanity assertion: ReapInterval must stay short enough that the UI
 // banner self-heals on the order of a minute. If someone bumps it
 // past a few minutes the operator experience regresses badly.
+func TestTerminateLostVia_TerminatesStoppedOnly(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		state         string
+		wantTerminate bool
+	}{
+		{string(ec2types.InstanceStateNameStopped), true},
+		{string(ec2types.InstanceStateNameStopping), true},
+		{string(ec2types.InstanceStateNameTerminated), false},
+		{string(ec2types.InstanceStateNameShuttingDown), false},
+		{"", false}, // vanished from AWS entirely
+	} {
+		stub := &stubEC2{}
+		got := terminateLostVia(ctx, stub, "i-lost", deadState{StateName: tc.state})
+		if got != tc.wantTerminate {
+			t.Fatalf("state %q: attempted=%v, want %v", tc.state, got, tc.wantTerminate)
+		}
+		wantCalls := 0
+		if tc.wantTerminate {
+			wantCalls = 1
+		}
+		if stub.terminateCalls != wantCalls {
+			t.Fatalf("state %q: terminate calls=%d, want %d", tc.state, stub.terminateCalls, wantCalls)
+		}
+	}
+}
+
+func TestTerminateLostVia_TerminateFailureStillReported(t *testing.T) {
+	stub := &stubEC2{
+		terminateFn: func(*ec2.TerminateInstancesInput) (*ec2.TerminateInstancesOutput, error) {
+			return nil, errors.New("boom")
+		},
+	}
+	// The attempt is reported even when AWS errors -- the caller's
+	// DB-side cleanup proceeds either way, the error is log-only.
+	if !terminateLostVia(context.Background(), stub, "i-lost", deadState{
+		StateName: string(ec2types.InstanceStateNameStopped),
+	}) {
+		t.Fatal("terminate attempt should be reported despite the AWS error")
+	}
+	if stub.terminateCalls != 1 {
+		t.Fatalf("terminate calls=%d, want 1", stub.terminateCalls)
+	}
+}
+
+// blockingInstanceStore fakes just ListAlive; the embedded nil
+// interface panics on any other method, which the empty ListAlive
+// result guarantees is never reached.
+type blockingInstanceStore struct {
+	store.InstanceStore
+	inFlight    atomic.Int32
+	maxInFlight atomic.Int32
+}
+
+func (s *blockingInstanceStore) ListAlive(context.Context) ([]*instance.Instance, error) {
+	cur := s.inFlight.Add(1)
+	defer s.inFlight.Add(-1)
+	for {
+		prev := s.maxInFlight.Load()
+		if cur <= prev || s.maxInFlight.CompareAndSwap(prev, cur) {
+			break
+		}
+	}
+	time.Sleep(20 * time.Millisecond)
+	return nil, nil
+}
+
+// The background ticker and the manual /api/reconcile endpoint both
+// call Tick; overlapping sweeps would duplicate terminate/audit side
+// effects, so Tick must serialize.
+func TestReaper_Tick_Serialized(t *testing.T) {
+	fake := &blockingInstanceStore{}
+	r := &Reaper{Runtime: &env.Runtime{Store: &store.Store{Instance: fake}}}
+
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = r.Tick(context.Background())
+		}()
+	}
+	wg.Wait()
+	if got := fake.maxInFlight.Load(); got != 1 {
+		t.Fatalf("max concurrent sweeps: want 1, got %d", got)
+	}
+}
+
 func TestReapInterval_NotPathological(t *testing.T) {
 	if ReapInterval > 2*time.Minute {
 		t.Fatalf("ReapInterval too long for UI self-heal: %v", ReapInterval)

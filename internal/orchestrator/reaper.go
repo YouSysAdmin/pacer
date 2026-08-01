@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -45,6 +46,12 @@ const ReapInterval = 60 * time.Second
 
 type Reaper struct {
 	Runtime *env.Runtime
+	// mu serializes sweeps: the background ticker and the manual
+	// /api/reconcile endpoint both call Tick, and two overlapping
+	// sweeps over the same alive-instance snapshot would duplicate
+	// side effects (TerminateInstances, audit rows, GitHub runner
+	// deletes) and race their Health verdicts.
+	mu sync.Mutex
 }
 
 func NewReaper(rt *env.Runtime) *Reaper {
@@ -98,6 +105,8 @@ func (r *Reaper) Run(ctx context.Context) {
 // Returns (checked, err) where checked is the number of alive rows
 // inspected this sweep (zero on panic or ListAlive failure).
 func (r *Reaper) Tick(ctx context.Context) (checked int, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	err = safeTick(r.Runtime, func() error {
 		c, e := r.doTick(ctx)
 		checked = c
@@ -362,6 +371,14 @@ func excludeIDs(all, drop []string) []string {
 func (r *Reaper) markLost(ctx context.Context, i *instance.Instance, d deadState) {
 	now := time.Now().UTC()
 
+	// markLost removes the row from ListAlive, so this is the last
+	// time pacer will ever look at this instance. A stopping/stopped
+	// host is NOT terminal in EC2 -- it still exists and bills for its
+	// EBS volumes -- so terminate it for real before we forget it.
+	if r.Runtime.EC2 != nil {
+		terminateLostVia(ctx, r.Runtime.EC2, i.ID, d)
+	}
+
 	if err := r.Runtime.Store.Instance.UpdateState(ctx, i.ID, instance.StateTerminated, now); err != nil {
 		slog.Error("reaper: mark instance terminated failed", "instance_id", i.ID, "err", err)
 	}
@@ -426,6 +443,31 @@ func (r *Reaper) markLost(ctx context.Context, i *instance.Instance, d deadState
 	slog.Warn("reaper: instance lost",
 		"instance_id", i.ID, "job_id", i.JobID,
 		"aws_state", d.StateName, "reason_code", d.StateReasonCode)
+}
+
+// terminateLostVia issues a best-effort TerminateInstances for a lost
+// instance that AWS reports in a stopping/stopped state. Those states
+// are resumable, not terminal: the host keeps existing (and billing
+// for EBS) until someone terminates it, and once markLost runs the
+// reaper never revisits the row. terminated / shutting-down / vanished
+// instances need no call. Returns whether a terminate was attempted so
+// tests can pin the decision table. Failures are logged only -- the
+// DB-side cleanup must proceed regardless.
+func terminateLostVia(ctx context.Context, c ec2API, id string, d deadState) bool {
+	switch d.StateName {
+	case string(ec2types.InstanceStateNameStopping), string(ec2types.InstanceStateNameStopped):
+	default:
+		return false
+	}
+	if _, err := c.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
+		InstanceIds: []string{id},
+	}); err != nil {
+		slog.Warn("reaper: terminate of stopped instance failed; clean up via EC2 console",
+			"instance_id", id, "aws_state", d.StateName, "err", err)
+		return true
+	}
+	slog.Info("reaper: terminated stopped instance", "instance_id", id, "aws_state", d.StateName)
+	return true
 }
 
 // jobInFlight reports whether a job is still occupying a pool slot
