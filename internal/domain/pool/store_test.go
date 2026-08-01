@@ -80,6 +80,43 @@ func TestStore_Delete_NoOpOnUnknownPool(t *testing.T) {
 	}
 }
 
+// ActiveJobCount must count queued jobs too (delete gate), while
+// ConcurrentRunnerCount keeps its claim-cap semantics (in-flight only).
+func TestStore_ActiveJobCount_IncludesQueued(t *testing.T) {
+	db := testutil.OpenTestDB(t)
+	store := NewStore(db)
+	ctx := context.Background()
+
+	insertProject(t, db, "proj-1", "proj")
+	mustPutPool(t, store, &poolmodel.Pool{
+		ID: "pool-1", ProjectID: "proj-1", Name: "default",
+		AMIID: "ami-x", InstanceTypes: []string{"t3.large"},
+		SubnetIDs: []string{"subnet-1"}, SecurityGroupIDs: []string{"sg-1"},
+		MaxRuntimeMinutes: 60, MaxConcurrentRunners: 5,
+	})
+	for id, status := range map[string]string{
+		"j-queued": "queued", "j-claimed": "claimed", "j-running": "running",
+		"j-done": "completed", "j-failed": "failed",
+	} {
+		insertJob(t, db, id, "proj-1", "pool-1", status)
+	}
+
+	active, err := store.ActiveJobCount(ctx, "pool-1")
+	if err != nil {
+		t.Fatalf("ActiveJobCount: %v", err)
+	}
+	if active != 3 {
+		t.Fatalf("ActiveJobCount: want 3 (queued+claimed+running), got %d", active)
+	}
+	inflight, err := store.ConcurrentRunnerCount(ctx, "pool-1")
+	if err != nil {
+		t.Fatalf("ConcurrentRunnerCount: %v", err)
+	}
+	if inflight != 2 {
+		t.Fatalf("ConcurrentRunnerCount: want 2 (claimed+running), got %d", inflight)
+	}
+}
+
 // --- helpers ---
 
 func mustPutPool(t *testing.T, s *Store, p *poolmodel.Pool) {

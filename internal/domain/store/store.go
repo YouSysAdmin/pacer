@@ -80,6 +80,11 @@ type PoolStore interface {
 	// orchestrator's claim-time gate consults against
 	// Pool.MaxConcurrentRunners.
 	ConcurrentRunnerCount(ctx context.Context, poolID string) (int, error)
+	// ActiveJobCount additionally includes queued jobs. Used by the
+	// delete gate: a queued job whose pool_id gets NULLed can never be
+	// claimed (Claim joins pools), so deletion must be blocked while
+	// any non-terminal job references the pool.
+	ActiveJobCount(ctx context.Context, poolID string) (int, error)
 }
 
 type RepoStore interface {

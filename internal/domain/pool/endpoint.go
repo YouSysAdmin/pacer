@@ -160,12 +160,15 @@ func (h *Handler) Create(c *fiber.Ctx) error {
 	p := poolFromInput(&in, projectID)
 	p.ID = uuid.NewString()
 
-	if err := h.ensureSingleDefault(c, p); err != nil {
-		return err
-	}
-
+	// Materialize BEFORE touching sibling pools: materializeLT is the
+	// fallible step (bad AMI, missing subnet, EC2 throttle), and
+	// clearing the current default first would leave the project with
+	// no default pool when the save aborts.
 	if err := h.materializeLT(c.UserContext(), p, proj.Name, proj.Tags); err != nil {
 		return response.BadRequest(c, "ec2: "+err.Error())
+	}
+	if err := h.ensureSingleDefault(c, p); err != nil {
+		return err
 	}
 	if err := h.Runtime.Store.Pool.Put(c.UserContext(), p); err != nil {
 		return response.Internal(c, err)
@@ -206,12 +209,13 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 	p.LaunchTemplateID = existing.LaunchTemplateID
 	p.LaunchTemplateVersion = existing.LaunchTemplateVersion
 
-	if err := h.ensureSingleDefault(c, p); err != nil {
-		return err
-	}
-
+	// Same ordering rationale as Create: fail on EC2 before mutating
+	// sibling pools' is_default.
 	if err := h.materializeLT(c.UserContext(), p, proj.Name, proj.Tags); err != nil {
 		return response.BadRequest(c, "ec2: "+err.Error())
+	}
+	if err := h.ensureSingleDefault(c, p); err != nil {
+		return err
 	}
 	if err := h.Runtime.Store.Pool.Put(c.UserContext(), p); err != nil {
 		return response.Internal(c, err)
@@ -258,9 +262,17 @@ func (h *Handler) Delete(c *fiber.Ctx) error {
 	if p == nil {
 		return response.NotFound(c, "pool not found")
 	}
-	inflight, _ := h.Runtime.Store.Pool.ConcurrentRunnerCount(c.UserContext(), id)
-	if inflight > 0 {
-		return response.BadRequest(c, fmt.Sprintf("pool has %d active jobs; wait or cancel first", inflight))
+	// Gate on every non-terminal job, queued included: Delete NULLs
+	// jobs.pool_id, and a queued job without a pool can never be
+	// claimed, failed, or expired -- it would sit invisible forever.
+	// The count error is a hard failure; treating it as zero would let
+	// a transient DB error wave the delete through with jobs in flight.
+	active, err := h.Runtime.Store.Pool.ActiveJobCount(c.UserContext(), id)
+	if err != nil {
+		return response.Internal(c, err)
+	}
+	if active > 0 {
+		return response.Conflict(c, fmt.Sprintf("pool has %d queued or active jobs; wait or cancel first", active))
 	}
 	if err := h.Runtime.Store.Pool.Delete(c.UserContext(), id); err != nil {
 		// FK constraint = something we don't yet null-out in Pool.Delete

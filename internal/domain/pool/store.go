@@ -161,6 +161,18 @@ func (s *Store) ConcurrentRunnerCount(ctx context.Context, poolID string) (int, 
 	return n, err
 }
 
+// ActiveJobCount counts every non-terminal job referencing the pool,
+// including queued ones. Drives the delete gate -- Delete NULLs
+// jobs.pool_id, and a queued job without a pool_id is invisible to
+// Job.Claim forever.
+func (s *Store) ActiveJobCount(ctx context.Context, poolID string) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM jobs WHERE pool_id = ? AND status IN ('queued','claimed','starting','running')`,
+		poolID).Scan(&n)
+	return n, err
+}
+
 func (s *Store) scanOne(ctx context.Context, where string, args ...any) (*poolmodel.Pool, error) {
 	row := s.db.QueryRowContext(ctx, poolSelect+" "+where, args...)
 	p, err := scanPool(row)
