@@ -195,6 +195,10 @@ func (h *Handler) refreshStepsIfRunning(ctx context.Context, j *jobmodel.Job) ([
 		return nil, false
 	}
 	if j.Status != jobmodel.StatusRunning || j.GHJobID == 0 {
+		// Drop the throttle entry once the job leaves running -- the
+		// map is keyed per viewed job and would otherwise grow for the
+		// life of the process.
+		h.lastRefreshAt.Delete(j.ID)
 		return nil, false
 	}
 	if t, ok := h.lastRefreshAt.Load(j.ID); ok {
