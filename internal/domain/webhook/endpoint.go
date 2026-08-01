@@ -400,11 +400,16 @@ func verifySignature(secret string, body []byte, sigHeader string) bool {
 // caller short-circuits dispatch on duplicates so GitHub retries
 // don't double-enqueue).
 func persistDelivery(ctx context.Context, rt *env.Runtime, deliveryID, event string, body []byte) (bool, error) {
+	// received_at is supplied explicitly (UTC) so the driver stores
+	// the same format as every other time column, instead of the
+	// column's DEFAULT CURRENT_TIMESTAMP shape. The pruner compares
+	// this column textually; one format keeps that comparison exact
+	// rather than relying on prefix ordering across mixed shapes.
 	res, err := rt.DB.DB().ExecContext(ctx, `
-        INSERT INTO webhook_deliveries (id, event, payload)
-        VALUES (?, ?, ?)
+        INSERT INTO webhook_deliveries (id, event, payload, received_at)
+        VALUES (?, ?, ?, ?)
         ON CONFLICT(id) DO NOTHING
-    `, deliveryID, event, string(body))
+    `, deliveryID, event, string(body), time.Now().UTC())
 	if err != nil {
 		return false, err
 	}

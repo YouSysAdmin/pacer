@@ -29,7 +29,15 @@ func NewStore(db *sql.DB) *Store {
 // keep the cutoff comfortably above that so a slow retry can't slip
 // through after we've forgotten the delivery id.
 func (s *Store) DeleteOlderThan(ctx context.Context, cutoff time.Time) (int, error) {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM webhook_deliveries WHERE received_at < ?`, cutoff)
+	// The comparison is textual. The table holds two shapes, both
+	// space-separated UTC: 'YYYY-MM-DD HH:MM:SS' from the column's
+	// DEFAULT CURRENT_TIMESTAMP (rows written before persistDelivery
+	// supplied the column) and the driver's
+	// 'YYYY-MM-DD HH:MM:SS.fffffffff +0000 UTC'. Prefix ordering makes
+	// text comparison chronologically correct across both -- but only
+	// while the bound cutoff is UTC too, so normalize here rather than
+	// trusting every caller.
+	res, err := s.db.ExecContext(ctx, `DELETE FROM webhook_deliveries WHERE received_at < ?`, cutoff.UTC())
 	if err != nil {
 		return 0, err
 	}
