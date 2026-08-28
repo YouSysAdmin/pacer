@@ -6,8 +6,8 @@
 // mounts at the app root (in +layout.svelte) and reads the state
 // exported here. Anywhere in the app:
 //
-//   import { confirmDialog } from "$lib/confirm.svelte.js";
-//   if (!(await confirmDialog({ title: "...", message: "..." }))) return;
+//   import { confirmDialog } from "$lib/confirm.svelte.js".
+//   If (!(await confirmDialog({ title: "...", message: "..." }))) return.
 //
 // Replaces the browser's blocking window.confirm(), which can't be
 // styled and steals focus from the SPA shell.
@@ -29,7 +29,7 @@ let state = $state({
 
 // Read by ConfirmDialog.svelte. Exported as a function (rather than
 // the bare `state`) so the module's $state remains encapsulated --
-// callers can't mutate it directly; they go through confirmDialog /
+// callers can't mutate it directly. They go through confirmDialog /
 // accept / cancel.
 export function confirmState() {
   return state;

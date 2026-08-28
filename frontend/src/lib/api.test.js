@@ -24,7 +24,7 @@ beforeEach(() => {
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
 
-  // jsdom's window.location is non-configurable; replace by proxying
+  // jsdom's window.location is non-configurable. Replace by proxying
   // through a fresh object so we can record href assignments.
   originalLocation = window.location;
   delete window.location;

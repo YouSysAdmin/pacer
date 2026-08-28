@@ -11,7 +11,7 @@
    network dependency at runtime - keeps CSP tight, avoids leaking
    client IPs to Google on every page load, and works in air-gapped
    private-network deploys. The latin subset covers 95% of operator
-   text; latin-ext brings accented chars (é, ñ, ü, ...) common in
+   text. latin-ext brings accented chars (é, ñ, ü, ...) common in
    names + emails. unicode-range lets the browser only fetch the
    second file when a glyph from that range is actually rendered. */
 @font-face {
@@ -126,7 +126,7 @@ code, .mono { font-family: var(--font-mono); font-size: 0.9em; letter-spacing: 0
 :focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(255,107,53,0.25); border-radius: var(--r-sm); }
 
 /* ------------------------------------------------------------------
-   Shell — sidebar (240px) + main column.
+   Shell - sidebar (240px) + main column.
    ------------------------------------------------------------------ */
 
 .shell {
@@ -233,7 +233,7 @@ main {
 }
 
 /* Wraps the optional health banner above each page's <main>.
-   No layout-affecting styles; min-width:0 keeps grid children
+   No layout-affecting styles. min-width:0 keeps grid children
    from forcing the second column wider than 1fr. */
 .shell-main {
   display: flex;
@@ -613,8 +613,8 @@ textarea {
 }
 
 /* ------------------------------------------------------------------
-   Pager — shared by paginated tables (audit, jobs, ...). Sits below
-   the table; left side carries the "showing X-Y of Z" label, right
+   Pager - shared by paginated tables (audit, jobs, ...). Sits below
+   the table. Left side carries the "showing X-Y of Z" label, right
    side carries prev/next buttons.
    ------------------------------------------------------------------ */
 .pager {
@@ -774,7 +774,7 @@ textarea {
    Overview page: 2-column grid (left main, right rail) plus the
    hand-rolled bar chart and rank-list primitives the new spend +
    jobs-this-month sections render with. No charting library
-   (CLAUDE.md); CSS divs scaled by inline `height: %`.
+   (CLAUDE.md). CSS divs scaled by inline `height: %`.
    ------------------------------------------------------------------ */
 
 .overview-grid {
@@ -906,7 +906,7 @@ textarea {
 }
 
 /* ------------------------------------------------------------------
-   Responsive — collapse sidebar to top on narrow screens.
+   Responsive - collapse sidebar to top on narrow screens.
    ------------------------------------------------------------------ */
 
 @media (max-width: 900px) {
@@ -1021,7 +1021,7 @@ textarea {
     word-break: break-all;
     text-align: right;
   }
-  /* Audit-log detail rows use colspan to span the full table; in the
+  /* Audit-log detail rows use colspan to span the full table. In the
      stacked layout, treat them as a normal full-width block (no
      label-column flex) so the JSON pre still reads top-to-bottom. */
   .tbl-stack tr.detail-row { padding: 0; }
@@ -1067,7 +1067,7 @@ textarea {
   .bar-col { min-width: 14px; }
 
   /* Ranked-list (overview spend rail) -- ellipsised name was sized
-     for desktop; on phone we let the dollar amount sit on a new line
+     for desktop. On phone we let the dollar amount sit on a new line
      when names are long. */
   .rank-list li { flex-wrap: wrap; }
   .rank-list .name { white-space: normal; overflow: visible; text-overflow: clip; }

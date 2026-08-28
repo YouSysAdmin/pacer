@@ -170,7 +170,7 @@
               <td class="mono" data-label="Jobs">{b.jobs}</td>
               <td class="mono" data-label="Runner time">{fmtMin(b.runner_minutes)}</td>
               <td class="mono" data-label="Est. cost">{fmtUSD(b.est_cost_usd)}</td>
-              <td class="mono" data-label="Jobs w/o cost">{b.jobs_without_cost > 0 ? b.jobs_without_cost : "—"}</td>
+              <td class="mono" data-label="Jobs w/o cost">{b.jobs_without_cost > 0 ? b.jobs_without_cost : "\u2014"}</td>
             </tr>
           {/each}
         </tbody>

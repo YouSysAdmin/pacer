@@ -17,7 +17,7 @@
   let confirmOpen = $state(false);
 
   // Retention card state. retention is the GET-shaped payload from
-  // /api/settings/retention; auditInput / webhookInput are the
+  // /api/settings/retention. auditInput / webhookInput are the
   // editable fields (decoupled from `retention` so the user can
   // change them without round-tripping the server). saveMsg /
   // saveError act as inline status after PUT.
@@ -49,7 +49,7 @@
       retention = r;
       // Seed the editable inputs with the current EFFECTIVE values
       // (empty string when the override matches the default would
-      // hide the value the operator is actually on; show the number
+      // hide the value the operator is actually on. Show the number
       // unconditionally and rely on the "default: N" hint + the
       // "use default" button for the cleared state).
       auditInput = String(r.audit_days);
@@ -207,7 +207,7 @@
     <p class="muted">
       How long the audit log and webhook delivery records are kept
       before the daily pruner deletes them. The server starts with the
-      YAML defaults below; values entered here override those at
+      YAML defaults below. Values entered here override those at
       runtime and persist in the settings table. Changes take effect
       at the next daily prune sweep -- use the
       <a href="/audit">manual prune</a> button on the audit page if

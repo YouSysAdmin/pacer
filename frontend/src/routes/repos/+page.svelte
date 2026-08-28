@@ -106,7 +106,7 @@
   }
 
   // numericLt0 detects a number-input that's been driven negative.
-  // Mirrors the same helper in projects / pools forms; the backend
+  // Mirrors the same helper in projects / pools forms. The backend
   // does not have an explicit rule for max_concurrent_runners on
   // repos (the field is *int with omitempty) but the operator
   // intent is unambiguous.
@@ -243,12 +243,12 @@
           <tr>
             <td class="mono" data-label="Repository">{r.full_name}</td>
             <td data-label="Project">{projectName(r.project_id)}</td>
-            <td data-label="Cap override">{r.max_concurrent_runners ?? "—"}</td>
+            <td data-label="Cap override">{r.max_concurrent_runners ?? "\u2014"}</td>
             <td class="mono" data-label="Tags" style="font-size: 0.75rem;">
               {#if r.tags && Object.keys(r.tags).length > 0}
                 {Object.entries(r.tags).map(([k, v]) => `${k}=${v}`).join(", ")}
               {:else}
-                <span class="muted">—</span>
+                <span class="muted">&mdash;</span>
               {/if}
             </td>
             <td>
@@ -304,7 +304,7 @@
       <label for="tags-repo">
         Tags
         <span class="muted">
-          (override pool + project tags on key conflict; stamped on the spawned instance + EBS volumes only -- not on the pool's launch template, which is shared. <code>gha:</code> prefix reserved.)
+          (override pool + project tags on key conflict. Stamped on the spawned instance + EBS volumes only -- not on the pool's launch template, which is shared. <code>gha:</code> prefix reserved.)
         </span>
       </label>
       <TagsEditor bind:value={form.tags} />

@@ -3,7 +3,7 @@
 // Pacer, Copyright (c) 2026 YouSysAdmin
 
 // Tiny fetch wrapper.  Throws Error(msg) on non-2xx.  Backend's
-// error envelope is {error: "..."}; we surface that string.
+// error envelope is {error: "..."}. We surface that string.
 //
 // On 401 the wrapper bounces the user to /login?next=<current path>
 // so any protected page that loads without a valid session lands
@@ -28,7 +28,7 @@ async function call(path, opts = {}) {
   ) {
     const next = encodeURIComponent(window.location.pathname + window.location.search);
     window.location.href = `/login?next=${next}`;
-    // Throw so callers don't try to consume a body; the browser is
+    // Throw so callers don't try to consume a body. The browser is
     // already navigating away.
     throw new Error("redirecting to login");
   }
@@ -42,7 +42,7 @@ async function call(path, opts = {}) {
       if (j.error) msg = j.error;
       // Structured field errors from the validator: [{field, rule,
       // message}]. Existing flash-banner code reads err.message and
-      // keeps working; per-input forms can opt in via err.fields.
+      // keeps working. per-input forms can opt in via err.fields.
       if (Array.isArray(j.fields)) fields = j.fields;
     } catch {
       // body not JSON
@@ -82,13 +82,13 @@ export const repos = {
   // so the same call covers create + edit.
   bind: (body) =>
     call("/api/repos", { method: "POST", body: JSON.stringify(body) }),
-  // backend expects /api/repos/:owner/:name — slash kept literal
+  // backend expects /api/repos/:owner/:name - slash kept literal
   unbind: (fullName) => call(`/api/repos/${fullName}`, { method: "DELETE" }),
 };
 
 export const jobs = {
   // Returns the envelope {entries, total, limit, offset}. The Jobs
-  // page paginates against `total`; older callers that just want a
+  // page paginates against `total`. Older callers that just want a
   // bare array can read `.entries` from the result.
   list: ({ status, limit = 50, offset = 0 } = {}) => {
     const qs = new URLSearchParams();
@@ -186,7 +186,7 @@ export const settings = {
   rotateBootstrapToken: () =>
     call("/api/settings/bootstrap-token/rotate", { method: "POST" }),
   // Retention periods (in days) for audit_log + webhook_deliveries.
-  // GET returns effective + default values; PUT accepts either or
+  // GET returns effective + default values. PUT accepts either or
   // both. Send 0 to clear an override (revert to YAML default).
   getRetention: () => call("/api/settings/retention"),
   putRetention: (body) =>

@@ -23,7 +23,7 @@
 
   let list = $state([]);
   // Pagination envelope from GET /api/jobs. total drives the pager
-  // copy; limit/offset round-trip into the next request. Reset to
+  // copy. limit/offset round-trip into the next request. Reset to
   // page 1 whenever a filter or page-size changes.
   let total = $state(0);
   let limit = $state(50);
@@ -71,7 +71,7 @@
     }
     if (c === "skipped")   return { text: "skipped",   cls: "info" };
     if (c)                 return { text: c,           cls: ""     };
-    // No conclusion yet -- step is still in flight; show the lifecycle.
+    // No conclusion yet -- step is still in flight. Show the lifecycle.
     const s = (step.status || "").toLowerCase();
     if (s === "in_progress") return { text: "running", cls: "info" };
     if (s === "queued")      return { text: "queued",  cls: "warn" };
@@ -97,7 +97,7 @@
   }
 
   // Heartbeat staleness classifier for instances. The reaper stamps
-  // last_seen_at every ~60s for every alive instance; a row whose
+  // last_seen_at every ~60s for every alive instance. A row whose
   // last_seen_at is older than that means the reaper isn't visiting
   // it (panic, IAM revoke, region mismatch, etc).
   //
@@ -225,7 +225,7 @@
 
   // Refresh the open modal when the underlying job state changes
   // (e.g. queued -> running -> completed during the 5s poll). Keep
-  // the modal open and just re-fetch silently; no spinner so the
+  // the modal open and just re-fetch silently. No spinner so the
   // user doesn't see a flash on every poll tick.
   async function refreshDetailIfOpen() {
     if (!detailOpen || !detailID) return;
@@ -258,7 +258,7 @@
     return () => clearInterval(t);
   });
 
-  // Re-fetch when filter or page size changes; reset to page 1 so
+  // Re-fetch when filter or page size changes. Reset to page 1 so
   // a narrower filter doesn't leave the pager pointing past the
   // new (smaller) total.
   //
@@ -269,7 +269,7 @@
   // tracked dep. Clicking Next would then re-trigger this effect,
   // which would reset offset back to 0 and fetch page 1, making
   // the Next button effectively a no-op. We only want the effect
-  // to fire on filter / limit transitions; offset writes are
+  // to fire on filter / limit transitions. Offset writes are
   // owned by the pager.
   $effect(() => {
     filter; limit;
@@ -285,7 +285,7 @@
   // ----- Modal-side derived fields. ---------------------------------
   // The webhook payload is parsed once via $derived rather than
   // peppering the markup with `detail?.payload?.workflow_job?....`
-  // chains. Returns an object of safe strings/arrays/numbers; missing
+  // chains. Returns an object of safe strings/arrays/numbers. Missing
   // fields collapse to "" / [] / null.
   let derived = $derived.by(() => {
     const p = detail?.payload;
@@ -412,11 +412,11 @@
             </td>
             <td class="mono" data-label="Repo">{j.repo_full_name}</td>
             <td class="mono" data-label="GH job">{j.gh_job_id}</td>
-            <td class="mono" data-label="Sender">{j.sender_login || "—"}</td>
-            <td class="mono" data-label="Instance">{j.instance_id || "—"}</td>
+            <td class="mono" data-label="Sender">{j.sender_login || "\u2014"}</td>
+            <td class="mono" data-label="Instance">{j.instance_id || "\u2014"}</td>
             <td class="mono" data-label="Queued">{fmt(j.queued_at)}</td>
             <td class="mono" data-label="Duration">{age(j.claimed_at || j.started_at || j.queued_at, j.completed_at)}</td>
-            <td class="mono" data-label="Est. cost">{cost(j.estimated_cost_usd) || (j.completed_at ? "—" : "")}</td>
+            <td class="mono" data-label="Est. cost">{cost(j.estimated_cost_usd) || (j.completed_at ? "\u2014" : "")}</td>
             <td>
               <button class="btn xs" onclick={() => openDetail(j.id)}>details</button>
             </td>
@@ -467,8 +467,8 @@
 
     <table class="tbl detail-tbl">
       <tbody>
-        <tr><th>Workflow</th><td class="mono">{derived.workflowName || "—"}</td></tr>
-        <tr><th>Job name</th><td class="mono">{derived.jobName || "—"}</td></tr>
+        <tr><th>Workflow</th><td class="mono">{derived.workflowName || "\u2014"}</td></tr>
+        <tr><th>Job name</th><td class="mono">{derived.jobName || "\u2014"}</td></tr>
         {#if derived.headBranch}
           <tr><th>Branch</th><td class="mono">{derived.headBranch}</td></tr>
         {/if}
@@ -493,7 +493,7 @@
             {#if derived.senderURL}
               <a href={derived.senderURL} target="_blank" rel="noopener">{derived.senderLogin}</a>
             {:else}
-              {derived.senderLogin || "—"}
+              {derived.senderLogin || "\u2014"}
             {/if}
             {#if derived.senderType && derived.senderType !== "User"}
               <span class="muted"> ({derived.senderType})</span>
@@ -503,8 +503,8 @@
         <tr><th>GH job ID</th><td class="mono">{j.gh_job_id}</td></tr>
         <tr><th>GH run ID</th><td class="mono">{j.gh_run_id}</td></tr>
         <tr><th>Pacer ID</th><td class="mono">{j.id}</td></tr>
-        <tr><th>Project</th><td class="mono" title={j.project_id}>{detail.project_name || j.project_id || "—"}</td></tr>
-        <tr><th>Pool</th><td class="mono" title={j.pool_id}>{detail.pool_name || j.pool_id || "—"}</td></tr>
+        <tr><th>Project</th><td class="mono" title={j.project_id}>{detail.project_name || j.project_id || "\u2014"}</td></tr>
+        <tr><th>Pool</th><td class="mono" title={j.pool_id}>{detail.pool_name || j.pool_id || "\u2014"}</td></tr>
         <tr><th>Attempts</th><td class="mono">{j.attempts}</td></tr>
       </tbody>
     </table>
@@ -540,10 +540,10 @@
       <table class="tbl detail-tbl">
         <tbody>
           <tr><th>ID</th><td class="mono">{i.id}</td></tr>
-          <tr><th>Type</th><td class="mono">{i.instance_type || "—"}</td></tr>
-          <tr><th>AZ</th><td class="mono">{i.az || "—"}</td></tr>
+          <tr><th>Type</th><td class="mono">{i.instance_type || "\u2014"}</td></tr>
+          <tr><th>AZ</th><td class="mono">{i.az || "\u2014"}</td></tr>
           <tr><th>Market</th><td class="mono">{i.spot ? "spot" : "on-demand"}{i.price_model ? ` (${i.price_model})` : ""}</td></tr>
-          <tr><th>Price/hour</th><td class="mono">{i.price_per_hour != null ? "$" + i.price_per_hour.toFixed(4) : "—"}</td></tr>
+          <tr><th>Price/hour</th><td class="mono">{i.price_per_hour != null ? "$" + i.price_per_hour.toFixed(4) : "\u2014"}</td></tr>
           <tr><th>State</th><td class="mono">{i.state}</td></tr>
           <tr>
             <th>Last seen</th>
@@ -560,7 +560,7 @@
           {#if i.terminated_at}
             <tr><th>Terminated</th><td class="mono">{fmt(i.terminated_at)}</td></tr>
           {/if}
-          <tr><th>Est. cost</th><td class="mono">{cost(j.estimated_cost_usd) || "—"}</td></tr>
+          <tr><th>Est. cost</th><td class="mono">{cost(j.estimated_cost_usd) || "\u2014"}</td></tr>
         </tbody>
       </table>
     {/if}
@@ -595,7 +595,7 @@
                 <td class="mono">{step.number ?? idx + 1}</td>
                 <td>{step.name}</td>
                 <td><span class="tag {r.cls}">{r.text}</span></td>
-                <td class="mono">{step.started_at && step.completed_at ? age(step.started_at, step.completed_at) : "—"}</td>
+                <td class="mono">{step.started_at && step.completed_at ? age(step.started_at, step.completed_at) : "\u2014"}</td>
               </tr>
             {/each}
           </tbody>

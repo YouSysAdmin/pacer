@@ -22,7 +22,12 @@
       if (!res.ok) {
         const text = await res.text();
         let msg = `HTTP ${res.status}`;
-        try { const j = JSON.parse(text); if (j.error) msg = j.error; } catch {}
+        try {
+          const j = JSON.parse(text);
+          if (j.error) msg = j.error;
+        } catch {
+          // Non-JSON error body, keep the HTTP status as the message.
+        }
         throw new Error(msg);
       }
       const blob = await res.blob();
@@ -74,7 +79,7 @@
       try {
         snap = JSON.parse(raw);
       } catch (e) {
-        throw new Error("not valid JSON: " + e.message);
+        throw new Error("not valid JSON: " + e.message, { cause: e });
       }
       importResult = await backup.import(snap);
     } catch (e) {
@@ -121,7 +126,7 @@
     <p class="muted">
       Upserts by stable name: projects by name, pools by
       <code>(project, pool)</code>, repos by <code>full_name</code>.
-      Existing rows are updated in place; new rows are created.
+      Existing rows are updated in place. New rows are created.
       Pool imports re-materialize the EC2 launch template.
     </p>
     <div class="field">
@@ -155,7 +160,7 @@
         <div class="banner warn">
           <strong>{importResult.errors.length} row error{importResult.errors.length === 1 ? "" : "s"}:</strong>
           <ul class="err-list">
-            {#each importResult.errors as e}<li>{e}</li>{/each}
+            {#each importResult.errors as e, i (i)}<li>{e}</li>{/each}
           </ul>
         </div>
       {/if}

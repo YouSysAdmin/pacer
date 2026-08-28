@@ -17,7 +17,7 @@
     let authDisabled = $state(false);
     // Background-worker issues from GET /api/health. Polled every
     // 30s so a failure (missing IAM perm, panicked reaper) becomes
-    // visible without operator action; cleared automatically when
+    // visible without operator action. Cleared automatically when
     // the next clean reaper tick clears Health server-side.
     let healthIssues = $state([]);
 
@@ -95,7 +95,9 @@
     async function logout() {
         try {
             await auth.logout();
-        } catch {}
+        } catch {
+            // Cookie clearing is best-effort, the redirect below still runs.
+        }
         user = null;
         goto("/login");
     }

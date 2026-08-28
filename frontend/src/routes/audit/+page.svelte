@@ -50,7 +50,7 @@
   let error = $state(null);
   let data = $state(null);
 
-  // Manual prune state. pruneDays drives the dropdown; pruneMsg is
+  // Manual prune state. pruneDays drives the dropdown. pruneMsg is
   // the toast-style banner shown after success. Failures land in
   // `error` (same surface as list failures).
   const PRUNE_OPTIONS = [
@@ -69,7 +69,7 @@
 
   // One row open at a time -- toggling a different row closes the
   // previous one. Set semantics from the prior version were richer
-  // than they needed to be; cloud-scope's pattern of single-open is
+  // than they needed to be. cloud-scope's pattern of single-open is
   // tighter and reduces "where did I click" confusion.
   let openID = $state(null);
   function toggleDetail(id) { openID = (openID === id) ? null : id; }
@@ -259,7 +259,7 @@
   // Mirrors cloud-scope's pattern: target ref first, then a few
   // key=value pairs from the detail blob, all separated by " / ".
   // Object/array values are rendered minimally so the line stays
-  // short; full JSON is shown on expand.
+  // short. Full JSON is shown on expand.
   function eventSubline(e) {
     const parts = [];
     if (e.detail) {
@@ -340,7 +340,7 @@
 
   // ----- KPI tiles --------------------------------------------------
   // `events` reflects the full window (data.total). The other three
-  // are sample stats over the visible page; on a window with more
+  // are sample stats over the visible page. On a window with more
   // entries than the page size, "actors" / "failures" / "actionTypes"
   // describe what's currently rendered, not the whole window. That's
   // a documented trade-off so we don't fire a second 1000-row fetch
@@ -552,7 +552,7 @@
 
   /* Inline toolbar -- a card-styled flex strip carrying the search,
      range, and page-size controls. Matches cloud-scope's compact
-     audit control surface; on phones the existing flex-wrap rule
+     audit control surface. On phones the existing flex-wrap rule
      stacks each control to full width. */
   .tbl-toolbar {
     display: flex;
@@ -571,7 +571,7 @@
     height: 32px;
     font-size: 13px;
   }
-  /* The action-exact input is a power-user affordance; give it less
+  /* The action-exact input is a power-user affordance. Give it less
      room than the main search box so it doesn't compete visually. */
   .tbl-toolbar > .action-input {
     flex: 1 1 180px;
@@ -648,7 +648,7 @@
 
   /* .pager lives in app.css now (shared across paginated pages). */
 
-  /* Prune control bar. Inline strip; not styled as a card so the
+  /* Prune control bar. Inline strip. Not styled as a card so the
      destructive action doesn't feel like a setting. */
   .prune-bar {
     display: flex;

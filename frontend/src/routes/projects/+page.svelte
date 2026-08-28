@@ -13,7 +13,7 @@
   import { fieldErrorsFrom, isReservedTagKey, noSlashOrSpace } from "$lib/validators.js";
 
   // Caps mirror the Go DTO tags on project/endpoint.go::input. Keep
-  // these in sync when the backend rules move; drift shows up as a
+  // these in sync when the backend rules move. Drift shows up as a
   // green client tick followed by a server 400.
   const NAME_MAX = 128;
   const ORG_NAME_MAX = 39;
@@ -29,7 +29,7 @@
   // fieldErrors maps a json field name (matches the backend's
   // validator.RegisterTagNameFunc(json)) to an inline message rendered
   // under the offending input. Server-side errors populate this in
-  // submit()'s catch; user input clears the specific entry on each
+  // submit()'s catch. User input clears the specific entry on each
   // keystroke so stale errors don't linger after a fix.
   let fieldErrors = $state({});
 
@@ -287,12 +287,12 @@
               {/if}
             </td>
             <td data-label="Pools"><a href="/pools?project={p.id}">{poolCounts[p.id] ?? 0}</a></td>
-            <td data-label="Project cap">{p.max_concurrent_runners > 0 ? p.max_concurrent_runners : "—"}</td>
+            <td data-label="Project cap">{p.max_concurrent_runners > 0 ? p.max_concurrent_runners : "\u2014"}</td>
             <td class="mono" data-label="Tags" style="font-size: 0.75rem;">
               {#if p.tags && Object.keys(p.tags).length > 0}
                 {Object.entries(p.tags).map(([k, v]) => `${k}=${v}`).join(", ")}
               {:else}
-                <span class="muted">—</span>
+                <span class="muted">&mdash;</span>
               {/if}
             </td>
             <td>
@@ -327,7 +327,7 @@
         </div>
       </div>
       <div class="field">
-        <label for="cap">Max concurrent runners <span class="muted">(0 = no project-wide ceiling; per-pool caps still apply)</span></label>
+        <label for="cap">Max concurrent runners <span class="muted">(0 = no project-wide ceiling. per-pool caps still apply)</span></label>
         <div>
           <input id="cap" class="input" type="number" min="0" bind:value={form.max_concurrent_runners}
             oninput={() => clearFieldError("max_concurrent_runners")}
@@ -343,8 +343,8 @@
           Scope
           <span class="muted">
             ({form.scope === "org"
-              ? "route by repository.owner.login; shared across the org / runner group"
-              : "bind individual repos; runners narrow to <owner>-<repo>"})
+              ? "route by repository.owner.login. Shared across the org / runner group"
+              : "bind individual repos. Runners narrow to <owner>-<repo>"})
           </span>
         </label>
         <div>
@@ -359,7 +359,7 @@
       </div>
       {#if form.scope === "org"}
         <div class="field">
-          <label for="org">Org login <span class="muted">(GitHub org name; case-insensitive match against repository.owner.login)</span></label>
+          <label for="org">Org login <span class="muted">(GitHub org name. case-insensitive match against repository.owner.login)</span></label>
           <div>
             <input id="org" class="input mono" bind:value={form.org_name} placeholder="acme-inc" required
               oninput={() => clearFieldError("org_name")}
@@ -373,7 +373,7 @@
 
     {#if form.scope === "org"}
       <div class="field">
-        <label for="rg">Runner group id <span class="muted">(0 = GitHub's "Default" group, id 1; look up org-specific groups via <code>GET /orgs/&lt;org&gt;/actions/runner-groups</code>)</span></label>
+        <label for="rg">Runner group id <span class="muted">(0 = GitHub's "Default" group, id 1. Look up org-specific groups via <code>GET /orgs/&lt. Org&gt. /actions/runner-groups</code>)</span></label>
         <input id="rg" class="input" type="number" min="0" bind:value={form.runner_group_id}
           oninput={() => clearFieldError("runner_group_id")}
           aria-invalid={!!hintFor("runner_group_id")} />
@@ -385,7 +385,7 @@
       <label for="tags-prj">
         Tags
         <span class="muted">
-          (cascade to every pool's launch template + every spawned instance and EBS volume; pool tags override on key conflict, repo tags override pool tags. <code>gha:</code> prefix reserved.)
+          (cascade to every pool's launch template + every spawned instance and EBS volume. Pool tags override on key conflict, repo tags override pool tags. <code>gha:</code> prefix reserved.)
         </span>
       </label>
       <TagsEditor bind:value={form.tags} />

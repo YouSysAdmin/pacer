@@ -12,6 +12,42 @@
     import IdListEditor from "$lib/IdListEditor.svelte";
     import Modal from "$lib/Modal.svelte";
     import { confirmDialog } from "$lib/confirm.svelte.js";
+
+    // Allocation strategies are labelled with the AWS strategy names the
+    // Fleet request actually sends. The backend enum value stays the
+    // short form (cost / lowest_price / capacity / priority).
+    const ALLOC_STRATEGIES = [
+        { value: "cost", label: "price-capacity-optimized (default)" },
+        { value: "lowest_price", label: "lowest-price" },
+        { value: "capacity", label: "capacity-optimized" },
+        { value: "priority", label: "prioritized" },
+    ];
+    const ALLOC_HELP = {
+        cost: {
+            summary:
+                "Cheapest with a capacity signal. AWS skips shallow spot pools even when they are momentarily cheaper, so interruptions stay rare. instance_types order is ignored.",
+            onDemand: "lowest-price",
+            spot: "price-capacity-optimized",
+        },
+        lowest_price: {
+            summary:
+                "Pure cheapest, no capacity signal. Picks the instantaneously cheapest spot pool even when it is shallow and likely to be interrupted. Use only when cost trumps reliability.",
+            onDemand: "lowest-price",
+            spot: "lowest-price",
+        },
+        capacity: {
+            summary:
+                "Deepest spot pool regardless of price. On-demand has no capacity concept and falls back to lowest price.",
+            onDemand: "lowest-price",
+            spot: "capacity-optimized",
+        },
+        priority: {
+            summary:
+                "Honors the instance_types list order. For spot, capacity is still primary and the list order breaks ties.",
+            onDemand: "prioritized",
+            spot: "capacity-optimized-prioritized",
+        },
+    };
     import {
         AMI_PATTERN,
         AMI_RE,
@@ -52,7 +88,7 @@
     const amiValid = $derived(!form.ami_id || AMI_RE.test(form.ami_id.trim()));
 
     // Live validity for the pool name. Empty -> valid (don't flash
-    // before the user types); required attribute catches it at submit.
+    // before the user types). Required attribute catches it at submit.
     const nameValid = $derived(
         !form.name || POOL_NAME_RE.test(form.name.trim()),
     );
@@ -63,11 +99,11 @@
     let error = $state(null);
     let success = $state(null);
     let editing = $state(null); // pool being edited, or null
-    let copyingFrom = $state(""); // name of source pool when forking; "" otherwise
+    let copyingFrom = $state(""); // name of source pool when forking. "" otherwise
     let formOpen = $state(false);
     let projectFilter = $state("");
     // fieldErrors holds the per-field map from a backend validator
-    // bounce; live hints below take precedence for fields the client
+    // bounce. Live hints below take precedence for fields the client
     // can check itself.
     let fieldErrors = $state({});
 
@@ -298,8 +334,8 @@
             }
         }
         // Slice caps for subnets / SGs. Pattern validation per entry
-        // already lives on IdListEditor; here we surface the count
-        // bounds (0 entries = required-missing; >32 = past backend cap).
+        // already lives on IdListEditor. Here we surface the count
+        // bounds (0 entries = required-missing. >32 = past backend cap).
         if (!form.subnet_ids || form.subnet_ids.length === 0) {
             h.subnet_ids = "Add at least one subnet ID";
         } else if (form.subnet_ids.length > SLICE_MAX) {
@@ -414,7 +450,7 @@
             max_concurrent_runners: Number(form.max_concurrent_runners) || 5,
             spot: !!form.spot,
             spawn_method: form.spawn_method || "fleet",
-            // allocation_strategy is Fleet-only; force 'cost' on
+            // allocation_strategy is Fleet-only. Force 'cost' on
             // run_instances so a stale value (left over from toggling
             // away from Fleet) never reaches the validator.
             allocation_strategy:
@@ -436,7 +472,7 @@
     // so we can surface a clear banner instead of a server 400.
     function validate(body) {
         if (!POOL_NAME_RE.test(body.name)) {
-            return "Pool name must be lowercase alphanumeric / underscore / dash; no leading or trailing dash";
+            return "Pool name must be lowercase alphanumeric / underscore / dash, no leading or trailing dash";
         }
         if (!AMI_RE.test(body.ami_id)) {
             return `AMI ID must match ${AMI_PATTERN} (e.g. ami-0abcdef0123456789)`;
@@ -461,7 +497,7 @@
         error = null;
         success = null;
         fieldErrors = {};
-        // Live hints cover the per-field rules; block submit if any
+        // Live hints cover the per-field rules. Block submit if any
         // are currently flagged so the user sees the inline message
         // instead of a server 400.
         const hints = buildHints();
@@ -582,9 +618,9 @@
         </div>
     {:else if visible().length === 0}
         <div class="empty">
-            <pre class="ascii">      ·  ·  ·
-    ·    ?    ·
-      ·  ·  ·</pre>
+            <pre class="ascii">      .  .  .
+    .    ?    .
+      .  .  .</pre>
             <h3>No pools match this project</h3>
             <p>
                 Nothing in <strong>{projectName(projectFilter)}</strong>. Clear
@@ -636,7 +672,7 @@
                                     v{p.launch_template_version}</span
                                 >
                             {:else}
-                                <span class="muted">—</span>
+                                <span class="muted">&mdash;</span>
                             {/if}
                         </td>
                         <td>
@@ -693,7 +729,7 @@
                     <br />
                     <span class="muted"
                         >Used as a runner label - lowercase, digits, underscore,
-                        or dash; no leading / trailing dash</span
+                        or dash, no leading / trailing dash</span
                     ></label
                 >
                 <div>
@@ -711,7 +747,7 @@
                     />
                     {#if !nameValid}
                         <span class="field-warn">
-                            lowercase alphanumeric / underscore / dash; no
+                            lowercase alphanumeric / underscore / dash, no
                             leading or trailing dash
                         </span>
                     {:else if hintFor("name")}
@@ -736,7 +772,7 @@
             </label>
             <br />
             <span class="muted">
-                Pool stops claiming new jobs; existing instances keep running until they finish or hit max runtime.
+                Pool stops claiming new jobs. Existing instances keep running until they finish or hit max runtime.
             </span>
         </div>
 
@@ -864,7 +900,7 @@
         <div class="field">
             <label for="iam"
                 >IAM instance profile name <span class="muted"
-                    >(optional; leave blank if the runner host doesn't need AWS
+                    >(optional, leave blank if the runner host doesn't need AWS
                     API access)</span
                 ></label
             >
@@ -992,7 +1028,7 @@
                 >
                     <div class="n">RunInstances</div>
                     <div class="d">
-                        Serial loop; single instance type per call, first
+                        Serial loop, single instance type per call, first
                         subnet only. Legacy path kept for parity with older
                         deployments.
                     </div>
@@ -1060,22 +1096,18 @@
                     class="select"
                     bind:value={form.allocation_strategy}
                 >
-                    <option value="cost"
-                        >cost — cheapest + capacity-safe (default; AWS skips
-                        shallow pools even if they're cheaper)</option
-                    >
-                    <option value="lowest_price"
-                        >lowest_price — pure cheapest (ignores capacity; spot
-                        may interrupt soon)</option
-                    >
-                    <option value="capacity"
-                        >capacity — deepest spot pool, ignore price (production
-                        reliability)</option
-                    >
-                    <option value="priority"
-                        >priority — honors instance_types list order</option
-                    >
+                    {#each ALLOC_STRATEGIES as s (s.value)}
+                        <option value={s.value}>{s.label}</option>
+                    {/each}
                 </select>
+                {#if ALLOC_HELP[form.allocation_strategy]}
+                    <span class="muted alloc-help">
+                        {ALLOC_HELP[form.allocation_strategy].summary}
+                        <br />
+                        On-demand: <code>{ALLOC_HELP[form.allocation_strategy].onDemand}</code>.
+                        Spot: <code>{ALLOC_HELP[form.allocation_strategy].spot}</code>.
+                    </span>
+                {/if}
             </div>
         {/if}
 
@@ -1084,14 +1116,14 @@
                 Extra runner labels
                 <br />
                 <span class="muted">
-                    Comma-separated; appended to the auto-derived <code
+                    Comma-separated, appended to the auto-derived <code
                         >self-hosted, &lt;project&gt;, &lt;pool&gt;,
                         &lt;owner&gt;-&lt;repo&gt;</code
                     >.
                     <br />
                     Use for capability tags like <code>gpu</code>,
                     <code>arm64</code>, <code>large</code>. Sanitized to
-                    GitHub's charset; <code>gha:</code> prefix reserved.
+                    GitHub's charset. The <code>gha:</code> prefix is reserved.
                 </span>
             </label>
             <input
@@ -1152,7 +1184,7 @@
             <label for="ru"
                 >Run runner as <span class="muted">
                     <br />
-                    OS user on the spawned instance; leave blank to run as root with
+                    OS user on the spawned instance, leave blank to run as root with
                     <code>RUNNER_ALLOW_RUNASROOT=1</code><br /> set to
                     <code>admin</code>
                     / <code>ec2-user</code> / <code>ubuntu</code> when the AMI installs
@@ -1209,5 +1241,11 @@
         margin-top: 6px;
         font-size: 12px;
         line-height: 1.4;
+    }
+    .alloc-help {
+        display: block;
+        margin-top: 6px;
+        font-size: 12px;
+        line-height: 1.5;
     }
 </style>

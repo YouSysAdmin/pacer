@@ -10,7 +10,7 @@
   // Parent passes an object via bind:value -- e.g.
   //   <TagsEditor bind:value={form.tags} reservedPrefix="gha:" />
   // Internally we keep an array (rows) so duplicate / blank keys
-  // can exist while typing; serialize() rebuilds the object on
+  // can exist while typing. serialize() rebuilds the object on
   // every change.
   let { value = $bindable({}), reservedPrefix = "gha:" } = $props();
 

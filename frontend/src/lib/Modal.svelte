@@ -5,8 +5,8 @@
 -->
 
 <script>
-  // Lightweight modal.  Parent controls visibility via `bind:open`;
-  // child content is passed as the default snippet.  Closes on
+  // Lightweight modal.  Parent controls visibility via `bind:open`.
+  // Child content is passed as the default snippet.  Closes on
   // backdrop click or Escape.
   let { open = $bindable(false), title = "", children } = $props();
 

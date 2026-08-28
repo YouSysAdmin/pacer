@@ -38,7 +38,7 @@ export const POOL_NAME_RE = new RegExp("^" + POOL_NAME_PATTERN + "$");
 
 // --- POSIX user (posix_user) ------------------------------------------
 
-// Validator allows max=32 in the Go DTO; the pattern caps at 32 to
+// Validator allows max=32 in the Go DTO. The pattern caps at 32 to
 // match. Empty value passes -- the field is optional and `required`
 // handles its own presence check separately.
 export const POSIX_USER_PATTERN = "[a-z_][a-z0-9_\\-]{0,31}";
@@ -46,7 +46,7 @@ export const POSIX_USER_RE = new RegExp("^" + POSIX_USER_PATTERN + "$");
 
 // --- Tag keys ---------------------------------------------------------
 
-// `gha:` is reserved for tool-managed tags; the backend gha_safe
+// `gha:` is reserved for tool-managed tags. The backend gha_safe
 // validator rejects user-supplied keys with this prefix
 // (case-insensitive). Mirrors validation.registerCustom.
 export function isReservedTagKey(k) {
@@ -127,7 +127,7 @@ export function notSelfHosted(s) {
 // details (legacy `{error: string}` responses) so callers can spread
 // it unconditionally onto a `$state` map.
 //
-// Multiple errors on the same field are joined with "; " so a field
+// Multiple errors on the same field are joined with ". " so a field
 // with both a max and a charset failure shows both reasons.
 export function fieldErrorsFrom(err) {
   if (!err || !Array.isArray(err.fields)) return {};

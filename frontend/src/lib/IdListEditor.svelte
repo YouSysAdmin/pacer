@@ -6,7 +6,7 @@
 
 <script>
   // List editor for prefixed AWS IDs (subnet-..., sg-..., etc.).
-  // Parent passes a string array via bind:value plus a prefix; we
+  // Parent passes a string array via bind:value plus a prefix. We
   // render one input per entry with a remove button and a "+ add"
   // at the bottom.  Validation is soft -- the regex feeds the
   // browser's HTML5 `pattern` check (which is skipped on empty

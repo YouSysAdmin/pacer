@@ -27,7 +27,7 @@
   let rollupError = $state(null);
 
   // First day of the current month, in UTC, as YYYY-MM-DD. The stats
-  // endpoint accepts both RFC3339 and date-only; date-only is read
+  // endpoint accepts both RFC3339 and date-only. date-only is read
   // as UTC midnight.
   function firstOfMonthUTC() {
     const d = new Date();
@@ -62,7 +62,7 @@
     return "$" + v.toFixed(2);
   }
 
-  // Day-of-month label for the bar axis ("01" .. "31"); pulls the
+  // Day-of-month label for the bar axis ("01" .. "31"). Pulls the
   // last segment of the YYYY-MM-DD string the backend already
   // formatted.
   function dayLabel(s) {
@@ -77,7 +77,7 @@
         repos.list(),
         jobs.list({ limit: 200 }),
       ]);
-      // jobs.list returns the envelope {entries, total, ...}; the
+      // jobs.list returns the envelope {entries, total, ...}. The
       // overview chips count by status within the most-recent
       // window only, which is the prior behavior preserved.
       const entries = (js && js.entries) || [];
@@ -144,7 +144,7 @@
   <div class="page-header">
     <h2>Overview</h2>
     <button class="btn" onclick={refreshAll} disabled={liveLoading}>
-      {liveLoading ? "refreshing…" : "refresh"}
+      {liveLoading ? "refreshing..." : "refresh"}
     </button>
   </div>
 
@@ -238,6 +238,6 @@
   </div>
 
   <p class="muted">
-    Live tiles refresh every 5 s; spend + chart every 60 s.
+    Live tiles refresh every 5 s. Spend + chart every 60 s.
   </p>
 </main>
