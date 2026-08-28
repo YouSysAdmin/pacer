@@ -34,7 +34,7 @@ import (
 	"github.com/yousysadmin/pacer/internal/orchestrator"
 	"github.com/yousysadmin/pacer/internal/server"
 
-	"github.com/google/uuid"
+	"uuid"
 )
 
 func newServeCmd() *cobra.Command {
@@ -270,7 +270,7 @@ func bootstrapUser(ctx context.Context, rt *env.Runtime) error {
 		return fmt.Errorf("hash password: %w", err)
 	}
 	u := &usermodel.User{
-		ID:           uuid.NewString(),
+		ID:           uuid.New().String(),
 		Email:        rt.Config.Auth.Local.Email,
 		PasswordHash: hash,
 		Role:         usermodel.RoleAdmin,

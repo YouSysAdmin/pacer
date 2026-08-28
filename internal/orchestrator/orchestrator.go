@@ -42,7 +42,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	smithy "github.com/aws/smithy-go"
-	"github.com/google/uuid"
+	"uuid"
 
 	"github.com/yousysadmin/pacer/internal/core/callback"
 	"github.com/yousysadmin/pacer/internal/core/ec2lt"
@@ -637,7 +637,7 @@ func isCapacityErrorString(s string) bool {
 // occasional Unicode in instance types or error strings).
 func (o *Orchestrator) auditAction(ctx context.Context, action, targetType, targetID string, detail map[string]any) {
 	if err := o.Runtime.Store.Audit.Put(ctx, &audit.Entry{
-		ID:         uuid.NewString(),
+		ID:         uuid.New().String(),
 		Action:     action,
 		TargetType: targetType,
 		TargetID:   targetID,

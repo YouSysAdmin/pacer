@@ -9,6 +9,7 @@
 package tlsutils
 
 import (
+	"cmp"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
@@ -52,13 +53,9 @@ func AutoTLS(ac ACME) *tls.Config {
 		return nil
 	}
 	cache := ac.CacheDir
-	if cache == "" {
-		cache = "certs"
-	}
+	cache = cmp.Or(cache, "certs")
 	addr := ac.HTTPAddr
-	if addr == "" {
-		addr = ":80"
-	}
+	addr = cmp.Or(addr, ":80")
 	m := &autocert.Manager{
 		Prompt: autocert.AcceptTOS,
 		Cache:  autocert.DirCache(cache),

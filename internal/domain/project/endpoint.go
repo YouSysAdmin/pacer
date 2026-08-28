@@ -5,13 +5,14 @@
 package project
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
 	"reflect"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
+	"uuid"
 
 	"github.com/yousysadmin/pacer/internal/core/auditing"
 	"github.com/yousysadmin/pacer/internal/core/ec2lt"
@@ -56,9 +57,7 @@ type input struct {
 // nil-safes Tags so handlers don't have to nil-check before iterating.
 // Runs after the normalize:"..." tag pass and before validate:"...".
 func (in *input) Normalize() {
-	if in.Scope == "" {
-		in.Scope = projectmodel.ScopeRepo
-	}
+	in.Scope = cmp.Or(in.Scope, projectmodel.ScopeRepo)
 	if in.Scope == projectmodel.ScopeRepo {
 		in.OrgName = ""
 		in.RunnerGroupID = 0
@@ -78,7 +77,7 @@ func (h *Handler) Create(c *fiber.Ctx) error {
 		return response.BadRequestFields(c, validation.Summary(fes), fes)
 	}
 	p := &projectmodel.Project{
-		ID:                   uuid.NewString(),
+		ID:                   uuid.New().String(),
 		Name:                 in.Name,
 		MaxConcurrentRunners: in.MaxConcurrentRunners,
 		Tags:                 in.Tags,

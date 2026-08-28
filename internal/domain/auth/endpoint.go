@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
+	"uuid"
 
 	"github.com/yousysadmin/pacer/internal/core/authenticator"
 	"github.com/yousysadmin/pacer/internal/core/env"
@@ -141,7 +141,7 @@ func (h *Handler) Info(c *fiber.Ctx) error {
 // Best-effort: a store error here must not block the 401 response.
 func (h *Handler) auditLoginFailed(c *fiber.Ctx, email, reason string) {
 	_ = h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
-		ID:         uuid.NewString(),
+		ID:         uuid.New().String(),
 		Action:     audit.ActionLoginFailed,
 		TargetType: "user",
 		TargetID:   email,

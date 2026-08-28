@@ -44,7 +44,7 @@ type Project struct {
 	OrgName string `json:"org_name,omitempty"`
 	// RunnerGroupID is the org's runner group the JIT config registers
 	// into. 0 = "Default" group (id=1). Only meaningful for org scope.
-	RunnerGroupID int       `json:"runner_group_id,omitempty"`
+	RunnerGroupID int       `json:"runner_group_id,omitzero"`
 	Disabled      bool      `json:"disabled"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`

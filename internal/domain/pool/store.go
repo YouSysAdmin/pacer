@@ -5,6 +5,7 @@
 package pool
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
@@ -65,13 +66,9 @@ func (s *Store) Put(ctx context.Context, p *poolmodel.Pool) error {
 	}
 
 	spawnMethod := p.SpawnMethod
-	if spawnMethod == "" {
-		spawnMethod = "fleet"
-	}
+	spawnMethod = cmp.Or(spawnMethod, "fleet")
 	allocStrategy := p.AllocationStrategy
-	if allocStrategy == "" {
-		allocStrategy = "cost"
-	}
+	allocStrategy = cmp.Or(allocStrategy, "cost")
 
 	_, err := s.db.ExecContext(ctx, `
         INSERT INTO pools (

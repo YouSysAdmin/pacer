@@ -5,6 +5,7 @@
 package project
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
@@ -56,9 +57,7 @@ func (s *Store) Put(ctx context.Context, p *projectmodel.Project) error {
 	tags := dbutil.MustJSON(p.Tags)
 
 	scope := p.Scope
-	if scope == "" {
-		scope = projectmodel.ScopeRepo
-	}
+	scope = cmp.Or(scope, projectmodel.ScopeRepo)
 
 	_, err := s.db.ExecContext(ctx, `
         INSERT INTO projects (id, name, max_concurrent_runners, tags, scope, org_name, runner_group_id, disabled, created_at, updated_at)

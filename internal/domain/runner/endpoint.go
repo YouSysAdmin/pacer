@@ -5,6 +5,7 @@
 package runner
 
 import (
+	"cmp"
 	"crypto/subtle"
 	"errors"
 	"fmt"
@@ -14,7 +15,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
+	"uuid"
 
 	"github.com/yousysadmin/pacer/internal/core/callback"
 	"github.com/yousysadmin/pacer/internal/core/env"
@@ -262,7 +263,7 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 		return response.Internal(c, err)
 	}
 	if err := h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
-		ID:         uuid.NewString(),
+		ID:         uuid.New().String(),
 		Action:     audit.ActionInstanceRegistered,
 		TargetType: "instance",
 		TargetID:   in.InstanceID,
@@ -334,7 +335,7 @@ func (h *Handler) Complete(c *fiber.Ctx) error {
 		}
 	}
 	if err := h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
-		ID:         uuid.NewString(),
+		ID:         uuid.New().String(),
 		Action:     audit.ActionInstanceTerminated,
 		TargetType: "instance",
 		TargetID:   j.InstanceID,
@@ -398,9 +399,7 @@ func (h *Handler) Error(c *fiber.Ctx) error {
 	}
 
 	stage := strings.TrimSpace(in.Stage)
-	if stage == "" {
-		stage = "bootstrap"
-	}
+	stage = cmp.Or(stage, "bootstrap")
 	logBody := in.Log
 	if len(logBody) > failureLogMaxBytes {
 		// Keep the tail -- the failure is almost always at the end
@@ -430,7 +429,7 @@ func (h *Handler) Error(c *fiber.Ctx) error {
 		}
 	}
 	if err := h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
-		ID:         uuid.NewString(),
+		ID:         uuid.New().String(),
 		Action:     audit.ActionJobFailed,
 		TargetType: "job",
 		TargetID:   j.ID,

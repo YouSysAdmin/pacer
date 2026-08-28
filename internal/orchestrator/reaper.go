@@ -19,7 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	smithy "github.com/aws/smithy-go"
-	"github.com/google/uuid"
+	"uuid"
 
 	"github.com/yousysadmin/pacer/internal/core/env"
 	"github.com/yousysadmin/pacer/internal/core/health"
@@ -394,7 +394,7 @@ func (r *Reaper) markLost(ctx context.Context, i *instance.Instance, d deadState
 			slog.Error("reaper: mark job failed write failed", "job_id", j.ID, "err", err)
 		}
 		_ = r.Runtime.Store.Audit.Put(ctx, &audit.Entry{
-			ID:         uuid.NewString(),
+			ID:         uuid.New().String(),
 			Action:     audit.ActionJobFailed,
 			TargetType: "job",
 			TargetID:   j.ID,
@@ -427,7 +427,7 @@ func (r *Reaper) markLost(ctx context.Context, i *instance.Instance, d deadState
 		}
 	}
 	_ = r.Runtime.Store.Audit.Put(ctx, &audit.Entry{
-		ID:         uuid.NewString(),
+		ID:         uuid.New().String(),
 		Action:     audit.ActionInstanceLost,
 		TargetType: "instance",
 		TargetID:   i.ID,
@@ -556,7 +556,7 @@ func (r *Reaper) maybeReap(ctx context.Context, i *instance.Instance) error {
 		slog.Warn("reaper: finalize cost failed", "instance_id", i.ID, "err", err)
 	}
 	if err := r.Runtime.Store.Audit.Put(ctx, &audit.Entry{
-		ID:         uuid.NewString(),
+		ID:         uuid.New().String(),
 		Action:     audit.ActionInstanceReaped,
 		TargetType: "instance",
 		TargetID:   i.ID,

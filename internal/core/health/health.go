@@ -10,7 +10,8 @@
 package health
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"sync"
 	"time"
 )
@@ -70,8 +71,8 @@ func (h *Health) Snapshot() []Issue {
 	for _, i := range h.issues {
 		out = append(out, i)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].Component < out[j].Component
+	slices.SortFunc(out, func(a, b Issue) int {
+		return cmp.Compare(a.Component, b.Component)
 	})
 	return out
 }

@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
+	"uuid"
 
 	"github.com/yousysadmin/pacer/internal/models/audit"
 )
@@ -39,7 +39,7 @@ type Store interface {
 // (warn level) but never returned -- see package doc.
 func Put(ctx context.Context, s Store, clientIP, action, targetType, targetID, detail string) {
 	err := s.Put(ctx, &audit.Entry{
-		ID:         uuid.NewString(),
+		ID:         uuid.New().String(),
 		Action:     action,
 		TargetType: targetType,
 		TargetID:   targetID,

@@ -14,7 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
+	"uuid"
 
 	"github.com/yousysadmin/pacer/internal/core/auditing"
 	"github.com/yousysadmin/pacer/internal/core/ec2lt"
@@ -158,7 +158,7 @@ func (h *Handler) Create(c *fiber.Ctx) error {
 	}
 	in.finalizeLabels()
 	p := poolFromInput(&in, projectID)
-	p.ID = uuid.NewString()
+	p.ID = uuid.New().String()
 	dup, err := h.hasDuplicateName(c.UserContext(), p)
 	if err != nil {
 		return response.Internal(c, err)
@@ -340,7 +340,7 @@ func (h *Handler) deleteLaunchTemplate(ctx context.Context, p *poolmodel.Pool) b
 func (h *Handler) materializeLT(ctx context.Context, p *poolmodel.Pool, projectName string, projectTags map[string]string) error {
 	if h.Runtime.EC2 == nil {
 		if p.LaunchTemplateID == "" {
-			p.LaunchTemplateID = "lt-dev-" + uuid.NewString()[:8]
+			p.LaunchTemplateID = "lt-dev-" + uuid.New().String()[:8]
 			p.LaunchTemplateVersion = 1
 		} else {
 			p.LaunchTemplateVersion++

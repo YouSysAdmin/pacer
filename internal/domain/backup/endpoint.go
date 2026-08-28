@@ -5,6 +5,7 @@
 package backup
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,7 +13,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
+	"uuid"
 
 	"github.com/yousysadmin/pacer/internal/core/auditing"
 	"github.com/yousysadmin/pacer/internal/core/ec2lt"
@@ -70,9 +71,7 @@ type project struct {
 // validator runs (e.g. empty scope -> "repo"). Pools and Repos are
 // validated per row in their own handlers so they're skipped here.
 func (p *project) Normalize() {
-	if p.Scope == "" {
-		p.Scope = projectmodel.ScopeRepo
-	}
+	p.Scope = cmp.Or(p.Scope, projectmodel.ScopeRepo)
 	if p.Scope == projectmodel.ScopeRepo {
 		p.OrgName = ""
 		p.RunnerGroupID = 0
@@ -113,9 +112,7 @@ type pool struct {
 // to come from the live pool handler so a backup row missing those
 // fields validates the same way a partial UI submission would.
 func (p *pool) Normalize() {
-	if p.SpawnMethod == "" {
-		p.SpawnMethod = "fleet"
-	}
+	p.SpawnMethod = cmp.Or(p.SpawnMethod, "fleet")
 	if p.AllocationStrategy == "" {
 		p.AllocationStrategy = "cost"
 	}
@@ -426,7 +423,7 @@ func sanitizeAndDedupeLabels(in []string) []string {
 func (h *Handler) materializeLT(ctx context.Context, p *poolmodel.Pool, projectName string, projectTags map[string]string) error {
 	if h.Runtime.EC2 == nil {
 		if p.LaunchTemplateID == "" {
-			p.LaunchTemplateID = "lt-dev-" + uuid.NewString()[:8]
+			p.LaunchTemplateID = "lt-dev-" + uuid.New().String()[:8]
 			p.LaunchTemplateVersion = 1
 		} else {
 			p.LaunchTemplateVersion++
@@ -510,7 +507,7 @@ func projectModelFor(existing *projectmodel.Project, bp *project) *projectmodel.
 		return existing
 	}
 	return &projectmodel.Project{
-		ID:                   uuid.NewString(),
+		ID:                   uuid.New().String(),
 		Name:                 bp.Name,
 		MaxConcurrentRunners: bp.MaxConcurrentRunners,
 		Tags:                 tags,
@@ -549,7 +546,7 @@ func poolModelFor(existing *poolmodel.Pool, projectID string, ip *pool) *poolmod
 		return existing
 	}
 	return &poolmodel.Pool{
-		ID:                   uuid.NewString(),
+		ID:                   uuid.New().String(),
 		ProjectID:            projectID,
 		Name:                 ip.Name,
 		IsDefault:            ip.IsDefault,

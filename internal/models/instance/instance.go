@@ -43,5 +43,5 @@ type Instance struct {
 	// DELETE the runner from GitHub when the instance is lost so
 	// the workflow_job fast-fails instead of hanging on heartbeat
 	// timeout. Zero when the runner never registered.
-	GHRunnerID int64 `json:"gh_runner_id,omitempty"`
+	GHRunnerID int64 `json:"gh_runner_id,omitzero"`
 }

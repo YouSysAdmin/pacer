@@ -13,11 +13,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
+	"uuid"
 
 	"github.com/yousysadmin/pacer/internal/core/env"
 	"github.com/yousysadmin/pacer/internal/core/response"
@@ -52,7 +53,7 @@ func (h *Handler) Receive(c *fiber.Ctx) error {
 		// (e.g. an operator curl).
 		// Generate a synthetic id so the delivery row isn't all-NULL, but skip dedup -- random UUIDs
 		// won't collide so the check would be a no-op anyway.
-		delivery = uuid.NewString()
+		delivery = uuid.New().String()
 	}
 
 	ctx := c.UserContext()
@@ -180,7 +181,7 @@ func (h *Handler) enqueue(ctx context.Context, c *fiber.Ctx, p *workflowJobPaylo
 		slog.Info("webhook drop: project has no pools",
 			"project", proj.Name, "delivery", delivery)
 		_ = h.Runtime.Store.Audit.Put(ctx, &audit.Entry{
-			ID:         uuid.NewString(),
+			ID:         uuid.New().String(),
 			Action:     audit.ActionJobNoPoolMatch,
 			TargetType: "project",
 			TargetID:   proj.ID,
@@ -200,7 +201,7 @@ func (h *Handler) enqueue(ctx context.Context, c *fiber.Ctx, p *workflowJobPaylo
 		slog.Info("webhook drop: no pool matches workflow labels",
 			"project", proj.Name, "scope", proj.Scope, "labels", p.WorkflowJob.Labels, "delivery", delivery)
 		_ = h.Runtime.Store.Audit.Put(ctx, &audit.Entry{
-			ID:         uuid.NewString(),
+			ID:         uuid.New().String(),
 			Action:     audit.ActionJobNoPoolMatch,
 			TargetType: "project",
 			TargetID:   proj.ID,
@@ -229,7 +230,7 @@ func (h *Handler) enqueue(ctx context.Context, c *fiber.Ctx, p *workflowJobPaylo
 	}
 
 	j := &job.Job{
-		ID:             uuid.NewString(),
+		ID:             uuid.New().String(),
 		GHJobID:        p.WorkflowJob.ID,
 		GHRunID:        p.WorkflowJob.RunID,
 		InstallationID: p.Installation.ID,
@@ -246,7 +247,7 @@ func (h *Handler) enqueue(ctx context.Context, c *fiber.Ctx, p *workflowJobPaylo
 	}
 
 	_ = h.Runtime.Store.Audit.Put(ctx, &audit.Entry{
-		ID:         uuid.NewString(),
+		ID:         uuid.New().String(),
 		Action:     audit.ActionJobEnqueued,
 		TargetType: "job",
 		TargetID:   j.ID,
@@ -356,7 +357,7 @@ func (h *Handler) markCompleted(ctx context.Context, c *fiber.Ctx, p *workflowJo
 		return response.Internal(c, markErr)
 	}
 	_ = h.Runtime.Store.Audit.Put(ctx, &audit.Entry{
-		ID:         uuid.NewString(),
+		ID:         uuid.New().String(),
 		Action:     audit.ActionJobCompleted,
 		TargetType: "job",
 		TargetID:   j.ID,
@@ -373,12 +374,9 @@ func (h *Handler) markCompleted(ctx context.Context, c *fiber.Ctx, p *workflowJo
 // matching pool.SanitizeLabel's normalization). Workflows that omit
 // it run on github-hosted runners and are not pacer's concern.
 func hasSelfHostedLabel(labels []string) bool {
-	for _, l := range labels {
-		if strings.EqualFold(l, "self-hosted") {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(labels, func(l string) bool {
+		return strings.EqualFold(l, "self-hosted")
+	})
 }
 
 func verifySignature(secret string, body []byte, sigHeader string) bool {

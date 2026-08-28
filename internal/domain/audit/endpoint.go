@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
+	"uuid"
 
 	"github.com/yousysadmin/pacer/internal/core/env"
 	"github.com/yousysadmin/pacer/internal/core/response"
@@ -171,7 +171,7 @@ func (h *Handler) Prune(c *fiber.Ctx) error {
 	// the average state change.
 	actorEmail, actorID := actorFromLocals(c)
 	_ = h.Runtime.Store.Audit.Put(c.UserContext(), &auditmodel.Entry{
-		ID:          uuid.NewString(),
+		ID:          uuid.New().String(),
 		Action:      auditmodel.ActionAuditPruned,
 		ActorEmail:  actorEmail,
 		ActorUserID: actorID,

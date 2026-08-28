@@ -11,7 +11,8 @@
 package pool
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"strings"
 
 	poolmodel "github.com/yousysadmin/pacer/internal/models/pool"
@@ -73,8 +74,8 @@ func Match(pools []*poolmodel.Pool, workflowLabels []string, projectName, repoFu
 		}
 	}
 	if len(explicit) > 0 {
-		sort.SliceStable(explicit, func(i, j int) bool {
-			return explicit[i].Priority < explicit[j].Priority
+		slices.SortStableFunc(explicit, func(a, b *poolmodel.Pool) int {
+			return cmp.Compare(a.Priority, b.Priority)
 		})
 		return explicit[0]
 	}
@@ -85,8 +86,8 @@ func Match(pools []*poolmodel.Pool, workflowLabels []string, projectName, repoFu
 		}
 	}
 
-	sort.SliceStable(matches, func(i, j int) bool {
-		return matches[i].Priority < matches[j].Priority
+	slices.SortStableFunc(matches, func(a, b *poolmodel.Pool) int {
+		return cmp.Compare(a.Priority, b.Priority)
 	})
 	return matches[0]
 }

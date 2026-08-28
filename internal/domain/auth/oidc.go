@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
+	"uuid"
 
 	"github.com/yousysadmin/pacer/internal/core/authenticator"
 	"github.com/yousysadmin/pacer/internal/core/env"
@@ -108,7 +108,7 @@ func (h *Handler) OIDCCallback(c *fiber.Ctx) error {
 	}
 
 	_ = h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
-		ID:          uuid.NewString(),
+		ID:          uuid.New().String(),
 		ActorUserID: u.ID,
 		ActorEmail:  u.Email,
 		Action:      audit.ActionOIDCLoginOK,
@@ -157,7 +157,7 @@ func (h *Handler) findOrCreateOIDCUser(c *fiber.Ctx, claims *pacoidc.Claims) (*u
 				return nil, err
 			}
 			_ = h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
-				ID:          uuid.NewString(),
+				ID:          uuid.New().String(),
 				ActorUserID: existing.ID,
 				ActorEmail:  existing.Email,
 				Action:      audit.ActionUserOIDCLinked,
@@ -188,7 +188,7 @@ func (h *Handler) findOrCreateOIDCUser(c *fiber.Ctx, claims *pacoidc.Claims) (*u
 		role = usermodel.RoleAdmin
 	}
 	fresh := &usermodel.User{
-		ID:          uuid.NewString(),
+		ID:          uuid.New().String(),
 		Email:       email,
 		OIDCSubject: claims.Subject,
 		Role:        role,
@@ -198,7 +198,7 @@ func (h *Handler) findOrCreateOIDCUser(c *fiber.Ctx, claims *pacoidc.Claims) (*u
 		return nil, err
 	}
 	_ = h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
-		ID:          uuid.NewString(),
+		ID:          uuid.New().String(),
 		ActorUserID: fresh.ID,
 		ActorEmail:  fresh.Email,
 		Action:      audit.ActionUserCreated,
@@ -216,7 +216,7 @@ func (h *Handler) findOrCreateOIDCUser(c *fiber.Ctx, claims *pacoidc.Claims) (*u
 
 func (h *Handler) auditOIDCFailed(c *fiber.Ctx, email, reason string) {
 	_ = h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
-		ID:         uuid.NewString(),
+		ID:         uuid.New().String(),
 		ActorEmail: email,
 		Action:     audit.ActionOIDCLoginFailed,
 		TargetType: "user",
@@ -232,7 +232,7 @@ func (h *Handler) auditOIDCFailed(c *fiber.Ctx, email, reason string) {
 
 func (h *Handler) auditOIDCDenied(c *fiber.Ctx, claims *pacoidc.Claims, reason string) {
 	_ = h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
-		ID:         uuid.NewString(),
+		ID:         uuid.New().String(),
 		ActorEmail: claims.Email,
 		Action:     audit.ActionOIDCLoginDenied,
 		TargetType: "user",

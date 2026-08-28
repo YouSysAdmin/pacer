@@ -12,6 +12,7 @@ package logger
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -35,9 +36,7 @@ var (
 // format: "text" or "json"
 // color: enable coloring for text format
 func InitLogger(levelStr, outputDest, format string, color bool) (*slog.Logger, error) {
-	if format == "" {
-		format = "text"
-	}
+	format = cmp.Or(format, "text")
 
 	// Determine log level
 	var level slog.Level

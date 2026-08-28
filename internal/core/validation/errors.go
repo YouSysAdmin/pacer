@@ -5,10 +5,11 @@
 package validation
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/go-playground/validator/v10"
@@ -40,7 +41,7 @@ func Humanize(err error) []FieldError {
 			Message: defaultMessage(fe),
 		})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Field < out[j].Field })
+	slices.SortFunc(out, func(a, b FieldError) int { return cmp.Compare(a.Field, b.Field) })
 	return out
 }
 

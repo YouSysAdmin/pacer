@@ -60,13 +60,9 @@ func registerCustom(v *validator.Validate) {
 	// via env.Runtime, and validation must stay leaf-y.
 	_ = v.RegisterValidation("runner_label", func(fl validator.FieldLevel) bool {
 		s := strings.ToLower(fl.Field().String())
-		for _, r := range s {
-			switch {
-			case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '_':
-				return true
-			}
-		}
-		return false
+		return strings.ContainsFunc(s, func(r rune) bool {
+			return (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_'
+		})
 	})
 
 	// no_slash_or_space rejects '/', spaces, and tabs -- used on the

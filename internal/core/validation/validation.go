@@ -53,42 +53,37 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-var (
-	v    *validator.Validate
-	once sync.Once
-)
+// build constructs the process-wide validator exactly once. Both
+// Init and V go through it, so no caller can observe a half-built
+// instance.
+var build = sync.OnceValue(func() *validator.Validate {
+	v := validator.New(validator.WithRequiredStructEnabled())
+
+	// Use the json tag name in error.Field() so error responses
+	// match the JSON the SPA actually sent, not the Go field name.
+	v.RegisterTagNameFunc(func(fld reflect.StructField) string {
+		tag := fld.Tag.Get("json")
+		if tag == "" || tag == "-" {
+			return fld.Name
+		}
+		if i := strings.IndexByte(tag, ','); i >= 0 {
+			tag = tag[:i]
+		}
+		return tag
+	})
+
+	registerCustom(v)
+	return v
+})
 
 // Init must be called once at app startup before any handler hits
 // BindAndValidate. cli/serve.go calls this before server.New.
-func Init() *validator.Validate {
-	once.Do(func() {
-		v = validator.New(validator.WithRequiredStructEnabled())
-
-		// Use the json tag name in error.Field() so error responses
-		// match the JSON the SPA actually sent, not the Go field name.
-		v.RegisterTagNameFunc(func(fld reflect.StructField) string {
-			tag := fld.Tag.Get("json")
-			if tag == "" || tag == "-" {
-				return fld.Name
-			}
-			if i := strings.IndexByte(tag, ','); i >= 0 {
-				tag = tag[:i]
-			}
-			return tag
-		})
-
-		registerCustom(v)
-	})
-	return v
-}
+func Init() *validator.Validate { return build() }
 
 // V returns the singleton *validator.Validate, initializing it on
 // first use when the production startup path did not (unit tests that
-// exercise a handler without booting cli.serve). The read goes through
-// Init so no caller observes v outside the sync.Once.
-func V() *validator.Validate {
-	return Init()
-}
+// exercise a handler without booting cli.serve).
+func V() *validator.Validate { return build() }
 
 // Normalizer lets DTOs run custom normalization (cross-field
 // coercion, defaulting, anything the normalize:"..." tag vocabulary
@@ -169,7 +164,7 @@ func applyNormalizeTags(v reflect.Value) {
 	switch v.Kind() {
 	case reflect.Struct:
 		t := v.Type()
-		for i := 0; i < v.NumField(); i++ {
+		for i := range v.NumField() {
 			fv := v.Field(i)
 			ft := t.Field(i)
 			applyNormalizeTags(fv)
@@ -180,7 +175,7 @@ func applyNormalizeTags(v reflect.Value) {
 			}
 		}
 	case reflect.Slice, reflect.Array:
-		for i := 0; i < v.Len(); i++ {
+		for i := range v.Len() {
 			applyNormalizeTags(v.Index(i))
 		}
 	}
