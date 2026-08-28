@@ -65,11 +65,17 @@ const (
 	// a single job for capacity-class failures before giving up.
 	MaxSpawnAttempts = 12
 
-	// maxRuntimeMinutesCap clamps pool.MaxRuntimeMinutes when it would
-	// overflow the time.Duration multiplication below. 1 week is well
-	// above any sane runner timeout and far below the int64 nanosecond
-	// overflow boundary.
-	maxRuntimeMinutesCap = 7 * 24 * 60
+	// staleClaimAge is how long a job may sit in claimed with no
+	// instance before reclaimStale requeues it. Matches the bootstrap
+	// window so a slow but live spawn is never yanked back.
+	staleClaimAge = 15 * time.Minute
+
+	// bookkeepingTimeout bounds the detached context used for DB
+	// writes and rollback terminates after EC2 has launched.
+	bookkeepingTimeout = 30 * time.Second
+
+	// orchestratorHealthComponent is the Health key safeTick writes.
+	orchestratorHealthComponent = "orchestrator"
 
 	// SpawnMethodFleet uses CreateFleet(Type=instant) with multi-type
 	// + multi-subnet overrides; AWS picks an available combo using a
@@ -106,21 +112,40 @@ func (o *Orchestrator) Run(ctx context.Context) {
 	t := time.NewTicker(PollInterval)
 	defer t.Stop()
 
-	o.tick(ctx) // run once immediately so a clean restart picks up backlog
+	o.safeTick(ctx) // run once immediately so a clean restart picks up backlog
 	for {
 		select {
 		case <-ctx.Done():
 			slog.Info("orchestrator stopping")
 			return
 		case <-t.C:
-			o.tick(ctx)
+			o.safeTick(ctx)
 		}
 	}
+}
+
+// safeTick runs tick under recover so a panic in the spawn path (an
+// unexpected AWS response shape, a corrupt row) is logged and
+// surfaced on Health instead of taking the process down.
+func (o *Orchestrator) safeTick(ctx context.Context) {
+	_ = safeTick(o.Runtime, orchestratorHealthComponent, func() error {
+		o.tick(ctx)
+		return nil
+	})
+}
+
+// detach returns a context that survives ctx cancellation but is
+// bounded by bookkeepingTimeout. Once EC2 has launched an instance,
+// the DB writes and any rollback terminate must complete even when
+// shutdown or a request cancellation races the spawn.
+func detach(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), bookkeepingTimeout)
 }
 
 // tick drains the queued-jobs queue. Stops at the first empty claim
 // or a permanent claim error.
 func (o *Orchestrator) tick(ctx context.Context) {
+	o.reclaimStale(ctx)
 	for {
 		if ctx.Err() != nil {
 			return
@@ -137,20 +162,41 @@ func (o *Orchestrator) tick(ctx context.Context) {
 		if spawnErr == nil && !capacityExhausted {
 			continue
 		}
+		// The job is already claimed, so the outcome must be written
+		// even if ctx was cancelled mid-spawn. Otherwise the row sits
+		// in claimed until reclaimStale picks it up 15 minutes later.
+		wctx, cancel := detach(ctx)
 		if capacityExhausted {
-			o.reschedule(ctx, j, spawnErr)
+			o.reschedule(wctx, j, spawnErr)
+			cancel()
 			continue
 		}
 		// permanent failure
 		slog.Error("orchestrator: spawn failed", "job_id", j.ID, "err", spawnErr)
-		if err := o.Runtime.Store.Job.MarkFailed(ctx, j.ID, "spawn", spawnErr.Error(), time.Now().UTC()); err != nil {
-			slog.Error("orchestrator: mark failed write failed; job stuck in claimed state",
+		if err := o.Runtime.Store.Job.MarkFailed(wctx, j.ID, "spawn", spawnErr.Error(), time.Now().UTC()); err != nil {
+			slog.Error("orchestrator: mark failed write failed, job stuck in claimed state",
 				"job_id", j.ID, "err", err)
 		}
-		o.auditAction(ctx, audit.ActionJobFailed, "job", j.ID, map[string]any{
+		o.auditAction(wctx, audit.ActionJobFailed, "job", j.ID, map[string]any{
 			"stage": "spawn",
 			"err":   spawnErr.Error(),
 		})
+		cancel()
+	}
+}
+
+// reclaimStale requeues jobs stuck in claimed with no instance for
+// longer than staleClaimAge. These are left over from a crash or a
+// cancelled shutdown between Claim and StampSpawn, and each one holds
+// a concurrency slot in the Claim SQL until it is released.
+func (o *Orchestrator) reclaimStale(ctx context.Context) {
+	n, err := o.Runtime.Store.Job.ReclaimStale(ctx, time.Now().UTC().Add(-staleClaimAge))
+	if err != nil {
+		slog.Error("orchestrator: reclaim stale claims failed", "err", err)
+		return
+	}
+	if n > 0 {
+		slog.Warn("orchestrator: requeued stale claimed jobs", "count", n)
 	}
 }
 
@@ -267,13 +313,12 @@ func (o *Orchestrator) spawn(ctx context.Context, j *job.Job) (error, bool) {
 		repoTags = rp.Tags
 	}
 
-	maxMin := pl.MaxRuntimeMinutes
-	if maxMin <= 0 || maxMin > maxRuntimeMinutesCap {
-		slog.Warn("orchestrator: pool.max_runtime_minutes out of range; clamping",
-			"pool", pl.Name, "configured", pl.MaxRuntimeMinutes, "clamped_to", maxRuntimeMinutesCap)
-		maxMin = maxRuntimeMinutesCap
+	maxRuntime := pl.EffectiveMaxRuntime()
+	if maxRuntime != time.Duration(pl.MaxRuntimeMinutes)*time.Minute {
+		slog.Warn("orchestrator: pool.max_runtime_minutes out of range, clamping",
+			"pool", pl.Name, "configured", pl.MaxRuntimeMinutes, "clamped_to", pool.MaxRuntimeMinutesCap)
 	}
-	ttl := time.Duration(maxMin)*time.Minute + callbackTokenGrace
+	ttl := maxRuntime + callbackTokenGrace
 	token, hash := callback.Mint(j.ID, o.HMACKey, ttl)
 
 	sc := &spawnContext{
@@ -311,7 +356,12 @@ func (o *Orchestrator) spawn(ctx context.Context, j *job.Job) (error, bool) {
 		return callErr, false
 	}
 
-	return o.recordSpawn(ctx, sc, result), false
+	// EC2 has an instance for us now. Bookkeeping and any rollback
+	// must not be cut short by ctx cancellation or the instance
+	// becomes an untracked orphan.
+	bctx, cancel := detach(ctx)
+	defer cancel()
+	return o.recordSpawn(bctx, sc, result), false
 }
 
 // recordSpawn persists the instance row, stamps the job, audit-logs,
@@ -535,11 +585,37 @@ func isCapacityError(err error) bool {
 	return isCapacityErrorString(err.Error())
 }
 
+// capacityErrorCodes are the exact EC2 error codes that mean "no
+// capacity right now, try again later". Fleet's Errors[] carries bare
+// codes, so exact matching keeps permanent codes such as
+// UnsupportedOperation from being mistaken for Unsupported.
+var capacityErrorCodes = map[string]bool{
+	"InsufficientInstanceCapacity": true,
+	"Unsupported":                  true,
+	"SpotMaxPriceTooLow":           true,
+	"InstanceLimitExceeded":        true,
+	"UnfulfillableCapacity":        true,
+}
+
+// isCapacityErrorCode is the exact-match check for bare EC2 error codes.
+func isCapacityErrorCode(code string) bool {
+	return capacityErrorCodes[code]
+}
+
+// isCapacityErrorString is the substring fallback for wrapped error
+// text where the code is embedded in a longer message.
 func isCapacityErrorString(s string) bool {
-	return strings.Contains(s, "InsufficientInstanceCapacity") ||
-		strings.Contains(s, "Unsupported") ||
-		strings.Contains(s, "SpotMaxPriceTooLow") ||
-		strings.Contains(s, "InstanceLimitExceeded")
+	for code := range capacityErrorCodes {
+		if code == "Unsupported" {
+			continue
+		}
+		if strings.Contains(s, code) {
+			return true
+		}
+	}
+	// "Unsupported" alone is too broad as a substring. Match the
+	// message shape RunInstances uses for it.
+	return strings.Contains(s, "Unsupported:") || strings.HasSuffix(s, "Unsupported")
 }
 
 // auditAction is the orchestrator's best-effort audit helper. detail

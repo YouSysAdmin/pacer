@@ -68,7 +68,7 @@ func (s *stubEC2) TerminateInstances(_ context.Context, in *ec2.TerminateInstanc
 func TestSafeTick_RecoversPanic(t *testing.T) {
 	rt := &env.Runtime{Health: health.New()}
 
-	err := safeTick(rt, func() error {
+	err := safeTick(rt, healthComponent, func() error {
 		panic("boom")
 	})
 	if err == nil {
@@ -90,7 +90,7 @@ func TestSafeTick_PassesThroughError(t *testing.T) {
 	rt := &env.Runtime{Health: health.New()}
 
 	sentinel := errors.New("listalive failed")
-	err := safeTick(rt, func() error { return sentinel })
+	err := safeTick(rt, healthComponent, func() error { return sentinel })
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("want sentinel, got %v", err)
 	}
@@ -104,7 +104,7 @@ func TestSafeTick_NilRuntime_NoCrash(t *testing.T) {
 	// inside the panic-recovery path itself if we didn't guard for
 	// nil. The whole point of safeTick is keeping the goroutine
 	// alive -- it must not become its own failure mode.
-	err := safeTick(nil, func() error { panic("boom") })
+	err := safeTick(nil, healthComponent, func() error { panic("boom") })
 	if err == nil {
 		t.Fatal("expected non-nil err even with nil runtime")
 	}
@@ -112,7 +112,7 @@ func TestSafeTick_NilRuntime_NoCrash(t *testing.T) {
 
 func TestSafeTick_NilHealth_NoCrash(t *testing.T) {
 	rt := &env.Runtime{} // Health is nil
-	err := safeTick(rt, func() error { panic("boom") })
+	err := safeTick(rt, healthComponent, func() error { panic("boom") })
 	if err == nil {
 		t.Fatal("expected non-nil err with nil Health")
 	}

@@ -320,8 +320,26 @@ func (s *Store) MarkReaped(ctx context.Context, id string, now time.Time) error 
 	return err
 }
 
+// ReclaimStale returns jobs that were claimed before cutoff but never
+// got an instance stamped (process crash or cancelled shutdown mid
+// spawn) back to the queue. Jobs with an instance_id are left alone,
+// since the reaper owns them through the instance row.
 func (s *Store) ReclaimStale(ctx context.Context, cutoff time.Time) (int, error) {
-	return 0, errNotImpl
+	res, err := s.db.ExecContext(ctx, `
+        UPDATE jobs
+        SET status = 'queued',
+            claimed_at = NULL,
+            callback_token_hash = NULL,
+            bootstrap_token = NULL
+        WHERE status = 'claimed'
+          AND instance_id IS NULL
+          AND claimed_at < ?
+    `, cutoff.UTC())
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	return int(n), err
 }
 
 // Reschedule flips a claimed job back to 'queued', bumps its

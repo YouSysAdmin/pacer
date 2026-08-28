@@ -94,3 +94,17 @@ type Pool struct {
 	CreatedAt             time.Time `json:"created_at"`
 	UpdatedAt             time.Time `json:"updated_at"`
 }
+
+// MaxRuntimeMinutesCap bounds MaxRuntimeMinutes so a bad value can
+// neither reap every instance instantly (zero) nor overflow a
+// time.Duration (huge). Seven days.
+const MaxRuntimeMinutesCap = 7 * 24 * 60
+
+// EffectiveMaxRuntime is the runtime cap the orchestrator and reaper
+// both apply. A nil pool or an out-of-range value clamps to the cap.
+func (p *Pool) EffectiveMaxRuntime() time.Duration {
+	if p == nil || p.MaxRuntimeMinutes <= 0 || p.MaxRuntimeMinutes > MaxRuntimeMinutesCap {
+		return time.Duration(MaxRuntimeMinutesCap) * time.Minute
+	}
+	return time.Duration(p.MaxRuntimeMinutes) * time.Minute
+}

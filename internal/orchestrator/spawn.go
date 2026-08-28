@@ -82,6 +82,11 @@ func (o *Orchestrator) spawnFleet(ctx context.Context, sc *spawnContext) (*spawn
 		}},
 	}
 
+	// ClientToken makes the request idempotent: if the SDK times out
+	// after AWS already fulfilled the fleet, a retry on the same
+	// attempt returns the same instance instead of launching a second.
+	in.ClientToken = aws.String(fmt.Sprintf("%s-%d", sc.job.ID, sc.job.Attempts))
+
 	out, err := o.Runtime.EC2.CreateFleet(ctx, in)
 	if err != nil {
 		return nil, false, fmt.Errorf("create fleet: %w", err)
@@ -113,10 +118,12 @@ func (o *Orchestrator) spawnFleet(ctx context.Context, sc *spawnContext) (*spawn
 		// the job sits in claimed until the reaper fires. Better to
 		// terminate immediately and fail the spawn so the operator
 		// sees a real error.
-		if err := o.postTagInstanceRetry(ctx, sc, instID); err != nil {
-			slog.Error("orchestrator: post-launch tagging failed; terminating to avoid stranded runner",
+		bctx, cancel := detach(ctx)
+		defer cancel()
+		if err := o.postTagInstanceRetry(bctx, sc, instID); err != nil {
+			slog.Error("orchestrator: post-launch tagging failed, terminating to avoid stranded runner",
 				"instance_id", instID, "err", err)
-			if _, terr := o.Runtime.EC2.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
+			if _, terr := o.Runtime.EC2.TerminateInstances(bctx, &ec2.TerminateInstancesInput{
 				InstanceIds: []string{instID},
 			}); terr != nil {
 				slog.Error("orchestrator: terminate after tagging failure also failed; clean up via EC2 console",
@@ -137,7 +144,7 @@ func (o *Orchestrator) spawnFleet(ctx context.Context, sc *spawnContext) (*spawn
 	}
 	allCapacity := true
 	for _, e := range out.Errors {
-		if !isCapacityErrorString(aws.ToString(e.ErrorCode)) {
+		if !isCapacityErrorCode(aws.ToString(e.ErrorCode)) {
 			allCapacity = false
 			break
 		}
@@ -285,6 +292,9 @@ func postLaunchTags(sc *spawnContext) []ec2types.Tag {
 // is included in the launch-time TagSpecifications, so RunInstances
 // spawns see the tag before cloud-init starts -- no polling race.
 func (o *Orchestrator) spawnRunInstances(ctx context.Context, sc *spawnContext) (*spawnResult, bool, error) {
+	if len(sc.pool.InstanceTypes) == 0 || len(sc.pool.SubnetIDs) == 0 {
+		return nil, false, fmt.Errorf("pool %s has no instance_types or subnets to launch into", sc.pool.Name)
+	}
 	tagSpec := buildTagSpecs(sc)
 
 	var (

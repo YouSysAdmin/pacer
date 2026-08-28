@@ -552,3 +552,64 @@ func insertPool(t *testing.T, db *sql.DB, id, projectID, name string, cap int, d
 		t.Fatalf("insertPool: %v", err)
 	}
 }
+
+func TestJob_ReclaimStale_RequeuesOnlyStaleUnstampedClaims(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	// Three claimed jobs: stale without instance, stale with instance,
+	// fresh without instance. Only the first must flip back to queued.
+	mustPut(t, f, "stale-free", jobmodel.StatusQueued, now.Add(-3*time.Minute), nil, 0)
+	mustPut(t, f, "stale-stamped", jobmodel.StatusQueued, now.Add(-2*time.Minute), nil, 0)
+	mustPut(t, f, "fresh", jobmodel.StatusQueued, now.Add(-1*time.Minute), nil, 0)
+	for range 3 {
+		if j, err := f.store.Claim(ctx, now); err != nil || j == nil {
+			t.Fatalf("setup Claim: %v %v", j, err)
+		}
+	}
+	if err := f.store.StampSpawn(ctx, "stale-stamped", "i-1", "hash", "boot"); err != nil {
+		t.Fatal(err)
+	}
+	old := now.Add(-20 * time.Minute)
+	for _, id := range []string{"stale-free", "stale-stamped"} {
+		if _, err := f.db.ExecContext(ctx, `UPDATE jobs SET claimed_at = ? WHERE id = ?`, old, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	n, err := f.store.ReclaimStale(ctx, now.Add(-15*time.Minute))
+	if err != nil {
+		t.Fatalf("ReclaimStale: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("want 1 reclaimed, got %d", n)
+	}
+	want := map[string]jobmodel.Status{
+		"stale-free":    jobmodel.StatusQueued,
+		"stale-stamped": jobmodel.StatusClaimed,
+		"fresh":         jobmodel.StatusClaimed,
+	}
+	for id, st := range want {
+		got, err := f.store.Get(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Status != st {
+			t.Errorf("%s: want %q, got %q", id, st, got.Status)
+		}
+	}
+	// The requeued job is claimable again.
+	if j, err := f.store.Claim(ctx, now); err != nil || j == nil || j.ID != "stale-free" {
+		t.Fatalf("re-Claim: %v %v", j, err)
+	}
+}
+
+func TestJob_ReclaimStale_CancelledContext(t *testing.T) {
+	f := newFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := f.store.ReclaimStale(ctx, time.Now()); err == nil {
+		t.Fatal("expected error on cancelled ctx")
+	}
+}

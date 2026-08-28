@@ -30,6 +30,8 @@ import (
 const (
 	releasesURL     = "https://api.github.com/repos/actions/runner/releases/latest"
 	refreshInterval = 6 * time.Hour
+	// emptyCacheRetry is the poll cadence while no version is cached yet.
+	emptyCacheRetry = 1 * time.Minute
 	httpTimeout     = 10 * time.Second
 )
 
@@ -42,17 +44,17 @@ type Resolver struct {
 	client *http.Client
 }
 
-// New constructs a Resolver and triggers an initial blocking fetch
-// so the first spawn doesn't have to wait or fall back to a stale
-// pin.
-// ctx scopes only the initial fetch -- the background refresher
-// runs under its own root context once Start is called.
-func New(ctx context.Context) (*Resolver, error) {
+// New constructs a Resolver and performs an initial blocking fetch so
+// the first pool save does not bake an empty version. A failed fetch
+// is logged, not returned: the resolver stays usable and Start's
+// refresh loop fills the cache once GitHub is reachable again.
+// ctx scopes only the initial fetch.
+func New(ctx context.Context) *Resolver {
 	r := &Resolver{client: &http.Client{Timeout: httpTimeout}}
 	if err := r.fetchOnce(ctx); err != nil {
-		return nil, fmt.Errorf("initial runner version fetch: %w", err)
+		slog.Warn("ghrunner: initial runner version fetch failed, will retry in background", "err", err)
 	}
-	return r, nil
+	return r
 }
 
 // Start launches the background refresh loop.
@@ -60,7 +62,13 @@ func New(ctx context.Context) (*Resolver, error) {
 // previous cached value is preserved -- a transient GitHub outage shouldn't break spawns.
 func (r *Resolver) Start(ctx context.Context) {
 	go func() {
-		t := time.NewTicker(refreshInterval)
+		// Poll fast while the cache is empty, then settle into the
+		// regular refresh cadence.
+		interval := refreshInterval
+		if r.Latest() == "" {
+			interval = emptyCacheRetry
+		}
+		t := time.NewTicker(interval)
 		defer t.Stop()
 		for {
 			select {
@@ -69,6 +77,9 @@ func (r *Resolver) Start(ctx context.Context) {
 			case <-t.C:
 				if err := r.fetchOnce(ctx); err != nil {
 					slog.Warn("ghrunner: refresh failed (keeping previous version)", "err", err, "previous", r.Latest())
+				} else if interval != refreshInterval {
+					interval = refreshInterval
+					t.Reset(interval)
 				}
 			}
 		}

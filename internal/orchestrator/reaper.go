@@ -107,7 +107,7 @@ func (r *Reaper) Run(ctx context.Context) {
 func (r *Reaper) Tick(ctx context.Context) (checked int, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	err = safeTick(r.Runtime, func() error {
+	err = safeTick(r.Runtime, healthComponent, func() error {
 		c, e := r.doTick(ctx)
 		checked = c
 		return e
@@ -120,15 +120,15 @@ func (r *Reaper) Tick(ctx context.Context) (checked int, err error) {
 // On clean exit: return do's error untouched. The Runtime + Health
 // guards keep tests that pass a bare *Reaper (no Runtime) from
 // crashing here before the panic-recovery path can fire.
-func safeTick(rt *env.Runtime, do func() error) (err error) {
+func safeTick(rt *env.Runtime, component string, do func() error) (err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			stack := debug.Stack()
-			slog.Error("reaper: panic recovered in tick", "panic", rec, "stack", string(stack))
+			slog.Error(component+": panic recovered in tick", "panic", rec, "stack", string(stack))
 			if rt != nil && rt.Health != nil {
-				rt.Health.Set(healthComponent, fmt.Sprintf("panic: %v", rec))
+				rt.Health.Set(component, fmt.Sprintf("panic: %v", rec))
 			}
-			err = fmt.Errorf("reaper panic: %v", rec)
+			err = fmt.Errorf("%s panic: %v", component, rec)
 		}
 	}()
 	return do()
@@ -502,22 +502,24 @@ func (r *Reaper) maybeReap(ctx context.Context, i *instance.Instance) error {
 	if err != nil {
 		return err
 	}
-	if pl == nil {
-		// Pool was deleted out from under the instance; skip the
-		// reap pass and let an operator clean up via console.
-		slog.Warn("reaper: pool missing for live instance; skipping",
+	// A deleted pool must not leave its instances unreapable. Fall
+	// back to the global cap so they are still terminated eventually.
+	poolName := "<deleted>"
+	if pl != nil {
+		poolName = pl.Name
+	} else {
+		slog.Warn("reaper: pool missing for live instance, using max runtime cap",
 			"instance_id", i.ID, "pool_id", i.PoolID)
-		return nil
 	}
 
-	maxRuntime := time.Duration(pl.MaxRuntimeMinutes) * time.Minute
+	maxRuntime := pl.EffectiveMaxRuntime()
 	age := time.Since(i.LaunchedAt)
 	if age < maxRuntime {
 		return nil
 	}
 
 	slog.Warn("reaper: terminating stuck instance",
-		"instance_id", i.ID, "job_id", i.JobID, "pool", pl.Name,
+		"instance_id", i.ID, "job_id", i.JobID, "pool", poolName,
 		"age", age.String(), "max_runtime", maxRuntime.String())
 
 	// Best-effort runner deregister BEFORE we hard-kill the host:

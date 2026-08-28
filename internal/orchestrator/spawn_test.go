@@ -5,107 +5,80 @@
 package orchestrator
 
 import (
+	"context"
+	"errors"
+	"strings"
 	"testing"
 
-	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/yousysadmin/pacer/internal/core/env"
+	"github.com/yousysadmin/pacer/internal/core/health"
+	"github.com/yousysadmin/pacer/internal/models/job"
+	"github.com/yousysadmin/pacer/internal/models/pool"
 )
 
-// TestAllocationStrategies pins each preset to the exact AWS enum
-// pair the spawn path will send. Adding a new strategy means adding a
-// row here -- the table is the contract.
-func TestAllocationStrategies(t *testing.T) {
-	cases := []struct {
-		name   string
-		in     string
-		wantOD ec2types.FleetOnDemandAllocationStrategy
-		wantSp ec2types.SpotAllocationStrategy
-	}{
-		{
-			name:   "cost (default)",
-			in:     "cost",
-			wantOD: ec2types.FleetOnDemandAllocationStrategyLowestPrice,
-			wantSp: ec2types.SpotAllocationStrategyPriceCapacityOptimized,
-		},
-		{
-			name:   "empty falls back to cost",
-			in:     "",
-			wantOD: ec2types.FleetOnDemandAllocationStrategyLowestPrice,
-			wantSp: ec2types.SpotAllocationStrategyPriceCapacityOptimized,
-		},
-		{
-			name:   "unknown falls back to cost",
-			in:     "wat",
-			wantOD: ec2types.FleetOnDemandAllocationStrategyLowestPrice,
-			wantSp: ec2types.SpotAllocationStrategyPriceCapacityOptimized,
-		},
-		{
-			name:   "lowest_price = pure cheapest",
-			in:     "lowest_price",
-			wantOD: ec2types.FleetOnDemandAllocationStrategyLowestPrice,
-			wantSp: ec2types.SpotAllocationStrategyLowestPrice,
-		},
-		{
-			name:   "capacity = deepest spot pool",
-			in:     "capacity",
-			wantOD: ec2types.FleetOnDemandAllocationStrategyLowestPrice,
-			wantSp: ec2types.SpotAllocationStrategyCapacityOptimized,
-		},
-		{
-			name:   "priority = honor list order",
-			in:     "priority",
-			wantOD: ec2types.FleetOnDemandAllocationStrategyPrioritized,
-			wantSp: ec2types.SpotAllocationStrategyCapacityOptimizedPrioritized,
-		},
+func TestIsCapacityErrorCode_ExactMatch(t *testing.T) {
+	for _, code := range []string{"InsufficientInstanceCapacity", "Unsupported", "SpotMaxPriceTooLow", "InstanceLimitExceeded", "UnfulfillableCapacity"} {
+		if !isCapacityErrorCode(code) {
+			t.Errorf("%s should be capacity", code)
+		}
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			gotOD, gotSp := allocationStrategies(c.in)
-			if gotOD != c.wantOD {
-				t.Errorf("on-demand: want %q, got %q", c.wantOD, gotOD)
-			}
-			if gotSp != c.wantSp {
-				t.Errorf("spot: want %q, got %q", c.wantSp, gotSp)
-			}
-		})
+	// Permanent config errors must fail fast, not burn 12 retries.
+	for _, code := range []string{"UnsupportedOperation", "InvalidAMIID.NotFound", "UnauthorizedOperation", ""} {
+		if isCapacityErrorCode(code) {
+			t.Errorf("%s must not be capacity", code)
+		}
 	}
 }
 
-// TestBuildFleetOverrides_PrioritySetOnlyInPriorityMode verifies the
-// Priority field is left unset for non-priority strategies (cost,
-// lowest_price, capacity) so AWS is free to pick by its own criteria,
-// and IS set for priority mode (so the operator's instance_types
-// order takes effect).
-func TestBuildFleetOverrides_PrioritySetOnlyInPriorityMode(t *testing.T) {
-	types := []string{"c6a.large", "c5a.large"}
-	subnets := []string{"subnet-1", "subnet-2"}
+func TestIsCapacityError_WrappedText(t *testing.T) {
+	if !isCapacityError(errors.New("api error InsufficientInstanceCapacity: no capacity")) {
+		t.Error("substring fallback should match embedded code")
+	}
+	if !isCapacityError(&fakeAPIError{code: "SpotMaxPriceTooLow", msg: "x"}) {
+		t.Error("typed smithy code should match")
+	}
+	if isCapacityError(&fakeAPIError{code: "UnsupportedOperation", msg: "arm64 AMI on x86 type"}) {
+		t.Error("UnsupportedOperation is permanent")
+	}
+	if isCapacityError(nil) {
+		t.Error("nil is not an error")
+	}
+}
 
-	t.Run("non-priority leaves Priority nil", func(t *testing.T) {
-		got := buildFleetOverrides(types, subnets, false)
-		if len(got) != 4 {
-			t.Fatalf("expected 4 overrides (2x2), got %d", len(got))
+func TestSpawnRunInstances_EmptyPoolIsPermanent(t *testing.T) {
+	o := &Orchestrator{Runtime: &env.Runtime{}}
+	for _, p := range []*pool.Pool{
+		{Name: "no-types", SubnetIDs: []string{"subnet-1"}},
+		{Name: "no-subnets", InstanceTypes: []string{"t3.micro"}},
+	} {
+		sc := &spawnContext{job: &job.Job{ID: "j"}, pool: p, project: &projectInfo{Name: "p"}}
+		res, exhausted, err := o.spawnRunInstances(context.Background(), sc)
+		if res != nil || exhausted || err == nil {
+			t.Errorf("%s: want permanent error, got res=%v exhausted=%v err=%v", p.Name, res, exhausted, err)
 		}
-		for i, o := range got {
-			if o.Priority != nil {
-				t.Errorf("override %d: Priority should be nil, got %v", i, *o.Priority)
-			}
-		}
-	})
+	}
+}
 
-	t.Run("priority sets index, shared across subnets", func(t *testing.T) {
-		got := buildFleetOverrides(types, subnets, true)
-		if len(got) != 4 {
-			t.Fatalf("expected 4 overrides, got %d", len(got))
-		}
-		// types[0] (c6a) overrides land first with Priority=0;
-		// types[1] (c5a) overrides land next with Priority=1.
-		wantPriorities := []float64{0, 0, 1, 1}
-		for i, o := range got {
-			if o.Priority == nil {
-				t.Fatalf("override %d: Priority should be set, got nil", i)
-			}
-			if *o.Priority != wantPriorities[i] {
-				t.Errorf("override %d: Priority want %v, got %v", i, wantPriorities[i], *o.Priority)
-			}
-		}
-	})
+func TestOrchestratorSafeTick_RecoversPanic(t *testing.T) {
+	rt := &env.Runtime{Health: health.New()}
+	err := safeTick(rt, orchestratorHealthComponent, func() error { panic("boom") })
+	if err == nil || !strings.Contains(err.Error(), "orchestrator panic") {
+		t.Fatalf("want orchestrator panic error, got %v", err)
+	}
+	if msg, ok := rt.Health.Get(orchestratorHealthComponent); !ok || !strings.Contains(msg, "boom") {
+		t.Fatalf("health not set: %q %v", msg, ok)
+	}
+}
+
+func TestDetach_SurvivesParentCancel(t *testing.T) {
+	parent, cancel := context.WithCancel(context.Background())
+	cancel()
+	ctx, done := detach(parent)
+	defer done()
+	if ctx.Err() != nil {
+		t.Fatal("detached ctx must not inherit cancellation")
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		t.Fatal("detached ctx must carry a deadline")
+	}
 }

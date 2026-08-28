@@ -117,13 +117,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("github app: %w", err)
 		}
 		// Cache the latest actions/runner version up front so the
-		// first spawn doesn't hit the GitHub API.
-		// Falls back to the user-data template's hard-coded default if this fails.
-		runnerRes, err = ghrunner.New(context.Background())
-		if err != nil {
-			log.Warn("ghrunner: initial fetch failed, falling back to user-data default", "err", err)
-			runnerRes = nil
-		}
+		// first spawn doesn't hit the GitHub API. A failed first fetch
+		// keeps the resolver alive so the background loop can recover
+		// without a restart. Until then user-data uses its default.
+		runnerRes = ghrunner.New(context.Background())
 	} else {
 		log.Warn("GitHub integration disabled (github.disabled=true): webhook + runner endpoints inactive, orchestrator + reaper not started -- UI-only mode")
 	}
@@ -223,7 +220,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// dev so the table doesn't grow during ad-hoc curl tests against
 	// /api/webhook. Cheap one-statement DELETE.
 	pruner := orchestrator.NewPruner(rt)
-	bgWG.Go(func() { ; pruner.Run(bgCtx) })
+	bgWG.Go(func() { pruner.Run(bgCtx) })
 
 	srv, err := server.New(server.Options{Runtime: rt})
 	if err != nil {
