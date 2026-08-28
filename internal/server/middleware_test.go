@@ -5,14 +5,20 @@
 package server
 
 import (
+	"context"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/yousysadmin/pacer/internal/core/authenticator"
 	"github.com/yousysadmin/pacer/internal/core/env"
+	authdomain "github.com/yousysadmin/pacer/internal/domain/auth"
+	usermodel "github.com/yousysadmin/pacer/internal/models/user"
 	"github.com/yousysadmin/pacer/internal/testutil/runtimeutil"
 )
 
@@ -67,5 +73,85 @@ func TestSecurityHeaders_HSTSOnlyWithTLS(t *testing.T) {
 	resp, _ = tlsApp.Test(httptest.NewRequest("GET", "/", nil))
 	if !strings.HasPrefix(resp.Header.Get("Strict-Transport-Security"), "max-age=") {
 		t.Fatal("HSTS missing when TLS is on")
+	}
+}
+
+func TestRequireAuth_SessionPaths(t *testing.T) {
+	secret := strings.Repeat("k", 32)
+	rt := runtimeutil.NewRuntime(t, &env.Config{
+		GitHub: env.GitHubConfig{Disabled: true},
+		AWS:    env.AWSConfig{Disabled: true},
+		Auth:   env.AuthConfig{JWTSecret: secret},
+	})
+	ctx := context.Background()
+	for _, u := range []*usermodel.User{
+		{ID: "u-ok", Email: "ok@example.com", Role: usermodel.RoleAdmin},
+		{ID: "u-off", Email: "off@example.com", Role: usermodel.RoleAdmin, Disabled: true},
+	} {
+		if err := rt.Store.User.Put(ctx, u); err != nil {
+			t.Fatal(err)
+		}
+	}
+	app := fiber.New(fiber.Config{DisableStartupMessage: true})
+	app.Get("/x", requireAuth(rt), func(c *fiber.Ctx) error {
+		u, _ := c.Locals(authdomain.UserLocalKey).(*usermodel.User)
+		if u == nil {
+			return c.SendStatus(500)
+		}
+		return c.SendString(u.Email)
+	})
+	mint := func(id, email string) string {
+		tok, err := authenticator.CreateToken(secret, id, email, time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok
+	}
+
+	// Cookie path.
+	req := httptest.NewRequest("GET", "/x", nil)
+	req.AddCookie(&http.Cookie{Name: authdomain.SessionCookie, Value: mint("u-ok", "ok@example.com")})
+	resp, _ := app.Test(req)
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 || string(body) != "ok@example.com" {
+		t.Fatalf("cookie session: %d %s", resp.StatusCode, body)
+	}
+	// Bearer fallback.
+	req = httptest.NewRequest("GET", "/x", nil)
+	req.Header.Set("Authorization", "Bearer "+mint("u-ok", "ok@example.com"))
+	if resp, _ = app.Test(req); resp.StatusCode != 200 {
+		t.Fatalf("bearer session: %d", resp.StatusCode)
+	}
+	// Valid token for a disabled user.
+	req = httptest.NewRequest("GET", "/x", nil)
+	req.AddCookie(&http.Cookie{Name: authdomain.SessionCookie, Value: mint("u-off", "off@example.com")})
+	if resp, _ = app.Test(req); resp.StatusCode != 401 {
+		t.Fatalf("disabled user: want 401, got %d", resp.StatusCode)
+	}
+	// Valid token for a deleted user.
+	req = httptest.NewRequest("GET", "/x", nil)
+	req.AddCookie(&http.Cookie{Name: authdomain.SessionCookie, Value: mint("u-gone", "gone@example.com")})
+	if resp, _ = app.Test(req); resp.StatusCode != 401 {
+		t.Fatalf("missing user: want 401, got %d", resp.StatusCode)
+	}
+	// Expired token.
+	expired, _ := authenticator.CreateToken(secret, "u-ok", "ok@example.com", -time.Minute)
+	req = httptest.NewRequest("GET", "/x", nil)
+	req.AddCookie(&http.Cookie{Name: authdomain.SessionCookie, Value: expired})
+	if resp, _ = app.Test(req); resp.StatusCode != 401 {
+		t.Fatalf("expired: want 401, got %d", resp.StatusCode)
+	}
+}
+
+func TestRequireAuth_DisabledPassesThrough(t *testing.T) {
+	rt := runtimeutil.NewRuntime(t, &env.Config{
+		GitHub: env.GitHubConfig{Disabled: true},
+		AWS:    env.AWSConfig{Disabled: true},
+		Auth:   env.AuthConfig{Disabled: true},
+	})
+	app := fiber.New(fiber.Config{DisableStartupMessage: true})
+	app.Get("/x", requireAuth(rt), func(c *fiber.Ctx) error { return c.SendStatus(200) })
+	if resp, _ := app.Test(httptest.NewRequest("GET", "/x", nil)); resp.StatusCode != 200 {
+		t.Fatalf("auth disabled: want 200, got %d", resp.StatusCode)
 	}
 }
