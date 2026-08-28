@@ -25,6 +25,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 
@@ -131,9 +132,7 @@ func CreateOrUpdate(ctx context.Context, c *ec2.Client, iamc *iam.Client, p *poo
 func MergeTags(layers ...map[string]string) map[string]string {
 	out := map[string]string{}
 	for _, layer := range layers {
-		for k, v := range layer {
-			out[k] = v
-		}
+		maps.Copy(out, layer)
 	}
 	return out
 }

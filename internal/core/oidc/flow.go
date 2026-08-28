@@ -54,11 +54,11 @@ func (p *Provider) Authorize(jwtSecret []byte) (redirectURL, cookieValue string,
 // Claims is the subset of ID-token + UserInfo claims the callback
 // needs to make an admit/deny decision.
 type Claims struct {
-	Subject       string                 `json:"sub"`
-	Email         string                 `json:"email"`
-	EmailVerified bool                   `json:"email_verified"`
-	Name          string                 `json:"name"`
-	Raw           map[string]interface{} `json:"-"` // for groups_claim lookup
+	Subject       string         `json:"sub"`
+	Email         string         `json:"email"`
+	EmailVerified bool           `json:"email_verified"`
+	Name          string         `json:"name"`
+	Raw           map[string]any `json:"-"` // for groups_claim lookup
 }
 
 // Exchange verifies the callback URL parameters against the

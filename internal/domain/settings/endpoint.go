@@ -37,7 +37,7 @@ type Handler struct {
 type bootstrapTokenStatus struct {
 	Set       bool      `json:"set"`
 	Masked    string    `json:"masked,omitempty"`
-	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // rotateResult reports what happened on POST /api/settings/bootstrap-token/rotate.
@@ -297,4 +297,3 @@ func (h *Handler) PutRetention(c *fiber.Ctx) error {
 		WebhookOverridden: webhook != h.Runtime.Config.Retention.WebhookDays,
 	})
 }
-

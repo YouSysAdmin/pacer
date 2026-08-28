@@ -324,17 +324,17 @@ func mergeSweep(view *sweepView, resp *ec2.DescribeInstancesOutput) {
 // Best-effort: an unrecognized format returns nil and the caller
 // degrades to "skip the health pass" cleanly.
 func parseNotFoundIDs(msg string) []string {
-	start := strings.Index(msg, "'")
-	if start < 0 {
+	_, after, ok := strings.Cut(msg, "'")
+	if !ok {
 		return nil
 	}
-	rest := msg[start+1:]
-	end := strings.Index(rest, "'")
-	if end < 0 {
+	rest := after
+	before0, _, ok0 := strings.Cut(rest, "'")
+	if !ok0 {
 		return nil
 	}
 	var out []string
-	for _, p := range strings.Split(rest[:end], ",") {
+	for p := range strings.SplitSeq(before0, ",") {
 		p = strings.TrimSpace(p)
 		if strings.HasPrefix(p, "i-") {
 			out = append(out, p)

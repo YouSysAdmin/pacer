@@ -86,30 +86,30 @@ func TestSet_EmptyComponent_NoOp(t *testing.T) {
 func TestRace(t *testing.T) {
 	h := New()
 	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		wg.Add(4)
 		go func(n int) {
 			defer wg.Done()
-			for k := 0; k < 200; k++ {
+			for range 200 {
 				h.Set("reaper", "msg")
 				_ = n
 			}
 		}(i)
 		go func() {
 			defer wg.Done()
-			for k := 0; k < 200; k++ {
+			for range 200 {
 				h.Clear("reaper")
 			}
 		}()
 		go func() {
 			defer wg.Done()
-			for k := 0; k < 200; k++ {
+			for range 200 {
 				_ = h.Snapshot()
 			}
 		}()
 		go func() {
 			defer wg.Done()
-			for k := 0; k < 200; k++ {
+			for range 200 {
 				_, _ = h.Get("reaper")
 			}
 		}()

@@ -6,6 +6,7 @@ package oidc
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -81,18 +82,13 @@ func (p *Provider) Admit(c *Claims) error {
 }
 
 func contains(ss []string, want string) bool {
-	for _, s := range ss {
-		if s == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ss, want)
 }
 
 // extractGroups reads the claim by name and coerces []string from the
 // shapes IdPs commonly use. Tolerates []interface{}, []string, single
 // string. Returns nil when the claim is missing or unsupported shape.
-func extractGroups(raw map[string]interface{}, claim string) []string {
+func extractGroups(raw map[string]any, claim string) []string {
 	if claim == "" {
 		return nil
 	}
@@ -105,7 +101,7 @@ func extractGroups(raw map[string]interface{}, claim string) []string {
 		return t
 	case string:
 		return []string{t}
-	case []interface{}:
+	case []any:
 		out := make([]string, 0, len(t))
 		for _, item := range t {
 			if s, ok := item.(string); ok {

@@ -64,14 +64,14 @@ func TestPrune_DeletesOnlyOlderThanCutoff(t *testing.T) {
 	now := time.Now().UTC()
 
 	// 10 rows: 5 older than 30 days, 5 newer.
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		_ = rt.Store.Audit.Put(ctx, &auditmodel.Entry{
 			ID:         fmt.Sprintf("old-%d", i),
 			Action:     auditmodel.ActionProjectCreated,
 			OccurredAt: now.Add(-60 * 24 * time.Hour).Add(time.Duration(i) * time.Minute),
 		})
 	}
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		_ = rt.Store.Audit.Put(ctx, &auditmodel.Entry{
 			ID:         fmt.Sprintf("new-%d", i),
 			Action:     auditmodel.ActionProjectCreated,

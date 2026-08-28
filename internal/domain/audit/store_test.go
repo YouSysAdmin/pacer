@@ -19,7 +19,7 @@ func TestAudit_PutListCount_RoundTrip(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Second)
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		err := s.Put(ctx, &auditmodel.Entry{
 			ID:         fmt.Sprintf("e-%d", i),
 			Action:     auditmodel.ActionProjectCreated,
@@ -58,13 +58,13 @@ func TestAudit_FilterAndPaginate_Consistent(t *testing.T) {
 	base := time.Now().UTC().Truncate(time.Second)
 
 	// 10 entries: 6 project.created (ours), 4 pool.created (other).
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		_ = s.Put(ctx, &auditmodel.Entry{
 			ID: fmt.Sprintf("p-%d", i), Action: auditmodel.ActionProjectCreated,
 			OccurredAt: base.Add(time.Duration(i) * time.Minute),
 		})
 	}
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		_ = s.Put(ctx, &auditmodel.Entry{
 			ID: fmt.Sprintf("o-%d", i), Action: auditmodel.ActionPoolCreated,
 			OccurredAt: base.Add(time.Duration(i) * time.Minute),
@@ -118,7 +118,7 @@ func TestAudit_TimeWindow(t *testing.T) {
 	ctx := context.Background()
 	base := time.Now().UTC().Truncate(time.Second)
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		_ = s.Put(ctx, &auditmodel.Entry{
 			ID: fmt.Sprintf("e-%d", i), Action: auditmodel.ActionProjectCreated,
 			OccurredAt: base.Add(time.Duration(i) * time.Hour),
@@ -149,7 +149,7 @@ func TestAudit_LimitCap(t *testing.T) {
 	s := NewStore(testutil.OpenTestDB(t))
 	ctx := context.Background()
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		_ = s.Put(ctx, &auditmodel.Entry{
 			ID:         fmt.Sprintf("e-%d", i),
 			Action:     auditmodel.ActionProjectCreated,
@@ -368,7 +368,7 @@ func TestAudit_DeleteOlderThan(t *testing.T) {
 	ctx := context.Background()
 	base := time.Now().UTC().Truncate(time.Second)
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		_ = s.Put(ctx, &auditmodel.Entry{
 			ID: fmt.Sprintf("e-%d", i), Action: auditmodel.ActionProjectCreated,
 			OccurredAt: base.Add(time.Duration(i) * time.Hour),

@@ -80,9 +80,9 @@ func validPool() map[string]any {
 
 func validBackup(projects ...map[string]any) map[string]any {
 	return map[string]any{
-		"version":      1,
-		"exported_at":  "2025-01-01T00:00:00Z",
-		"projects":     projects,
+		"version":     1,
+		"exported_at": "2025-01-01T00:00:00Z",
+		"projects":    projects,
 	}
 }
 

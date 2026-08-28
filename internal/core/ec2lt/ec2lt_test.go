@@ -26,8 +26,8 @@ func TestRenderUserData(t *testing.T) {
 	for _, forbidden := range []string{
 		"{{.JobID",
 		"{{.CallbackToken",
-		"JOB_ID='",           // shellEscape of an injected JobID
-		"CALLBACK_TOKEN='",   // shellEscape of an injected token
+		"JOB_ID='",         // shellEscape of an injected JobID
+		"CALLBACK_TOKEN='", // shellEscape of an injected token
 		"/meta-data/tags/instance/gha-callback-token", // dropped IMDS-tag path
 		"/meta-data/tags/instance/gha:callback-token",
 	} {

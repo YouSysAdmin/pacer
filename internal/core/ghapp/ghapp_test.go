@@ -91,13 +91,11 @@ func TestInstallationToken_InitiatorCancelDoesNotFailWaiters(t *testing.T) {
 
 	ctxA, cancelA := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		// Initiates the flight; its result is irrelevant (may error or
 		// succeed depending on how far the fetch got).
 		_, _ = c.InstallationToken(ctxA, 42)
-	}()
+	})
 
 	<-inFlight // upstream call is in progress, flight is open
 	wg.Add(1)

@@ -355,10 +355,7 @@ func (s *Store) List(ctx context.Context, f jobmodel.ListFilter) ([]*jobmodel.Jo
 	if limit > 500 {
 		limit = 500
 	}
-	offset := f.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max(f.Offset, 0)
 
 	where, args := buildJobWhere(f)
 	q := jobSelect + where + " ORDER BY queued_at DESC LIMIT ? OFFSET ?"

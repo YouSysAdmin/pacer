@@ -80,7 +80,7 @@ func TestJob_Claim_SkipsRowsBeyondPoolCap(t *testing.T) {
 	f := newFixture(t)
 	// Pool cap is 5 (set in newFixture). Fill 5 active slots, queue a sixth.
 	now := time.Now().UTC()
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		mustPut(t, f, idN("running", i), jobmodel.StatusRunning, now.Add(-time.Hour), nil, 0)
 	}
 	mustPut(t, f, "queued-blocked", jobmodel.StatusQueued, now, nil, 0)
@@ -422,10 +422,10 @@ func TestJob_ListCountPaginate_Consistent(t *testing.T) {
 
 	// 10 jobs: 6 completed, 4 failed. Older queued_at first so the
 	// DESC order on queued_at produces a deterministic sequence.
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		mustPut(t, f, "c-"+idN("", i), jobmodel.StatusCompleted, base.Add(time.Duration(i)*time.Second), nil, 0)
 	}
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		mustPut(t, f, "f-"+idN("", i), jobmodel.StatusFailed, base.Add(time.Duration(i+6)*time.Second), nil, 0)
 	}
 

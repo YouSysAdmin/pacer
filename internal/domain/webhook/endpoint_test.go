@@ -380,7 +380,7 @@ func TestWebhook_ManualRedeliver_FreshGUID_DroppedAsDuplicate(t *testing.T) {
 // workflowJobAction builds a workflow_job payload for non-queued
 // actions (in_progress, completed).
 func workflowJobAction(action, repoFullName string, ghJobID int64, conclusion string) []byte {
-	owner := strings.SplitN(repoFullName, "/", 2)[0]
+	owner, _, _ := strings.Cut(repoFullName, "/")
 	payload := map[string]any{
 		"action": action,
 		"workflow_job": map[string]any{
@@ -406,7 +406,7 @@ func workflowJobAction(action, repoFullName string, ghJobID int64, conclusion st
 }
 
 func workflowJobQueued(repoFullName string, ghJobID int64, labels []string) []byte {
-	owner := strings.SplitN(repoFullName, "/", 2)[0]
+	owner, _, _ := strings.Cut(repoFullName, "/")
 	payload := map[string]any{
 		"action": "queued",
 		"workflow_job": map[string]any{

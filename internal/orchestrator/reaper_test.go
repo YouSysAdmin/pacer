@@ -42,10 +42,10 @@ var _ smithy.APIError = (*fakeAPIError)(nil)
 // closures let each test program the response sequence; both are
 // invocation-counted so assertions can pin the retry path.
 type stubEC2 struct {
-	describeCalls   int
-	terminateCalls  int
-	describeFns     []func(*ec2.DescribeInstancesInput) (*ec2.DescribeInstancesOutput, error)
-	terminateFn     func(*ec2.TerminateInstancesInput) (*ec2.TerminateInstancesOutput, error)
+	describeCalls  int
+	terminateCalls int
+	describeFns    []func(*ec2.DescribeInstancesInput) (*ec2.DescribeInstancesOutput, error)
+	terminateFn    func(*ec2.TerminateInstancesInput) (*ec2.TerminateInstancesOutput, error)
 }
 
 func (s *stubEC2) DescribeInstances(_ context.Context, in *ec2.DescribeInstancesInput, _ ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
@@ -407,11 +407,9 @@ func TestReaper_Tick_Serialized(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 4 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, _ = r.Tick(context.Background())
-		}()
+		})
 	}
 	wg.Wait()
 	if got := fake.maxInFlight.Load(); got != 1 {

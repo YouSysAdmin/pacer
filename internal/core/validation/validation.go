@@ -190,7 +190,7 @@ func applyNormalizeTags(v reflect.Value) {
 }
 
 func applyStringOps(s string, tag string) string {
-	for _, op := range strings.Split(tag, ",") {
+	for op := range strings.SplitSeq(tag, ",") {
 		switch strings.ToLower(strings.TrimSpace(op)) {
 		case "trim":
 			s = strings.TrimSpace(s)

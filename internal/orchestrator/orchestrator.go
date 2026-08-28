@@ -527,8 +527,7 @@ func isCapacityError(err error) bool {
 	if err == nil {
 		return false
 	}
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[smithy.APIError](err); ok {
 		if isCapacityErrorString(apiErr.ErrorCode()) {
 			return true
 		}

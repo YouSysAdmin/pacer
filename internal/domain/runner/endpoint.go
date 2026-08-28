@@ -122,8 +122,8 @@ const (
 //   - Missing / wrong bearer  -> 401
 //   - Body validation failure -> 400
 //   - No matching job row     -> 410 (already consumed, stale, or
-//                                     never existed -- runner has no
-//                                     viable recovery, just shut down)
+//     never existed -- runner has no
+//     viable recovery, just shut down)
 func (h *Handler) Bootstrap(c *fiber.Ctx) error {
 	if !h.checkBootstrapToken(c) {
 		return nil // 401 already written
@@ -232,9 +232,9 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 	// the runner can claim any matching job in the org / runner-group.
 	// JIT config goes to /orgs/{org}/... rather than /repos/{owner}/{name}/...
 	var (
-		labels      []string
-		jitConfig   string
-		ghRunnerID  int64
+		labels     []string
+		jitConfig  string
+		ghRunnerID int64
 	)
 	if proj.Scope == projectmodel.ScopeOrg {
 		labels = pool.RunnerLabels(proj.Name, pl.Name, "", pl.ExtraLabels)

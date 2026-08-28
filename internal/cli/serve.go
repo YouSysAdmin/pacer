@@ -223,8 +223,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// dev so the table doesn't grow during ad-hoc curl tests against
 	// /api/webhook. Cheap one-statement DELETE.
 	pruner := orchestrator.NewPruner(rt)
-	bgWG.Add(1)
-	go func() { defer bgWG.Done(); pruner.Run(bgCtx) }()
+	bgWG.Go(func() { ; pruner.Run(bgCtx) })
 
 	srv, err := server.New(server.Options{Runtime: rt})
 	if err != nil {

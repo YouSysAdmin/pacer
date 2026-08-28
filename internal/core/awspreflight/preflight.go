@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -131,14 +132,14 @@ func summarizeFailures(rs []Result) string {
 }
 
 func joinComma(xs []string) string {
-	out := ""
+	var out strings.Builder
 	for i, x := range xs {
 		if i > 0 {
-			out += ", "
+			out.WriteString(", ")
 		}
-		out += x
+		out.WriteString(x)
 	}
-	return out
+	return out.String()
 }
 
 // LogResults emits one log line per check so an operator can map a

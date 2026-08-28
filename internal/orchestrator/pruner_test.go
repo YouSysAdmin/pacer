@@ -38,13 +38,13 @@ func TestPruner_PrunesAuditAndWebhook(t *testing.T) {
 
 	// Audit: 4 rows older than 30d (should be pruned) + 3 newer
 	// (should stay).
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		_ = rt.Store.Audit.Put(ctx, &auditmodel.Entry{
 			ID: fmt.Sprintf("a-old-%d", i), Action: auditmodel.ActionProjectCreated,
 			OccurredAt: now.Add(-60 * 24 * time.Hour).Add(time.Duration(i) * time.Minute),
 		})
 	}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		_ = rt.Store.Audit.Put(ctx, &auditmodel.Entry{
 			ID: fmt.Sprintf("a-new-%d", i), Action: auditmodel.ActionProjectCreated,
 			OccurredAt: now.Add(-1 * 24 * time.Hour).Add(time.Duration(i) * time.Minute),
@@ -70,7 +70,7 @@ func TestPruner_DBOverrideShortensRetention(t *testing.T) {
 	now := time.Now().UTC()
 
 	// 5 rows at 0d, 2d, 4d, 6d, 8d back.
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		_ = rt.Store.Audit.Put(ctx, &auditmodel.Entry{
 			ID: fmt.Sprintf("a-%d", i), Action: auditmodel.ActionProjectCreated,
 			OccurredAt: now.Add(-time.Duration(i*2*24) * time.Hour),
