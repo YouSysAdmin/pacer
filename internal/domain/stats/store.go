@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/yousysadmin/pacer/internal/core/dbutil"
 	"time"
 
 	statsmodel "github.com/yousysadmin/pacer/internal/models/stats"
@@ -33,6 +34,8 @@ func NewStore(db *sql.DB) *Store {
 // from julianday() on the wider format. Sub-second truncation is
 // negligible for cost / runtime rollups.
 func (s *Store) Rollup(ctx context.Context, by statsmodel.GroupBy, from, to time.Time) (statsmodel.Totals, []statsmodel.Bucket, error) {
+	from = dbutil.UTC(from)
+	to = dbutil.UTC(to)
 	keyCol, nameJoin, err := groupExpr(by)
 	if err != nil {
 		return statsmodel.Totals{}, nil, err
@@ -116,6 +119,8 @@ func groupExpr(by statsmodel.GroupBy) (keyCol, nameJoin string, err error) {
 // sender block); they would all collapse into a single misleading
 // "anonymous" bucket otherwise.
 func (s *Store) TopUsers(ctx context.Context, from, to time.Time, limit int) ([]statsmodel.UserBucket, error) {
+	from = dbutil.UTC(from)
+	to = dbutil.UTC(to)
 	rows, err := s.db.QueryContext(ctx, `
         SELECT
             j.sender_login AS login,

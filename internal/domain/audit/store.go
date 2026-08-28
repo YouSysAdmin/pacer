@@ -29,8 +29,9 @@ FROM audit_log`
 
 func (s *Store) Put(ctx context.Context, e *auditmodel.Entry) error {
 	if e.OccurredAt.IsZero() {
-		e.OccurredAt = time.Now().UTC()
+		e.OccurredAt = time.Now()
 	}
+	e.OccurredAt = e.OccurredAt.UTC()
 	_, err := s.db.ExecContext(ctx, `
         INSERT INTO audit_log (id, actor_user_id, actor_email, action, target_type,
                                target_id, detail, client_ip, request_id, occurred_at)
@@ -86,6 +87,7 @@ func (s *Store) Count(ctx context.Context, f auditmodel.ListFilter) (int, error)
 }
 
 func (s *Store) DeleteOlderThan(ctx context.Context, cutoff time.Time) (int, error) {
+	cutoff = dbutil.UTC(cutoff)
 	// occurred_at is written in the driver's UTC text format; the
 	// comparison is textual, so normalize the cutoff instead of
 	// trusting every caller to pass UTC.
@@ -93,7 +95,10 @@ func (s *Store) DeleteOlderThan(ctx context.Context, cutoff time.Time) (int, err
 	if err != nil {
 		return 0, err
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
 	return int(n), nil
 }
 

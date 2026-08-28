@@ -315,3 +315,73 @@ func TestImport_PartialImportProceedsAfterRowError(t *testing.T) {
 		t.Fatal("invalid project must not be persisted")
 	}
 }
+
+func TestImport_DefaultPoolFlipsExistingDefault(t *testing.T) {
+	app, rt := newApp(t)
+	first := validPool()
+	first["is_default"] = true
+	resp := postJSON(t, app, "/api/backup/import", validBackup(map[string]any{
+		"name": "demo", "pools": []map[string]any{first},
+	}))
+	if r := decodeImport(t, resp); len(r.Errors) != 0 {
+		t.Fatalf("first import: %v", r.Errors)
+	}
+
+	second := validPool()
+	second["name"] = "ci-new"
+	second["is_default"] = true
+	first2 := validPool()
+	first2["is_default"] = false
+	resp = postJSON(t, app, "/api/backup/import", validBackup(map[string]any{
+		"name": "demo", "pools": []map[string]any{first2, second},
+	}))
+	if r := decodeImport(t, resp); len(r.Errors) != 0 {
+		t.Fatalf("second import: %v", r.Errors)
+	}
+	pr, _ := rt.Store.Project.GetByName(context.Background(), "demo")
+	pools, _ := rt.Store.Pool.ListByProject(context.Background(), pr.ID)
+	defaults := 0
+	for _, p := range pools {
+		if p.IsDefault {
+			defaults++
+			if p.Name != "ci-new" {
+				t.Fatalf("wrong default: %s", p.Name)
+			}
+		}
+	}
+	if defaults != 1 {
+		t.Fatalf("want exactly 1 default, got %d", defaults)
+	}
+}
+
+func TestImport_SnapshotWithTwoDefaultsRejected(t *testing.T) {
+	app, rt := newApp(t)
+	a, b := validPool(), validPool()
+	b["name"] = "ci-b"
+	a["is_default"], b["is_default"] = true, true
+	resp := postJSON(t, app, "/api/backup/import", validBackup(map[string]any{
+		"name": "demo", "pools": []map[string]any{a, b},
+	}))
+	r := decodeImport(t, resp)
+	if len(r.Errors) == 0 || !strings.Contains(r.Errors[0], "is_default") {
+		t.Fatalf("expected is_default error, got %v", r.Errors)
+	}
+	if got, _ := rt.Store.Project.GetByName(context.Background(), "demo"); got != nil {
+		t.Fatal("project must not be persisted when snapshot is invalid")
+	}
+}
+
+func TestImport_OrgScopedProjectRejectsRepos(t *testing.T) {
+	app, rt := newApp(t)
+	resp := postJSON(t, app, "/api/backup/import", validBackup(map[string]any{
+		"name": "demo", "scope": "org", "org_name": "octo-org",
+		"repos": []map[string]any{{"full_name": "octocat/hello"}},
+	}))
+	r := decodeImport(t, resp)
+	if len(r.Errors) == 0 || !strings.Contains(strings.Join(r.Errors, " "), "org-scoped") {
+		t.Fatalf("expected org-scoped error, got %v", r.Errors)
+	}
+	if got, _ := rt.Store.Repo.Get(context.Background(), "octocat/hello"); got != nil {
+		t.Fatal("repo must not be bound to an org-scoped project")
+	}
+}

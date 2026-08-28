@@ -64,6 +64,10 @@ const (
 	ActionOIDCLoginDenied    = "auth.oidc.login_denied"
 	ActionOIDCLoginFailed    = "auth.oidc.login_failed"
 	ActionUserOIDCLinked     = "user.oidc_linked"
+	// Settings mutations. Rotating the bootstrap token invalidates
+	// every in-flight spawn, so it must leave a trace.
+	ActionBootstrapTokenRotated = "settings.bootstrap_token_rotated"
+	ActionRetentionUpdated      = "settings.retention_updated"
 	// ActionAuditPruned records a manual operator-driven cleanup of
 	// the audit_log table. The entry survives the prune it describes
 	// (its occurred_at is by definition after the cutoff), so the

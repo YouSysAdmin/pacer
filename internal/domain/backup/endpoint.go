@@ -273,6 +273,17 @@ func (h *Handler) applyProject(ctx context.Context, bp *project, result *importR
 		result.Errors = append(result.Errors, fmt.Sprintf("project %q: %s", bp.Name, validation.Summary(validation.Humanize(err))))
 		return
 	}
+	defaults := 0
+	for j := range bp.Pools {
+		if bp.Pools[j].IsDefault {
+			defaults++
+		}
+	}
+	if defaults > 1 {
+		result.Errors = append(result.Errors, fmt.Sprintf("project %s: %d pools marked is_default, at most one allowed", bp.Name, defaults))
+		return
+	}
+
 	existing, err := h.Runtime.Store.Project.GetByName(ctx, bp.Name)
 	if err != nil {
 		result.Errors = append(result.Errors, fmt.Sprintf("project %s: %v", bp.Name, err))
@@ -331,15 +342,38 @@ func (h *Handler) applyPool(ctx context.Context, pmodel *projectmodel.Project, i
 		result.Errors = append(result.Errors, fmt.Sprintf("project %s pool %s: ec2lt: %v", pmodel.Name, ip.Name, err))
 		return
 	}
+	// Mirror pool/endpoint.go::ensureSingleDefault: the partial unique
+	// index on (project_id) WHERE is_default=1 rejects a second default,
+	// so flip the live sibling first. Otherwise Put fails after the LT
+	// was already created and the version is burned.
+	if plmodel.IsDefault {
+		for name, sib := range poolByName {
+			if name == ip.Name || !sib.IsDefault {
+				continue
+			}
+			sib.IsDefault = false
+			if err := h.Runtime.Store.Pool.Put(ctx, sib); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("project %s pool %s: clear default on %s: %v", pmodel.Name, ip.Name, name, err))
+				return
+			}
+		}
+	}
 	if err := h.Runtime.Store.Pool.Put(ctx, plmodel); err != nil {
 		result.Errors = append(result.Errors, fmt.Sprintf("project %s pool %s: %v", pmodel.Name, ip.Name, err))
 		return
 	}
+	poolByName[ip.Name] = plmodel
 }
 
 func (h *Handler) applyRepo(ctx context.Context, pmodel *projectmodel.Project, ir *repo, result *importResult) {
 	if err := validation.NormalizeAndValidate(ir); err != nil {
 		result.Errors = append(result.Errors, fmt.Sprintf("project %s repo %q: %s", pmodel.Name, ir.FullName, validation.Summary(validation.Humanize(err))))
+		return
+	}
+	// Same rule as repo/endpoint.go::Bind: org-scoped projects route
+	// by owner login and take no per-repo bindings.
+	if pmodel.Scope == projectmodel.ScopeOrg {
+		result.Errors = append(result.Errors, fmt.Sprintf("project %s repo %s: project is org-scoped, repos cannot be bound", pmodel.Name, ir.FullName))
 		return
 	}
 	existing, err := h.Runtime.Store.Repo.Get(ctx, ir.FullName)

@@ -54,7 +54,7 @@ func (h *Handler) List(c *fiber.Ctx) error {
 // frontend can disable the button instead of guessing.
 func (h *Handler) Reconcile(c *fiber.Ctx) error {
 	if h.Runtime.Reaper == nil {
-		return response.Internal(c, errReaperUnavailable)
+		return response.ServiceUnavailable(c, errReaperUnavailable.Error())
 	}
 	checked, err := h.Runtime.Reaper.Tick(c.UserContext())
 	if err != nil {
@@ -86,7 +86,7 @@ func currentReaperIssue(h *health.Health) *health.Issue {
 	return nil
 }
 
-// errReaperUnavailable is sentinel for the 500 response when the
+// errReaperUnavailable is the sentinel behind the 503 response when the
 // reaper isn't wired (UI-only dev). Lowercase + var so it formats
 // nicely through response.Internal's err.Error() path.
 var errReaperUnavailable = &reaperUnavailableErr{}

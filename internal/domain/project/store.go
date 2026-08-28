@@ -49,8 +49,9 @@ func (s *Store) GetByOrgName(ctx context.Context, orgName string) (*projectmodel
 
 func (s *Store) Put(ctx context.Context, p *projectmodel.Project) error {
 	if p.CreatedAt.IsZero() {
-		p.CreatedAt = time.Now().UTC()
+		p.CreatedAt = time.Now()
 	}
+	p.CreatedAt = p.CreatedAt.UTC()
 	p.UpdatedAt = time.Now().UTC()
 	tags := dbutil.MustJSON(p.Tags)
 

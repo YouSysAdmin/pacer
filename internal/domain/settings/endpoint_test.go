@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
@@ -17,6 +18,7 @@ import (
 	"github.com/yousysadmin/pacer/internal/core/env"
 	"github.com/yousysadmin/pacer/internal/core/validation"
 	settingsdomain "github.com/yousysadmin/pacer/internal/domain/settings"
+	auditmodel "github.com/yousysadmin/pacer/internal/models/audit"
 	settingsmodel "github.com/yousysadmin/pacer/internal/models/settings"
 	"github.com/yousysadmin/pacer/internal/testutil/runtimeutil"
 )
@@ -187,5 +189,23 @@ func TestPutRetention_BothFieldsAtOnce(t *testing.T) {
 	_ = json.Unmarshal(body2, &got)
 	if got.AuditDays != 60 || got.WebhookDays != 14 {
 		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestPutRetention_WritesAuditRow(t *testing.T) {
+	app, rt := newApp(t, 90, 7)
+	resp, body := putJSON(t, app, "/api/settings/retention", map[string]any{"audit_days": 30, "webhook_days": 3})
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	entries, err := rt.Store.Audit.List(context.Background(), auditmodel.ListFilter{Action: auditmodel.ActionRetentionUpdated, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("want 1 audit row, got %d", len(entries))
+	}
+	if !strings.Contains(entries[0].Detail, `"audit_days":30`) {
+		t.Fatalf("detail missing values: %s", entries[0].Detail)
 	}
 }

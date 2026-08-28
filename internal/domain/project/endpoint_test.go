@@ -12,11 +12,15 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/yousysadmin/pacer/internal/core/env"
 	"github.com/yousysadmin/pacer/internal/domain/project"
+	jobmodel "github.com/yousysadmin/pacer/internal/models/job"
+	poolmodel "github.com/yousysadmin/pacer/internal/models/pool"
+	projectmodel "github.com/yousysadmin/pacer/internal/models/project"
 	"github.com/yousysadmin/pacer/internal/testutil/runtimeutil"
 )
 
@@ -159,5 +163,45 @@ func TestProjectCreate_DefaultsToRepoScope(t *testing.T) {
 	}
 	if got.Scope != "repo" {
 		t.Fatalf("default scope: want repo, got %q", got.Scope)
+	}
+}
+
+func TestProjectUpdate_OrgToRepoBlockedWhileJobsActive(t *testing.T) {
+	app, rt := newApp(t)
+	h := &project.Handler{Runtime: rt}
+	app.Put("/api/projects/:id", h.Update)
+	ctx := context.Background()
+
+	pr := &projectmodel.Project{ID: "p-org", Name: "orgproj", Scope: projectmodel.ScopeOrg, OrgName: "octo", Tags: map[string]string{}}
+	if err := rt.Store.Project.Put(ctx, pr); err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.Store.Pool.Put(ctx, &poolmodel.Pool{ID: "po-1", ProjectID: "p-org", Name: "default", IsDefault: true,
+		AMIID: "ami-1", InstanceTypes: []string{"t3.small"}, SubnetIDs: []string{"s-1"}, MaxRuntimeMinutes: 60, MaxConcurrentRunners: 5}); err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.Store.Job.Put(ctx, &jobmodel.Job{ID: "j-1", GHJobID: 1, GHRunID: 1, InstallationID: 1,
+		RepoFullName: "octo/r", ProjectID: "p-org", PoolID: "po-1", Status: jobmodel.StatusRunning, Payload: []byte("{}")}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := map[string]any{"name": "orgproj", "scope": "repo", "max_concurrent_runners": 0}
+	b, _ := json.Marshal(body)
+	req := httptest.NewRequest("PUT", "/api/projects/p-org", bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := app.Test(req, -1)
+	if resp.StatusCode != 400 {
+		t.Fatalf("want 400 while jobs active, got %d: %s", resp.StatusCode, bodyText(t, resp))
+	}
+
+	// Once the job is terminal the flip is allowed.
+	if err := rt.Store.Job.MarkCompleted(ctx, "j-1", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	req = httptest.NewRequest("PUT", "/api/projects/p-org", bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ = app.Test(req, -1)
+	if resp.StatusCode != 200 {
+		t.Fatalf("want 200 after jobs finished, got %d: %s", resp.StatusCode, bodyText(t, resp))
 	}
 }

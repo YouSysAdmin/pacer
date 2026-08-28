@@ -164,14 +164,14 @@ func TestReconcile_SurfacesReaperIssue(t *testing.T) {
 	}
 }
 
-func TestReconcile_NoReaper_Returns500(t *testing.T) {
+func TestReconcile_NoReaper_Returns503(t *testing.T) {
 	rt := &env.Runtime{Health: health.New()} // Reaper nil
 	app := newApp(rt)
 
 	req := httptest.NewRequest("POST", "/api/reconcile", nil)
 	resp, _ := app.Test(req, -1)
-	if resp.StatusCode != 500 {
-		t.Fatalf("status: want 500, got %d", resp.StatusCode)
+	if resp.StatusCode != 503 {
+		t.Fatalf("status: want 503, got %d", resp.StatusCode)
 	}
 }
 

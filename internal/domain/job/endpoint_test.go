@@ -169,3 +169,56 @@ func TestJobGet_EmptyPoolIDLeavesNameBlank(t *testing.T) {
 		t.Errorf("pool_name: want empty, got %q", body.PoolName)
 	}
 }
+
+func TestJobList_FiltersByProjectPoolRepo(t *testing.T) {
+	app, rt := newApp(t)
+	h := &job.Handler{Runtime: rt}
+	app.Get("/api/jobs", h.List)
+	ctx := context.Background()
+
+	for _, id := range []string{"p1", "p2"} {
+		if err := rt.Store.Project.Put(ctx, &projectmodel.Project{ID: id, Name: id, Scope: "repo", Tags: map[string]string{}}); err != nil {
+			t.Fatal(err)
+		}
+		if err := rt.Store.Pool.Put(ctx, &poolmodel.Pool{ID: "po-" + id, ProjectID: id, Name: "default", IsDefault: true,
+			AMIID: "ami-1", InstanceTypes: []string{"t3.small"}, SubnetIDs: []string{"s-1"}, MaxRuntimeMinutes: 60, MaxConcurrentRunners: 5}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put := func(id, proj, repo string) {
+		if err := rt.Store.Job.Put(ctx, &jobmodel.Job{ID: id, GHJobID: int64(len(id)) + time.Now().UnixNano(), GHRunID: 1, InstallationID: 1,
+			RepoFullName: repo, ProjectID: proj, PoolID: "po-" + proj, Status: jobmodel.StatusQueued, Payload: []byte("{}")}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put("j1", "p1", "o/a")
+	put("j2", "p1", "o/b")
+	put("j3", "p2", "o/a")
+
+	count := func(q string) int {
+		resp, err := app.Test(httptest.NewRequest("GET", "/api/jobs"+q, nil), -1)
+		if err != nil || resp.StatusCode != 200 {
+			t.Fatalf("%s: %v %d", q, err, resp.StatusCode)
+		}
+		var out struct {
+			Total int `json:"total"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return out.Total
+	}
+	if got := count(""); got != 3 {
+		t.Fatalf("no filter: %d", got)
+	}
+	if got := count("?project_id=p1"); got != 2 {
+		t.Fatalf("project filter: %d", got)
+	}
+	if got := count("?pool_id=po-p2"); got != 1 {
+		t.Fatalf("pool filter: %d", got)
+	}
+	if got := count("?repo=o/a"); got != 2 {
+		t.Fatalf("repo filter: %d", got)
+	}
+	if got := count("?repo=o/a&project_id=p2"); got != 1 {
+		t.Fatalf("combined filter: %d", got)
+	}
+}

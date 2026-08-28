@@ -43,8 +43,9 @@ func (s *Store) GetDefault(ctx context.Context, projectID string) (*poolmodel.Po
 
 func (s *Store) Put(ctx context.Context, p *poolmodel.Pool) error {
 	if p.CreatedAt.IsZero() {
-		p.CreatedAt = time.Now().UTC()
+		p.CreatedAt = time.Now()
 	}
+	p.CreatedAt = p.CreatedAt.UTC()
 	p.UpdatedAt = time.Now().UTC()
 
 	instTypes := dbutil.MustJSON(p.InstanceTypes)

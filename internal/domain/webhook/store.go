@@ -7,6 +7,7 @@ package webhook
 import (
 	"context"
 	"database/sql"
+	"github.com/yousysadmin/pacer/internal/core/dbutil"
 	"time"
 )
 
@@ -29,6 +30,7 @@ func NewStore(db *sql.DB) *Store {
 // keep the cutoff comfortably above that so a slow retry can't slip
 // through after we've forgotten the delivery id.
 func (s *Store) DeleteOlderThan(ctx context.Context, cutoff time.Time) (int, error) {
+	cutoff = dbutil.UTC(cutoff)
 	// The comparison is textual. The table holds two shapes, both
 	// space-separated UTC: 'YYYY-MM-DD HH:MM:SS' from the column's
 	// DEFAULT CURRENT_TIMESTAMP (rows written before persistDelivery

@@ -159,6 +159,13 @@ func (h *Handler) Create(c *fiber.Ctx) error {
 	in.finalizeLabels()
 	p := poolFromInput(&in, projectID)
 	p.ID = uuid.NewString()
+	dup, err := h.hasDuplicateName(c.UserContext(), p)
+	if err != nil {
+		return response.Internal(c, err)
+	}
+	if dup {
+		return response.Conflict(c, fmt.Sprintf("pool %q already exists in this project", p.Name))
+	}
 
 	// Materialize BEFORE touching sibling pools: materializeLT is the
 	// fallible step (bad AMI, missing subnet, EC2 throttle), and
@@ -167,8 +174,8 @@ func (h *Handler) Create(c *fiber.Ctx) error {
 	if err := h.materializeLT(c.UserContext(), p, proj.Name, proj.Tags); err != nil {
 		return response.BadRequest(c, "ec2: "+err.Error())
 	}
-	if err := h.ensureSingleDefault(c, p); err != nil {
-		return err
+	if err := h.ensureSingleDefault(c.UserContext(), p); err != nil {
+		return response.Internal(c, err)
 	}
 	if err := h.Runtime.Store.Pool.Put(c.UserContext(), p); err != nil {
 		return response.Internal(c, err)
@@ -208,14 +215,21 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 	// Carry forward LT identity so ec2lt takes the Update path.
 	p.LaunchTemplateID = existing.LaunchTemplateID
 	p.LaunchTemplateVersion = existing.LaunchTemplateVersion
+	dup, err := h.hasDuplicateName(c.UserContext(), p)
+	if err != nil {
+		return response.Internal(c, err)
+	}
+	if dup {
+		return response.Conflict(c, fmt.Sprintf("pool %q already exists in this project", p.Name))
+	}
 
 	// Same ordering rationale as Create: fail on EC2 before mutating
 	// sibling pools' is_default.
 	if err := h.materializeLT(c.UserContext(), p, proj.Name, proj.Tags); err != nil {
 		return response.BadRequest(c, "ec2: "+err.Error())
 	}
-	if err := h.ensureSingleDefault(c, p); err != nil {
-		return err
+	if err := h.ensureSingleDefault(c.UserContext(), p); err != nil {
+		return response.Internal(c, err)
 	}
 	if err := h.Runtime.Store.Pool.Put(c.UserContext(), p); err != nil {
 		return response.Internal(c, err)
@@ -367,21 +381,42 @@ func (h *Handler) resolveRunnerVersion(p *poolmodel.Pool) string {
 // Pool table has a partial unique index on (project_id) WHERE is_default=1 so
 // the DB itself enforces this - the explicit clear avoids an INSERT
 // failure when an admin edits another pool to be the new default.
-func (h *Handler) ensureSingleDefault(c *fiber.Ctx, p *poolmodel.Pool) error {
+// hasDuplicateName reports whether another pool in the same project
+// already uses p.Name. Checked before materializeLT so the
+// UNIQUE(project_id, name) constraint never fires after an LT version
+// has been created for a save that cannot complete.
+//
+// Helpers return plain errors rather than writing the response: the
+// response.* functions return nil once the body is written, so a
+// caller testing "err != nil" on them would fall through and persist.
+func (h *Handler) hasDuplicateName(ctx context.Context, p *poolmodel.Pool) (bool, error) {
+	siblings, err := h.Runtime.Store.Pool.ListByProject(ctx, p.ProjectID)
+	if err != nil {
+		return false, err
+	}
+	for _, s := range siblings {
+		if s.ID != p.ID && s.Name == p.Name {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (h *Handler) ensureSingleDefault(ctx context.Context, p *poolmodel.Pool) error {
 	if !p.IsDefault {
 		return nil
 	}
-	siblings, err := h.Runtime.Store.Pool.ListByProject(c.UserContext(), p.ProjectID)
+	siblings, err := h.Runtime.Store.Pool.ListByProject(ctx, p.ProjectID)
 	if err != nil {
-		return response.Internal(c, err)
+		return err
 	}
 	for _, s := range siblings {
 		if s.ID == p.ID || !s.IsDefault {
 			continue
 		}
 		s.IsDefault = false
-		if err := h.Runtime.Store.Pool.Put(c.UserContext(), s); err != nil {
-			return response.Internal(c, err)
+		if err := h.Runtime.Store.Pool.Put(ctx, s); err != nil {
+			return err
 		}
 	}
 	return nil

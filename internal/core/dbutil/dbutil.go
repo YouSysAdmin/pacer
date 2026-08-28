@@ -34,7 +34,15 @@ func NullTime(t *time.Time) any {
 	if t == nil {
 		return nil
 	}
-	return *t
+	return t.UTC()
+}
+
+// UTC normalizes a bind parameter before it reaches modernc/sqlite.
+// The driver writes UTC values as RFC3339 with a trailing Z and
+// anything else as time.Time.String(), so a single non-UTC write
+// silently breaks every textual range comparison on that column.
+func UTC(t time.Time) time.Time {
+	return t.UTC()
 }
 
 // BoolInt encodes a Go bool as 0/1 - required for SQLite which has

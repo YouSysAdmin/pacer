@@ -19,10 +19,12 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/yousysadmin/pacer/internal/core/auditing"
 	"github.com/yousysadmin/pacer/internal/core/ec2lt"
 	"github.com/yousysadmin/pacer/internal/core/env"
 	"github.com/yousysadmin/pacer/internal/core/response"
 	"github.com/yousysadmin/pacer/internal/core/validation"
+	"github.com/yousysadmin/pacer/internal/models/audit"
 	settingsmodel "github.com/yousysadmin/pacer/internal/models/settings"
 )
 
@@ -94,6 +96,12 @@ func (h *Handler) RotateBootstrapToken(c *fiber.Ctx) error {
 	done, failed := h.rematerializeAllPools(ctx)
 	slog.Info("settings: bootstrap token rotated",
 		"pools_rematerialized", done, "pools_failed", len(failed))
+	auditing.PutCtx(c, h.Runtime.Store.Audit, audit.ActionBootstrapTokenRotated, "settings", settingsmodel.KeyBootstrapAPIToken,
+		audit.Detail(map[string]any{
+			"masked":               maskToken(token),
+			"pools_rematerialized": done,
+			"pools_failed":         failed,
+		}))
 
 	return response.Success(c, rotateResult{
 		RotatedAt:           time.Now().UTC(),
@@ -226,15 +234,15 @@ type retentionInput struct {
 // the YAML defaults so the UI can show "(default: N)" hints.
 func (h *Handler) GetRetention(c *fiber.Ctx) error {
 	ctx := c.UserContext()
-	audit := EffectiveAuditDays(ctx, h.Runtime)
-	webhook := EffectiveWebhookDays(ctx, h.Runtime)
+	auditDays := EffectiveAuditDays(ctx, h.Runtime)
+	webhookDays := EffectiveWebhookDays(ctx, h.Runtime)
 	return response.Success(c, retentionStatus{
-		AuditDays:         audit,
-		WebhookDays:       webhook,
+		AuditDays:         auditDays,
+		WebhookDays:       webhookDays,
 		AuditDefault:      h.Runtime.Config.Retention.AuditDays,
 		WebhookDefault:    h.Runtime.Config.Retention.WebhookDays,
-		AuditOverridden:   audit != h.Runtime.Config.Retention.AuditDays,
-		WebhookOverridden: webhook != h.Runtime.Config.Retention.WebhookDays,
+		AuditOverridden:   auditDays != h.Runtime.Config.Retention.AuditDays,
+		WebhookOverridden: webhookDays != h.Runtime.Config.Retention.WebhookDays,
 	})
 }
 
@@ -286,14 +294,19 @@ func (h *Handler) PutRetention(c *fiber.Ctx) error {
 		}
 	}
 
-	audit := EffectiveAuditDays(ctx, h.Runtime)
-	webhook := EffectiveWebhookDays(ctx, h.Runtime)
+	auditDays := EffectiveAuditDays(ctx, h.Runtime)
+	webhookDays := EffectiveWebhookDays(ctx, h.Runtime)
+	auditing.PutCtx(c, h.Runtime.Store.Audit, audit.ActionRetentionUpdated, "settings", "retention",
+		audit.Detail(map[string]any{
+			"audit_days":   auditDays,
+			"webhook_days": webhookDays,
+		}))
 	return response.Success(c, retentionStatus{
-		AuditDays:         audit,
-		WebhookDays:       webhook,
+		AuditDays:         auditDays,
+		WebhookDays:       webhookDays,
 		AuditDefault:      h.Runtime.Config.Retention.AuditDays,
 		WebhookDefault:    h.Runtime.Config.Retention.WebhookDays,
-		AuditOverridden:   audit != h.Runtime.Config.Retention.AuditDays,
-		WebhookOverridden: webhook != h.Runtime.Config.Retention.WebhookDays,
+		AuditOverridden:   auditDays != h.Runtime.Config.Retention.AuditDays,
+		WebhookOverridden: webhookDays != h.Runtime.Config.Retention.WebhookDays,
 	})
 }

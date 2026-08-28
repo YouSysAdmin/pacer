@@ -74,8 +74,9 @@ var ErrBootstrapUnavailable = errors.New("job: bootstrap unavailable")
 
 func (s *Store) Put(ctx context.Context, j *jobmodel.Job) error {
 	if j.QueuedAt.IsZero() {
-		j.QueuedAt = time.Now().UTC()
+		j.QueuedAt = time.Now()
 	}
+	j.QueuedAt = j.QueuedAt.UTC()
 	_, err := s.db.ExecContext(ctx, `
         INSERT INTO jobs (
             id, gh_job_id, gh_run_id, installation_id, repo_full_name,
@@ -111,6 +112,7 @@ func (s *Store) GetByGHJobID(ctx context.Context, ghJobID int64) (*jobmodel.Job,
 // MaxOpenConns(1) on the connection pool serializes this with all other writes;
 // explicit transaction kept for clarity and ease of porting to postgres.
 func (s *Store) Claim(ctx context.Context, now time.Time) (*jobmodel.Job, error) {
+	now = dbutil.UTC(now)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -202,6 +204,7 @@ func (s *Store) StampSpawn(ctx context.Context, id, instanceID, callbackTokenHas
 // Single-use is enforced by the UPDATE clearing bootstrap_token; a
 // concurrent second call will find NULL and return ErrBootstrapUnavailable.
 func (s *Store) ConsumeBootstrap(ctx context.Context, instanceID string, ttl time.Duration, now time.Time) (token, jobID string, err error) {
+	now = dbutil.UTC(now)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return "", "", err
@@ -245,6 +248,7 @@ func (s *Store) ConsumeBootstrap(ctx context.Context, instanceID string, ttl tim
 // and starting rows qualify, so a late in_progress webhook or a
 // second Register call cannot resurrect or double-start a job.
 func (s *Store) MarkRunning(ctx context.Context, id, instanceID string, now time.Time) error {
+	now = dbutil.UTC(now)
 	return s.execTransition(ctx, id,
 		`UPDATE jobs SET status = 'running', instance_id = COALESCE(?, instance_id), started_at = ?
 		 WHERE id = ? AND status IN ('queued','claimed','starting')`,
@@ -302,6 +306,7 @@ const costSubquery = `(
 // MarkCompleted finalizes a job as completed. Rows already in a
 // terminal state are left untouched and ErrStatusConflict is returned.
 func (s *Store) MarkCompleted(ctx context.Context, id string, now time.Time) error {
+	now = dbutil.UTC(now)
 	return s.execTransition(ctx, id,
 		`UPDATE jobs SET status = 'completed', completed_at = ?,
 		    estimated_cost_usd = `+costSubquery+`
@@ -312,6 +317,7 @@ func (s *Store) MarkCompleted(ctx context.Context, id string, now time.Time) err
 // MarkFailed finalizes a job as failed with a stage and message.
 // Same terminal-state guard as MarkCompleted.
 func (s *Store) MarkFailed(ctx context.Context, id, stage, message string, now time.Time) error {
+	now = dbutil.UTC(now)
 	return s.execTransition(ctx, id,
 		`UPDATE jobs SET status = 'failed', failure_stage = ?, failure_message = ?,
 		    completed_at = ?,
@@ -327,6 +333,7 @@ func (s *Store) MarkFailed(ctx context.Context, id, stage, message string, now t
 // status lets the UI distinguish "the job blew up" from "the user
 // cancelled it" without parsing failure_message.
 func (s *Store) MarkCancelled(ctx context.Context, id, stage, message string, now time.Time) error {
+	now = dbutil.UTC(now)
 	return s.execTransition(ctx, id,
 		`UPDATE jobs SET status = 'cancelled', failure_stage = ?, failure_message = ?,
 		    completed_at = ?,
@@ -341,6 +348,7 @@ func (s *Store) MarkCancelled(ctx context.Context, id, stage, message string, no
 // see what blew up before the runner ever connected.
 // Same lifecycle as MarkFailed otherwise.
 func (s *Store) MarkFailedWithLog(ctx context.Context, id, stage, message, log string, now time.Time) error {
+	now = dbutil.UTC(now)
 	return s.execTransition(ctx, id,
 		`UPDATE jobs SET status = 'failed', failure_stage = ?, failure_message = ?,
 		    failure_log = ?, completed_at = ?,
@@ -350,6 +358,7 @@ func (s *Store) MarkFailedWithLog(ctx context.Context, id, stage, message, log s
 }
 
 func (s *Store) MarkReaped(ctx context.Context, id string, now time.Time) error {
+	now = dbutil.UTC(now)
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE jobs SET status = 'reaped', completed_at = ?,
 		    estimated_cost_usd = `+costSubquery+`
@@ -387,6 +396,7 @@ func (s *Store) ReclaimStale(ctx context.Context, cutoff time.Time) (int, error)
 // stays in flight rather than failing, and the next tick after
 // nextRetryAt picks it up.
 func (s *Store) Reschedule(ctx context.Context, id string, attempts int, nextRetryAt time.Time) error {
+	nextRetryAt = dbutil.UTC(nextRetryAt)
 	_, err := s.db.ExecContext(ctx, `
         UPDATE jobs
         SET status = 'queued',
@@ -589,6 +599,8 @@ func (s *Store) FinalizeCost(ctx context.Context, instanceID string) error {
 // renderer pads zero-bars for the missing days if it wants a
 // continuous axis.
 func (s *Store) StatusTimeseries(ctx context.Context, from, to time.Time) ([]jobmodel.DayBucket, error) {
+	from = dbutil.UTC(from)
+	to = dbutil.UTC(to)
 	rows, err := s.db.QueryContext(ctx, `
         SELECT substr(j.completed_at, 1, 10)                           AS day,
                SUM(CASE WHEN j.status = 'completed' THEN 1 ELSE 0 END) AS completed,

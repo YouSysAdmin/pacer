@@ -32,8 +32,9 @@ FROM instances`
 
 func (s *Store) Put(ctx context.Context, i *instancemodel.Instance) error {
 	if i.LaunchedAt.IsZero() {
-		i.LaunchedAt = time.Now().UTC()
+		i.LaunchedAt = time.Now()
 	}
+	i.LaunchedAt = i.LaunchedAt.UTC()
 	_, err := s.db.ExecContext(ctx, `
         INSERT INTO instances (
             id, job_id, project_id, pool_id, instance_type, az, state, spot,
@@ -92,6 +93,7 @@ func (s *Store) Get(ctx context.Context, id string) (*instancemodel.Instance, er
 // heartbeat. Rows whose state would actually change ride through
 // UpdateState or markLost, both of which already stamp last_seen_at.
 func (s *Store) Touch(ctx context.Context, ids []string, now time.Time) error {
+	now = dbutil.UTC(now)
 	if len(ids) == 0 {
 		return nil
 	}
@@ -112,6 +114,7 @@ func (s *Store) Touch(ctx context.Context, ids []string, now time.Time) error {
 }
 
 func (s *Store) UpdateState(ctx context.Context, id string, state instancemodel.State, now time.Time) error {
+	now = dbutil.UTC(now)
 	if state == instancemodel.StateTerminated || state == instancemodel.StateReaped {
 		_, err := s.db.ExecContext(ctx,
 			`UPDATE instances SET state = ?, terminated_at = ?, last_seen_at = ? WHERE id = ?`,
@@ -125,6 +128,7 @@ func (s *Store) UpdateState(ctx context.Context, id string, state instancemodel.
 }
 
 func (s *Store) StampRegistration(ctx context.Context, id, instanceType, az string, ghRunnerID int64, now time.Time) error {
+	now = dbutil.UTC(now)
 	_, err := s.db.ExecContext(ctx, `
         UPDATE instances
         SET instance_type = ?, az = ?, state = 'running',
@@ -164,6 +168,7 @@ func (s *Store) ListAlive(ctx context.Context) ([]*instancemodel.Instance, error
 }
 
 func (s *Store) ListStuck(ctx context.Context, cutoff time.Time) ([]*instancemodel.Instance, error) {
+	cutoff = dbutil.UTC(cutoff)
 	rows, err := s.db.QueryContext(ctx,
 		instanceSelect+` WHERE state IN ('starting','running') AND launched_at < ? ORDER BY launched_at ASC`,
 		cutoff)

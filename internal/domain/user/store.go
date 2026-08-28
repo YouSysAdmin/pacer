@@ -67,10 +67,13 @@ func (s *Store) GetByOIDCSubject(ctx context.Context, sub string) (*usermodel.Us
 // only fires for actually-linked users.
 func (s *Store) Put(ctx context.Context, u *usermodel.User) error {
 	if u.CreatedAt.IsZero() {
-		u.CreatedAt = time.Now().UTC()
+		u.CreatedAt = time.Now()
 	}
+	u.CreatedAt = u.CreatedAt.UTC()
+	// Least privilege by default. Callers that mean admin (bootstrap
+	// user, first OIDC user) set it explicitly.
 	if u.Role == "" {
-		u.Role = usermodel.RoleAdmin
+		u.Role = usermodel.RoleUser
 	}
 	_, err := s.db.ExecContext(ctx, `
         INSERT INTO users (

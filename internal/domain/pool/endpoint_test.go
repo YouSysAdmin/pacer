@@ -200,3 +200,41 @@ func TestPool_CreateDefault_FlipsSiblingDefault(t *testing.T) {
 		t.Fatalf("want exactly 1 default pool, got %d", defaults)
 	}
 }
+
+func TestPool_Create_DuplicateNameIs409(t *testing.T) {
+	h := newHarness(t)
+	seedProject(t, h, "p-dup", "demo")
+	if resp := h.do(t, "POST", "/api/projects/p-dup/pools", poolInput("ci", true)); resp.StatusCode != 201 {
+		t.Fatalf("first create: %d", resp.StatusCode)
+	}
+	resp := h.do(t, "POST", "/api/projects/p-dup/pools", poolInput("ci", false))
+	if resp.StatusCode != 409 {
+		t.Fatalf("duplicate create: want 409, got %d", resp.StatusCode)
+	}
+	pools, _ := h.rt.Store.Pool.ListByProject(context.Background(), "p-dup")
+	if len(pools) != 1 {
+		t.Fatalf("want 1 pool, got %d", len(pools))
+	}
+}
+
+func TestPool_Update_RenameOntoSiblingIs409(t *testing.T) {
+	h := newHarness(t)
+	seedProject(t, h, "p-ren", "demo")
+	h.do(t, "POST", "/api/projects/p-ren/pools", poolInput("a", true))
+	h.do(t, "POST", "/api/projects/p-ren/pools", poolInput("b", false))
+	pools, _ := h.rt.Store.Pool.ListByProject(context.Background(), "p-ren")
+	var bID string
+	for _, p := range pools {
+		if p.Name == "b" {
+			bID = p.ID
+		}
+	}
+	resp := h.do(t, "PUT", "/api/pools/"+bID, poolInput("a", false))
+	if resp.StatusCode != 409 {
+		t.Fatalf("rename onto sibling: want 409, got %d", resp.StatusCode)
+	}
+	// Renaming to itself is fine.
+	if resp := h.do(t, "PUT", "/api/pools/"+bID, poolInput("b", false)); resp.StatusCode != 200 {
+		t.Fatalf("self rename: want 200, got %d", resp.StatusCode)
+	}
+}

@@ -655,3 +655,31 @@ func TestJob_MarkTransitions_AtomicStatusGates(t *testing.T) {
 		t.Fatalf("missing row: want ErrJobMissing, got %v", err)
 	}
 }
+
+func TestJob_NonUTCTimes_NormalizedBeforeCompare(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	loc := time.FixedZone("UTC+3", 3*3600)
+	nowLocal := time.Now().In(loc)
+
+	// A retry gate written in local time must still compare against a
+	// UTC "now" in Claim. Before normalization the two text formats
+	// differed and the gate misfired.
+	mustPut(t, f, "j1", jobmodel.StatusQueued, nowLocal, nil, 0)
+	if j, err := f.store.Claim(ctx, nowLocal); err != nil || j == nil {
+		t.Fatalf("Claim: %v %v", j, err)
+	}
+	if err := f.store.Reschedule(ctx, "j1", 1, nowLocal.Add(10*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if j, _ := f.store.Claim(ctx, nowLocal.UTC()); j != nil {
+		t.Fatal("job in backoff must not be claimable")
+	}
+	if j, err := f.store.Claim(ctx, nowLocal.Add(11*time.Minute)); err != nil || j == nil {
+		t.Fatalf("after backoff Claim: %v %v", j, err)
+	}
+	got, _ := f.store.Get(ctx, "j1")
+	if got.QueuedAt.Location() != time.UTC {
+		t.Fatalf("queued_at not stored as UTC: %v", got.QueuedAt)
+	}
+}

@@ -131,7 +131,17 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 		}
 		if len(repos) > 0 {
 			return response.BadRequest(c,
-				fmt.Sprintf("project has %d bound repos; unbind them before switching to org scope", len(repos)))
+				fmt.Sprintf("project has %d bound repos, unbind them before switching to org scope", len(repos)))
+		}
+	}
+	if existing.Scope == projectmodel.ScopeOrg && in.Scope == projectmodel.ScopeRepo {
+		active, err := h.Runtime.Store.Project.ConcurrentRunnerCount(c.UserContext(), existing.ID)
+		if err != nil {
+			return response.Internal(c, err)
+		}
+		if active > 0 {
+			return response.BadRequest(c,
+				fmt.Sprintf("project has %d active org-routed jobs, wait for them to finish before switching to repo scope", active))
 		}
 	}
 

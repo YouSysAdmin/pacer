@@ -87,9 +87,12 @@ func (h *Handler) List(c *fiber.Ctx) error {
 		}
 	}
 	f := jobmodel.ListFilter{
-		Status: jobmodel.Status(c.Query("status")),
-		Limit:  limit,
-		Offset: offset,
+		Status:    jobmodel.Status(c.Query("status")),
+		ProjectID: c.Query("project_id"),
+		PoolID:    c.Query("pool_id"),
+		Repo:      c.Query("repo"),
+		Limit:     limit,
+		Offset:    offset,
 	}
 	js, err := h.Runtime.Store.Job.List(c.UserContext(), f)
 	if err != nil {

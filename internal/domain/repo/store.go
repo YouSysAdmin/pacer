@@ -38,8 +38,9 @@ func (s *Store) Get(ctx context.Context, fullName string) (*repomodel.Repo, erro
 
 func (s *Store) Put(ctx context.Context, r *repomodel.Repo) error {
 	if r.CreatedAt.IsZero() {
-		r.CreatedAt = time.Now().UTC()
+		r.CreatedAt = time.Now()
 	}
+	r.CreatedAt = r.CreatedAt.UTC()
 	var maxConc any
 	if r.MaxConcurrentRunners != nil {
 		maxConc = *r.MaxConcurrentRunners
