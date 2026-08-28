@@ -357,14 +357,16 @@ func (s *Store) MarkFailedWithLog(ctx context.Context, id, stage, message, log s
 		stage, message, log, now, now, id)
 }
 
+// MarkReaped finalizes a job whose instance the reaper had to kill.
+// Rows already finalized by the webhook keep their status and cost,
+// the reaper only records the instance side in that case.
 func (s *Store) MarkReaped(ctx context.Context, id string, now time.Time) error {
 	now = dbutil.UTC(now)
-	_, err := s.db.ExecContext(ctx,
+	return s.execTransition(ctx, id,
 		`UPDATE jobs SET status = 'reaped', completed_at = ?,
 		    estimated_cost_usd = `+costSubquery+`
-		 WHERE id = ?`,
+		 WHERE id = ? AND status NOT IN `+terminalStatuses,
 		now, now, id)
-	return err
 }
 
 // ReclaimStale returns jobs that were claimed before cutoff but never

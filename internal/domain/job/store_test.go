@@ -683,3 +683,28 @@ func TestJob_NonUTCTimes_NormalizedBeforeCompare(t *testing.T) {
 		t.Fatalf("queued_at not stored as UTC: %v", got.QueuedAt)
 	}
 }
+
+func TestJob_MarkReaped_DoesNotOverwriteWebhookFinalizedRow(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	now := time.Now().UTC()
+	mustPut(t, f, "r1", jobmodel.StatusQueued, now, nil, 0)
+	if err := f.store.MarkCompleted(ctx, "r1", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.MarkReaped(ctx, "r1", now.Add(time.Hour)); !errors.Is(err, ErrStatusConflict) {
+		t.Fatalf("want ErrStatusConflict, got %v", err)
+	}
+	got, _ := f.store.Get(ctx, "r1")
+	if got.Status != jobmodel.StatusCompleted {
+		t.Fatalf("status overwritten: %q", got.Status)
+	}
+	// A running job is still reapable.
+	mustPut(t, f, "r2", jobmodel.StatusQueued, now, nil, 0)
+	if err := f.store.MarkRunning(ctx, "r2", "i-1", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.MarkReaped(ctx, "r2", now); err != nil {
+		t.Fatalf("reap running: %v", err)
+	}
+}

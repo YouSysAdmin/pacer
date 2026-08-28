@@ -237,3 +237,22 @@ func TestPool_Update_RenameOntoSiblingIs409(t *testing.T) {
 		t.Fatalf("self rename: want 200, got %d", resp.StatusCode)
 	}
 }
+
+func TestPool_HasDuplicateName_ComparesSanitizedLabels(t *testing.T) {
+	h := newHarness(t)
+	seedProject(t, h, "p-san", "demo")
+	if resp := h.do(t, "POST", "/api/projects/p-san/pools", poolInput("ci-build", true)); resp.StatusCode != 201 {
+		t.Fatalf("first create: %d", resp.StatusCode)
+	}
+	handler := &Handler{Runtime: h.rt}
+	// The strict validator rejects non-canonical names at the API
+	// edge, so exercise the helper directly for the defensive path.
+	dup, err := handler.hasDuplicateName(t.Context(), &poolmodel.Pool{ID: "new", ProjectID: "p-san", Name: "CI-BUILD"})
+	if err != nil || !dup {
+		t.Fatalf("want duplicate by sanitized label, got dup=%v err=%v", dup, err)
+	}
+	dup, err = handler.hasDuplicateName(t.Context(), &poolmodel.Pool{ID: "new", ProjectID: "p-san", Name: "ci-test"})
+	if err != nil || dup {
+		t.Fatalf("distinct name flagged: dup=%v err=%v", dup, err)
+	}
+}

@@ -395,7 +395,7 @@ func (h *Handler) hasDuplicateName(ctx context.Context, p *poolmodel.Pool) (bool
 		return false, err
 	}
 	for _, s := range siblings {
-		if s.ID != p.ID && s.Name == p.Name {
+		if s.ID != p.ID && SanitizeLabel(s.Name) == SanitizeLabel(p.Name) {
 			return true, nil
 		}
 	}

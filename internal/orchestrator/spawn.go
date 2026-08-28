@@ -7,6 +7,7 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"github.com/yousysadmin/pacer/internal/models/job"
 	"log/slog"
 	"time"
 
@@ -85,7 +86,9 @@ func (o *Orchestrator) spawnFleet(ctx context.Context, sc *spawnContext) (*spawn
 	// ClientToken makes the request idempotent: if the SDK times out
 	// after AWS already fulfilled the fleet, a retry on the same
 	// attempt returns the same instance instead of launching a second.
-	in.ClientToken = aws.String(fmt.Sprintf("%s-%d", sc.job.ID, sc.job.Attempts))
+	// The claim timestamp keeps a reclaimed job from replaying the
+	// token of a previous claim.
+	in.ClientToken = aws.String(fleetClientToken(sc.job))
 
 	out, err := o.Runtime.EC2.CreateFleet(ctx, in)
 	if err != nil {
@@ -333,4 +336,14 @@ func (o *Orchestrator) spawnRunInstances(ctx context.Context, sc *spawnContext) 
 		az = aws.ToString(p.AvailabilityZone)
 	}
 	return &spawnResult{InstanceID: instID, InstanceType: typeUsed, AZ: az}, false, nil
+}
+
+// fleetClientToken derives the CreateFleet idempotency key. It is
+// stable within one claim and attempt, and changes when either does.
+func fleetClientToken(j *job.Job) string {
+	var claimed int64
+	if j.ClaimedAt != nil {
+		claimed = j.ClaimedAt.Unix()
+	}
+	return fmt.Sprintf("%s-%d-%d", j.ID, j.Attempts, claimed)
 }

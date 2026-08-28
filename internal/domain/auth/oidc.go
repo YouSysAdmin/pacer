@@ -143,10 +143,13 @@ func (h *Handler) findOrCreateOIDCUser(c *fiber.Ctx, claims *pacoidc.Claims) (*u
 	// only safe when the IdP vouches for that email. Without the flag
 	// a user who controls their own email claim could take over a
 	// local admin account.
-	if email != "" && bool(claims.EmailVerified) {
+	if email != "" {
 		existing, err := h.Runtime.Store.User.Get(c.UserContext(), email)
 		if err != nil {
 			return nil, err
+		}
+		if existing != nil && !bool(claims.EmailVerified) {
+			return nil, fmt.Errorf("email %q matches an existing account but the IdP did not mark it verified, refusing to link", email)
 		}
 		if existing != nil {
 			existing.OIDCSubject = claims.Subject

@@ -311,14 +311,8 @@ func (h *Handler) markRunning(ctx context.Context, c *fiber.Ctx, p *workflowJobP
 	// Only pre-run states may transition to running. GitHub does not
 	// guarantee webhook ordering and retries can delay in_progress by
 	// minutes. A late one arriving after failed/cancelled/reaped must
-	// not resurrect the job -- a resurrected row counts against the
-	// pool/project ceiling in Job.Claim forever, since no further
-	// webhook will terminate it again.
-	switch j.Status {
-	case job.StatusQueued, job.StatusClaimed, job.StatusStarting:
-	default:
-		return response.NoContent(c)
-	}
+	// not resurrect the job. The gate lives in MarkRunning's WHERE
+	// clause so the check and the write are one statement.
 	if err := h.Runtime.Store.Job.MarkRunning(ctx, j.ID, j.InstanceID, time.Now().UTC()); err != nil {
 		if errors.Is(err, jobstore.ErrStatusConflict) {
 			return response.NoContent(c)

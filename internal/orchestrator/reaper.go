@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	jobstore "github.com/yousysadmin/pacer/internal/domain/job"
 	"log/slog"
 	"runtime/debug"
 	"strings"
@@ -539,7 +540,13 @@ func (r *Reaper) maybeReap(ctx context.Context, i *instance.Instance) error {
 		slog.Error("reaper: update instance state failed", "err", err)
 	}
 	if err := r.Runtime.Store.Job.MarkReaped(ctx, i.JobID, now); err != nil {
-		slog.Error("reaper: mark job reaped failed", "err", err)
+		// A job the webhook already finalized keeps its status. The
+		// instance row and cost are still updated below.
+		if errors.Is(err, jobstore.ErrStatusConflict) {
+			slog.Debug("reaper: job already terminal, instance reaped without status change", "job_id", i.JobID)
+		} else {
+			slog.Error("reaper: mark job reaped failed", "err", err)
+		}
 	}
 	// Now that terminated_at is stamped, refine the cost stamp from
 	// the workflow-completion estimate (which missed the time spent
@@ -555,7 +562,7 @@ func (r *Reaper) maybeReap(ctx context.Context, i *instance.Instance) error {
 		TargetID:   i.ID,
 		Detail: audit.Detail(map[string]any{
 			"job_id":      i.JobID,
-			"pool":        pl.Name,
+			"pool":        poolName,
 			"age_seconds": int(age.Seconds()),
 		}),
 		OccurredAt: now,

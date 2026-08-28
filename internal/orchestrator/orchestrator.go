@@ -162,27 +162,40 @@ func (o *Orchestrator) tick(ctx context.Context) {
 		if spawnErr == nil && !capacityExhausted {
 			continue
 		}
-		// The job is already claimed, so the outcome must be written
-		// even if ctx was cancelled mid-spawn. Otherwise the row sits
-		// in claimed until reclaimStale picks it up 15 minutes later.
-		wctx, cancel := detach(ctx)
-		if capacityExhausted {
-			o.reschedule(wctx, j, spawnErr)
-			cancel()
-			continue
+		if stop := o.handleSpawnOutcome(ctx, j, spawnErr, capacityExhausted); stop {
+			return
 		}
-		// permanent failure
-		slog.Error("orchestrator: spawn failed", "job_id", j.ID, "err", spawnErr)
-		if err := o.Runtime.Store.Job.MarkFailed(wctx, j.ID, "spawn", spawnErr.Error(), time.Now().UTC()); err != nil {
-			slog.Error("orchestrator: mark failed write failed, job may be stuck in claimed state",
-				"job_id", j.ID, "err", err)
-		}
-		o.auditAction(wctx, audit.ActionJobFailed, "job", j.ID, map[string]any{
-			"stage": "spawn",
-			"err":   spawnErr.Error(),
-		})
-		cancel()
 	}
+}
+
+// handleSpawnOutcome records a non-successful spawn. The job is
+// already claimed, so the outcome must be written even if ctx was
+// cancelled mid-spawn. Returns true when the drain loop should stop.
+func (o *Orchestrator) handleSpawnOutcome(ctx context.Context, j *job.Job, spawnErr error, capacityExhausted bool) bool {
+	wctx, cancel := detach(ctx)
+	defer cancel()
+	if capacityExhausted {
+		o.reschedule(wctx, j, spawnErr)
+		return false
+	}
+	// Shutdown racing the spawn is not a job failure. Requeue at
+	// once without burning an attempt and stop the drain.
+	if ctx.Err() != nil && errors.Is(spawnErr, ctx.Err()) {
+		if err := o.Runtime.Store.Job.Reschedule(wctx, j.ID, j.Attempts, time.Now().UTC()); err != nil {
+			slog.Error("orchestrator: requeue after cancellation failed", "job_id", j.ID, "err", err)
+		}
+		return true
+	}
+	slog.Error("orchestrator: spawn failed", "job_id", j.ID, "err", spawnErr)
+	if err := o.Runtime.Store.Job.MarkFailed(wctx, j.ID, "spawn", spawnErr.Error(), time.Now().UTC()); err != nil {
+		slog.Error("orchestrator: mark failed write failed, job may be stuck in claimed state",
+			"job_id", j.ID, "err", err)
+	}
+	o.auditAction(wctx, audit.ActionJobFailed, "job", j.ID, map[string]any{
+		"stage": "spawn",
+		"err":   spawnErr.Error(),
+	})
+	return false
 }
 
 // reclaimStale requeues jobs stuck in claimed with no instance for
@@ -578,7 +591,7 @@ func isCapacityError(err error) bool {
 		return false
 	}
 	if apiErr, ok := errors.AsType[smithy.APIError](err); ok {
-		if isCapacityErrorString(apiErr.ErrorCode()) {
+		if isCapacityErrorCode(apiErr.ErrorCode()) {
 			return true
 		}
 	}
