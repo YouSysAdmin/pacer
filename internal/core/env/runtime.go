@@ -43,7 +43,7 @@ type Runtime struct {
 	DB            database.Database
 	Store         *store.Store
 	EC2           *ec2.Client
-	IAM           *iam.Client // nil when aws.disabled is true; used by ec2lt to validate instance profiles at pool save
+	IAM           *iam.Client // nil when aws.disabled is true. Used by ec2lt to validate instance profiles at pool save
 	GHApp         *ghapp.Client
 	Pricing       *pricing.Fetcher   // nil when aws.disabled is true
 	RunnerVersion *ghrunner.Resolver // nil when github.disabled is true (no spawns)

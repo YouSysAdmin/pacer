@@ -5,7 +5,7 @@
 // Package sqlite is the SQLite backend.
 // Single-file embedded store,pure-Go driver (modernc.org/sqlite - no CGO), goose-driven schema.
 //
-// SQLite is single-writer; we cap MaxOpenConns at 1 to avoid
+// SQLite is single-writer. We cap MaxOpenConns at 1 to avoid
 // "database is locked" under contention.
 // WAL keeps concurrent reads fast.
 // Postgres / MySQL backends will live in sibling packages.

@@ -5,7 +5,7 @@
 // Package audit owns the SQLite-backed audit log.
 // Append-only - every state-changing handler (project / repo CRUD, webhook ingest,
 // runner callbacks) and every orchestrator / reaper action calls Put.
-// Entries are immutable; pruning will live alongside the
+// Entries are immutable. Pruning will live alongside the
 // eventual audit-log UI.
 //
 // Action constants are defined on the model side

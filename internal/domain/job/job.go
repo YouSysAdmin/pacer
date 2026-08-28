@@ -13,7 +13,7 @@
 // Rows are created by the webhook handler (queued), mutated by the
 // orchestrator (claim, spawn stamp), the runner self-registration
 // callback (running), and the reaper (reaped).
-// This package only exposes read endpoints; the UI just observes.
+// This package only exposes read endpoints. The UI just observes.
 //
 // File layout:
 //

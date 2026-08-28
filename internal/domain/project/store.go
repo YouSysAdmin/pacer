@@ -15,7 +15,7 @@ import (
 )
 
 // Store is the SQLite-backed persistence for projects.
-// Project no longer owns EC2 launch settings (those moved to pools); it keeps
+// Project no longer owns EC2 launch settings (those moved to pools). It keeps
 // the logical name + project-wide concurrency ceiling + cascading
 // tags + disabled flag.
 type Store struct {

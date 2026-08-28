@@ -98,7 +98,7 @@ func TestMatch(t *testing.T) {
 		name   string
 		pools  []*poolmodel.Pool
 		labels []string
-		want   string // pool name; "" = no match
+		want   string // pool name. "" = no match
 	}{
 		{
 			name:   "bare project label picks default",

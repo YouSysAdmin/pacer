@@ -6,7 +6,6 @@ package webhook
 
 import (
 	"bytes"
-	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -121,7 +120,7 @@ func TestWebhook_EnqueuesQueuedJob(t *testing.T) {
 		t.Fatalf("status: want 200, got %d (%s)", resp.StatusCode, bodyOf(t, resp))
 	}
 
-	jobs, err := h.rt.Store.Job.List(context.Background(), jobmodel.ListFilter{ProjectID: "p-1"})
+	jobs, err := h.rt.Store.Job.List(t.Context(), jobmodel.ListFilter{ProjectID: "p-1"})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -135,7 +134,7 @@ func TestWebhook_EnqueuesQueuedJob(t *testing.T) {
 		t.Fatalf("pool_id: want po-1, got %q", jobs[0].PoolID)
 	}
 
-	entries, _ := h.rt.Store.Audit.List(context.Background(), auditmodel.ListFilter{Action: auditmodel.ActionJobEnqueued})
+	entries, _ := h.rt.Store.Audit.List(t.Context(), auditmodel.ListFilter{Action: auditmodel.ActionJobEnqueued})
 	if len(entries) != 1 {
 		t.Fatalf("want 1 enqueue audit entry, got %d", len(entries))
 	}
@@ -158,12 +157,12 @@ func TestWebhook_NoPoolMatch_AuditedAndDropped(t *testing.T) {
 		t.Fatal("response should explain no-pool-match drop")
 	}
 
-	jobs, _ := h.rt.Store.Job.List(context.Background(), jobmodel.ListFilter{})
+	jobs, _ := h.rt.Store.Job.List(t.Context(), jobmodel.ListFilter{})
 	if len(jobs) != 0 {
 		t.Fatalf("expected no jobs enqueued, got %d", len(jobs))
 	}
 
-	entries, _ := h.rt.Store.Audit.List(context.Background(), auditmodel.ListFilter{Action: auditmodel.ActionJobNoPoolMatch})
+	entries, _ := h.rt.Store.Audit.List(t.Context(), auditmodel.ListFilter{Action: auditmodel.ActionJobNoPoolMatch})
 	if len(entries) != 1 {
 		t.Fatalf("want 1 no-pool-match audit, got %d", len(entries))
 	}
@@ -179,7 +178,7 @@ func TestWebhook_UnboundRepo_NoOrgFallback_Dropped(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("status: want 200, got %d", resp.StatusCode)
 	}
-	jobs, _ := h.rt.Store.Job.List(context.Background(), jobmodel.ListFilter{})
+	jobs, _ := h.rt.Store.Job.List(t.Context(), jobmodel.ListFilter{})
 	if len(jobs) != 0 {
 		t.Fatalf("unbound repo should not enqueue, got %d jobs", len(jobs))
 	}
@@ -187,7 +186,7 @@ func TestWebhook_UnboundRepo_NoOrgFallback_Dropped(t *testing.T) {
 
 func TestWebhook_OrgScopeFallback(t *testing.T) {
 	h := newHarness(t)
-	// No repo binding; project is org-scoped on owner.login.
+	// No repo binding. Project is org-scoped on owner.login.
 	seedOrgScopedProject(t, h.rt, "p-org", "octo-runners", "octocat", "po-1", "default")
 
 	body := workflowJobQueued("octocat/any-repo", 1, []string{"self-hosted", "octo-runners"})
@@ -198,7 +197,7 @@ func TestWebhook_OrgScopeFallback(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("status: want 200, got %d (%s)", resp.StatusCode, bodyOf(t, resp))
 	}
-	jobs, _ := h.rt.Store.Job.List(context.Background(), jobmodel.ListFilter{})
+	jobs, _ := h.rt.Store.Job.List(t.Context(), jobmodel.ListFilter{})
 	if len(jobs) != 1 {
 		t.Fatalf("want 1 enqueued via org fallback, got %d", len(jobs))
 	}
@@ -226,7 +225,7 @@ func TestWebhook_DuplicateDeliveryDeduped(t *testing.T) {
 	if !strings.Contains(bodyOf(t, resp), "duplicate") {
 		t.Fatal("second delivery should report duplicate")
 	}
-	jobs, _ := h.rt.Store.Job.List(context.Background(), jobmodel.ListFilter{})
+	jobs, _ := h.rt.Store.Job.List(t.Context(), jobmodel.ListFilter{})
 	if len(jobs) != 1 {
 		t.Fatalf("dedup failed: %d jobs (want 1)", len(jobs))
 	}
@@ -236,7 +235,7 @@ func TestWebhook_ProjectDisabled_Dropped(t *testing.T) {
 	h := newHarness(t)
 	seedRepoBoundProject(t, h.rt, "p-1", "demo", "octocat/hello-world", "po-1", "default", true, nil)
 	// Disable the project.
-	if _, err := h.rt.DB.DB().ExecContext(context.Background(),
+	if _, err := h.rt.DB.DB().ExecContext(t.Context(),
 		`UPDATE projects SET disabled=1 WHERE id=?`, "p-1"); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
@@ -252,7 +251,7 @@ func TestWebhook_ProjectDisabled_Dropped(t *testing.T) {
 	if !strings.Contains(bodyOf(t, resp), "project disabled") {
 		t.Fatal("response should mention project disabled")
 	}
-	jobs, _ := h.rt.Store.Job.List(context.Background(), jobmodel.ListFilter{})
+	jobs, _ := h.rt.Store.Job.List(t.Context(), jobmodel.ListFilter{})
 	if len(jobs) != 0 {
 		t.Fatalf("disabled project should not enqueue, got %d", len(jobs))
 	}
@@ -278,7 +277,7 @@ func TestWebhook_InProgress_MarksQueuedJobRunning(t *testing.T) {
 	if resp.StatusCode != 204 {
 		t.Fatalf("in_progress: want 204, got %d", resp.StatusCode)
 	}
-	j, err := h.rt.Store.Job.GetByGHJobID(context.Background(), 4242)
+	j, err := h.rt.Store.Job.GetByGHJobID(t.Context(), 4242)
 	if err != nil || j == nil {
 		t.Fatalf("GetByGHJobID: %v (job=%v)", err, j)
 	}
@@ -290,7 +289,7 @@ func TestWebhook_InProgress_MarksQueuedJobRunning(t *testing.T) {
 func TestWebhook_LateInProgress_DoesNotResurrectTerminalJob(t *testing.T) {
 	h := newHarness(t)
 	seedRepoBoundProject(t, h.rt, "p-1", "demo", "octocat/hello-world", "po-1", "default", true, nil)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, tc := range []struct {
 		name string
@@ -369,7 +368,7 @@ func TestWebhook_ManualRedeliver_FreshGUID_DroppedAsDuplicate(t *testing.T) {
 	if !strings.Contains(bodyOf(t, resp), "duplicate") {
 		t.Fatal("redeliver should report duplicate")
 	}
-	jobs, _ := h.rt.Store.Job.List(context.Background(), jobmodel.ListFilter{})
+	jobs, _ := h.rt.Store.Job.List(t.Context(), jobmodel.ListFilter{})
 	if len(jobs) != 1 {
 		t.Fatalf("redeliver double-enqueued: %d jobs (want 1)", len(jobs))
 	}
@@ -432,7 +431,7 @@ func workflowJobQueued(repoFullName string, ghJobID int64, labels []string) []by
 
 func seedRepoBoundProject(t *testing.T, rt *env.Runtime, projID, projName, repoFullName, poolID, poolName string, isDefault bool, extraLabels []string) {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := rt.Store.Project.Put(ctx, &projectmodel.Project{
 		ID: projID, Name: projName, Scope: projectmodel.ScopeRepo,
 	}); err != nil {
@@ -456,7 +455,7 @@ func seedRepoBoundProject(t *testing.T, rt *env.Runtime, projID, projName, repoF
 
 func seedOrgScopedProject(t *testing.T, rt *env.Runtime, projID, projName, orgLogin, poolID, poolName string) {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := rt.Store.Project.Put(ctx, &projectmodel.Project{
 		ID: projID, Name: projName, Scope: projectmodel.ScopeOrg, OrgName: orgLogin,
 	}); err != nil {
@@ -475,7 +474,7 @@ func seedOrgScopedProject(t *testing.T, rt *env.Runtime, projID, projName, orgLo
 func TestWebhook_LateCompleted_DoesNotOverwriteReapedJob(t *testing.T) {
 	h := newHarness(t)
 	seedRepoBoundProject(t, h.rt, "p-1", "demo", "octocat/hello-world", "po-1", "default", true, nil)
-	ctx := context.Background()
+	ctx := t.Context()
 	ghID := int64(9100)
 
 	queued := workflowJobQueued("octocat/hello-world", ghID, []string{"self-hosted", "demo"})

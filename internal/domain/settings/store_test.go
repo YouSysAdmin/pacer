@@ -5,7 +5,6 @@
 package settings
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -16,10 +15,10 @@ import (
 // TestPutGet_RoundTrip is the canonical "did the SQL serializer eat
 // our timestamp" test. We almost shipped a startup-crash regression
 // because the TEXT column type silently changed how modernc/sqlite
-// serializes time.Time; round-trip would have caught that locally.
+// serializes time.Time. A round-trip would have caught that locally.
 func TestPutGet_RoundTrip(t *testing.T) {
 	s := NewStore(testutil.OpenTestDB(t))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if err := s.Put(ctx, settingsmodel.KeyBootstrapAPIToken, "deadbeef"); err != nil {
 		t.Fatalf("Put: %v", err)
@@ -47,7 +46,7 @@ func TestPutGet_RoundTrip(t *testing.T) {
 
 func TestGet_Missing(t *testing.T) {
 	s := NewStore(testutil.OpenTestDB(t))
-	got, err := s.Get(context.Background(), "nonexistent_key")
+	got, err := s.Get(t.Context(), "nonexistent_key")
 	if err != nil {
 		t.Fatalf("Get on missing row: want (nil, nil), got err=%v", err)
 	}
@@ -58,7 +57,7 @@ func TestGet_Missing(t *testing.T) {
 
 func TestPut_Upsert(t *testing.T) {
 	s := NewStore(testutil.OpenTestDB(t))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if err := s.Put(ctx, settingsmodel.KeyBootstrapAPIToken, "first"); err != nil {
 		t.Fatalf("first Put: %v", err)

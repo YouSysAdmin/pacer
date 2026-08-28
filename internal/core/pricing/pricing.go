@@ -5,7 +5,7 @@
 // Package pricing fetches the at-launch USD/hour for an EC2 instance
 // from the AWS Pricing API (on-demand) or DescribeSpotPriceHistory (spot).
 // Best-effort -- pricing fetch errors are logged and the
-// caller stamps a NULL price; nothing fails-closed.
+// caller stamps a NULL price. Nothing fails-closed.
 // Spot fluctuates during a run, so the stamped value is a launch-time snapshot,
 // not an authoritative bill.
 package pricing
@@ -30,7 +30,7 @@ const (
 	ModelSpot     = "spot"
 
 	// onDemandTTL is how long an on-demand quote stays cached.
-	// AWS rarely changes published rates; a day is plenty.
+	// AWS rarely changes published rates. A day is plenty.
 	onDemandTTL = 24 * time.Hour
 )
 
@@ -52,7 +52,7 @@ type onDemandEntry struct {
 }
 
 // New constructs a Fetcher.
-// Both clients are required; passing nil for either results in AtLaunch
+// Both clients are required. Passing nil for either results in AtLaunch
 // returning (0, "", error) for the matching price model.
 func New(ec2c *ec2.Client, pc *pricing.Client, region string) *Fetcher {
 	return &Fetcher{
@@ -66,7 +66,7 @@ func New(ec2c *ec2.Client, pc *pricing.Client, region string) *Fetcher {
 // AtLaunch returns the per-hour USD rate for the chosen instance
 // type at launch.
 // spot=true picks DescribeSpotPriceHistory in the
-// instance's AZ; spot=false uses the cached on-demand rate.
+// instance's AZ. Spot=false uses the cached on-demand rate.
 // The model string returned is one of the Model* constants.
 func (f *Fetcher) AtLaunch(ctx context.Context, instanceType, az string, spot bool) (float64, string, error) {
 	if spot {
@@ -79,7 +79,7 @@ func (f *Fetcher) AtLaunch(ctx context.Context, instanceType, az string, spot bo
 
 // OnDemand returns the cached on-demand rate, fetching it from the
 // AWS Pricing API on miss.
-// Region comes from f.Region (the API isglobal; us-east-1 is the canonical endpoint,
+// Region comes from f.Region (the API is global, us-east-1 is the canonical endpoint,
 // but we use whatever region the SDK was configured for).
 func (f *Fetcher) OnDemand(ctx context.Context, instanceType string) (float64, error) {
 	if f.Pricing == nil {
@@ -189,7 +189,7 @@ func parseOnDemandPrice(s string) (float64, error) {
 
 // regionToLocation maps a region code (us-east-1) to the verbose
 // "location" the AWS Pricing API expects ("US East (N. Virginia)").
-// The API only takes the human-readable form; this is the AWS-
+// The API only takes the human-readable form. This is the AWS-
 // published mapping.
 func regionToLocation(region string) (string, error) {
 	loc, ok := regionLocations[region]

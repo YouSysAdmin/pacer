@@ -7,7 +7,7 @@
 // EC2-shape configuration (AMI, instance types, subnets, etc.) lives on the pool, not here.
 //
 // MaxConcurrentRunners is a project-wide ceiling across all pools.
-// Zero means no project-level cap; per-pool caps still apply.
+// Zero means no project-level cap, per-pool caps still apply.
 //
 // Tags cascade to every spawned instance, volume, and launch template
 // across all the project's pools.
@@ -20,11 +20,11 @@ import "time"
 // Scope picks how runners register and how webhooks route to a project.
 //
 //   - "repo" (default) -- 1..N repos bind to the project. JIT config
-//     hits /repos/{owner}/{name}/...; runners carry an <owner>-<repo>
+//     hits /repos/{owner}/{name}/.... Runners carry an <owner>-<repo>
 //     narrowing label so they only claim jobs from the bound repo.
-//   - "org" -- routes by `repository.owner.login`; no per-repo
-//     bindings. JIT config hits /orgs/{org}/... with a runner_group_id;
-//     the <owner>-<repo> label is dropped so runners are shared across
+//   - "org" -- routes by `repository.owner.login`. No per-repo
+//     bindings. JIT config hits /orgs/{org}/... with a runner_group_id.
+//     The <owner>-<repo> label is dropped so runners are shared across
 //     every repo in the org (or every repo in the chosen runner group).
 const (
 	ScopeRepo = "repo"

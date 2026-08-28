@@ -19,7 +19,7 @@ import (
 
 const (
 	passwordCost       = 12
-	generatedPasswordN = 16 // base64-url chars; ~96 bits of entropy
+	generatedPasswordN = 16 // base64-url chars. ~96 bits of entropy
 )
 
 // Username brute force protection.
@@ -30,7 +30,7 @@ const (
 var dummyHash = sync.OnceValue(func() string {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
-		// Should never happen; bcrypt.GenerateFromPassword on empty
+		// Should never happen: bcrypt.GenerateFromPassword on empty
 		// is a degraded fallback that still parses.
 		raw = []byte("dummy-fallback-secret-never-matches-real-input")
 	}
@@ -44,7 +44,7 @@ var dummyHash = sync.OnceValue(func() string {
 // VerifyDummyPassword runs a bcrypt verify against an unguessable
 // fixed hash so the login path's negative branches consume the same
 // time as the positive branch.
-// Always returns false; the caller uses it purely for timing.
+// Always returns false. The caller uses it purely for timing.
 func VerifyDummyPassword(plaintext string) bool {
 	h := dummyHash()
 	if h == "" {

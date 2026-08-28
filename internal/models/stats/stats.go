@@ -25,8 +25,8 @@ const (
 )
 
 // Bucket is one rolled-up row.
-// Key + Name describe the grouping dimension;
-// the metrics summarize jobs whose completed_at falls inside the requested window.
+// Key + Name describe the grouping dimension.
+// The metrics summarize jobs whose completed_at falls inside the requested window.
 type Bucket struct {
 	Key             string  `json:"key"`               // project_id / pool_id / repo full_name
 	Name            string  `json:"name"`              // human label for the key
@@ -44,7 +44,7 @@ type Totals struct {
 	JobsWithoutCost int64   `json:"jobs_without_cost"`
 }
 
-// Window names the requested time range; echoed in the response so
+// Window names the requested time range. Echoed in the response so
 // the UI can label its chart axis.
 type Window struct {
 	From time.Time `json:"from"`

@@ -29,7 +29,7 @@ type User struct {
 	ID             string     `json:"id"`
 	Email          string     `json:"email"`
 	PasswordHash   string     `json:"-"` // empty for OIDC-only users
-	OIDCSubject    string     `json:"-"` // IdP `sub` claim; empty for local-only users
+	OIDCSubject    string     `json:"-"` // IdP `sub` claim. Empty for local-only users
 	Role           Role       `json:"role"`
 	SuperUser      bool       `json:"super_user"`
 	Disabled       bool       `json:"disabled"`

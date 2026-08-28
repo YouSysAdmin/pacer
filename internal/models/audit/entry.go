@@ -3,7 +3,7 @@
 // Pacer, Copyright (c) 2026 YouSysAdmin
 
 // Package audit models the immutable audit log.
-// Every state-changing handler appends an Entry; pruning is the only mutation.
+// Every state-changing handler appends an Entry. Pruning is the only mutation.
 package audit
 
 import (
@@ -20,7 +20,7 @@ import (
 // Best-effort: a Marshal failure is silently swallowed and the empty
 // string returned. The audit Entry's Detail column is `,omitempty`,
 // so an empty result just elides the field. Audit writes themselves
-// ignore errors; this matches that posture.
+// ignore errors. This matches that posture.
 //
 // Pass map[string]any so callers don't have to declare a struct per
 // site. Keys should be stable JSON-shaped names matching what the
@@ -82,7 +82,7 @@ type Entry struct {
 	Action      string    `json:"action"`
 	TargetType  string    `json:"target_type,omitempty"`
 	TargetID    string    `json:"target_id,omitempty"`
-	Detail      string    `json:"detail,omitempty"` // JSON; never put secrets here
+	Detail      string    `json:"detail,omitempty"` // JSON. Never put secrets here
 	ClientIP    string    `json:"client_ip,omitempty"`
 	RequestID   string    `json:"request_id,omitempty"`
 	OccurredAt  time.Time `json:"occurred_at"`
@@ -99,8 +99,8 @@ type ListFilter struct {
 	// pool name, AWS state, etc. all live here), client_ip,
 	// actor_email, request_id, and action. SQLite LIKE is
 	// case-insensitive for ASCII, which is what every searchable
-	// audit field is in practice. Empty Q disables the search;
-	// combines with the other filters via AND.
+	// audit field is in practice. Empty Q disables the search.
+	// Combines with the other filters via AND.
 	Q string
 	// Since / Until form an inclusive-exclusive time window.
 	// Zero values disable that side of the filter.

@@ -6,6 +6,6 @@
 // the operator-console user record.
 // Single-operator deploy: in practice there's exactly one row in the users table,
 // minted at bootstrap.
-// The model + the UserStore interface live alongside the other domain packages;
-// only the SQLite store impl lives here today.
+// The model + the UserStore interface live alongside the other domain packages.
+// Only the SQLite store impl lives here today.
 package user

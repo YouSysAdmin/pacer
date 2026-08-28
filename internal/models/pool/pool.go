@@ -31,7 +31,7 @@ type Pool struct {
 	MaxConcurrentRunners int      `json:"max_concurrent_runners"`
 	Spot                 bool     `json:"spot"`
 	// SpawnMethod selects how the orchestrator launches instances:
-	//   "fleet"          - CreateFleet(Type=instant); LT carries the
+	//   "fleet"          - CreateFleet(Type=instant). LT carries the
 	//                      static shape, Overrides pass every
 	//                      (instance_type x subnet) combo, AWS picks an
 	//                      available one. Free multi-AZ. Default.
@@ -45,15 +45,15 @@ type Pool struct {
 	// AllocationStrategy controls how Fleet picks among the (type,
 	// subnet) overrides. Only meaningful when SpawnMethod="fleet".
 	//   "cost"          - lowest-price (on-demand) / price-capacity-
-	//                     optimized (spot). Default; AWS picks
-	//                     cheapest + capacity-safe; the
+	//                     optimized (spot). Default. AWS picks
+	//                     cheapest + capacity-safe. The
 	//                     instance_types list order doesn't matter.
 	//   "lowest_price"  - lowest-price for both markets. PURE cheapest
 	//                     -- ignores capacity signals, so spot
 	//                     instances may land in shallow pools that
 	//                     interrupt soon after launch. Pick this when
 	//                     cost trumps reliability (short throwaway
-	//                     jobs); avoid for long-running workloads.
+	//                     jobs). Avoid for long-running workloads.
 	//   "capacity"      - lowest-price (on-demand) / capacity-optimized
 	//                     (spot). Deepest spot pool, ignore price --
 	//                     production-reliability default. On-demand
@@ -70,8 +70,8 @@ type Pool struct {
 	// auto-derived [self-hosted, <project>, <pool>, <owner>-<repo>]
 	// set.  Use them for cross-cutting capability tags ("gpu", "arm64",
 	// "large", "windows") that workflows can target via runs-on.
-	// Sanitized identically (case-insensitive; non-alnum/_ collapse to
-	// '-'); the gha:* prefix is rejected to keep the tool-managed
+	// Sanitized identically (case-insensitive, non-alnum/_ collapse to
+	// '-'). The gha:* prefix is rejected to keep the tool-managed
 	// namespace clean.
 	ExtraLabels []string          `json:"extra_labels,omitempty"`
 	Tags        map[string]string `json:"tags"`
@@ -84,7 +84,7 @@ type Pool struct {
 	// spawned instances.  Empty = root (with RUNNER_ALLOW_RUNASROOT=1).
 	// Set to a non-root user (e.g. "admin", "ec2-user", "ubuntu")
 	// when the AMI installs CI tooling per-user (rbenv, nvm, asdf,
-	// per-user gem/node prefixes); user-data chowns the runner home
+	// per-user gem/node prefixes). User-data chowns the runner home
 	// and sudo's into that user before invoking ./run.sh.
 	RunnerUser            string    `json:"runner_user,omitempty"`
 	UserDataExtra         string    `json:"user_data_extra,omitempty"`

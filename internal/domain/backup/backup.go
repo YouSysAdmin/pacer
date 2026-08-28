@@ -16,6 +16,6 @@
 //
 // Pool import re-materializes the EC2 launch template via the same
 // ec2lt.CreateOrUpdate path the regular pool save uses. Existing pools
-// bump LT version; new pools allocate a fresh LT. In aws.disabled dev
+// bump LT version. New pools allocate a fresh LT. In aws.disabled dev
 // mode the AWS leg is skipped exactly like the pool handler does.
 package backup

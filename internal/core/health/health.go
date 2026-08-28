@@ -17,7 +17,7 @@ import (
 
 // Issue describes one ongoing problem from a named component.
 // Time is when the issue was first set (or last re-set with a
-// different message); a clean tick clears the entry.
+// different message). A clean tick clears the entry.
 type Issue struct {
 	Component string    `json:"component"`
 	Message   string    `json:"message"`
@@ -35,7 +35,7 @@ func New() *Health {
 
 // Set records that component is unhealthy with msg. Repeated Set with
 // the same (component, msg) is a no-op on Since so a sustained
-// failure keeps its original first-seen timestamp; changing the
+// failure keeps its original first-seen timestamp. Changing the
 // message resets Since.
 func (h *Health) Set(component, msg string) {
 	if component == "" {

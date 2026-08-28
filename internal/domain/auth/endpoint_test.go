@@ -6,7 +6,6 @@ package auth_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -54,7 +53,7 @@ func seedUser(t *testing.T, rt *env.Runtime, email, password string, disabled bo
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := rt.Store.User.Put(context.Background(), &usermodel.User{
+	if err := rt.Store.User.Put(t.Context(), &usermodel.User{
 		ID: "u-" + email, Email: email, PasswordHash: hash, Role: usermodel.RoleAdmin, Disabled: disabled,
 	}); err != nil {
 		t.Fatal(err)
@@ -111,7 +110,7 @@ func TestLogin_HappyPath_SetsSecureCookieOverHTTPS(t *testing.T) {
 	if body.User.Email != "ops@example.com" || body.User.PasswordHash != "" {
 		t.Fatalf("body leaks or is wrong: %+v", body)
 	}
-	u, _ := rt.Store.User.Get(context.Background(), "ops@example.com")
+	u, _ := rt.Store.User.Get(t.Context(), "ops@example.com")
 	if u.LastLoginAt == nil {
 		t.Fatal("last_login_at not touched")
 	}
@@ -149,7 +148,7 @@ func TestLogin_Rejections_UniformAndAudited(t *testing.T) {
 			t.Fatalf("%s: cookie must not be set", name)
 		}
 	}
-	entries, err := rt.Store.Audit.List(context.Background(), auditmodel.ListFilter{Action: auditmodel.ActionLoginFailed, Limit: 10})
+	entries, err := rt.Store.Audit.List(t.Context(), auditmodel.ListFilter{Action: auditmodel.ActionLoginFailed, Limit: 10})
 	if err != nil || len(entries) != 3 {
 		t.Fatalf("want 3 login_failed audit rows, got %d (%v)", len(entries), err)
 	}

@@ -98,7 +98,7 @@ type RepoStore interface {
 
 // JobStore is the persistence contract for the job queue + lifecycle.
 // Claim is the hot atomic-dequeue path the orchestrator hits each
-// tick; the lifecycle Mark* methods are write-once transitions.
+// tick. The lifecycle Mark* methods are write-once transitions.
 type JobStore interface {
 	Put(ctx context.Context, j *job.Job) error
 	Get(ctx context.Context, id string) (*job.Job, error)
@@ -123,7 +123,7 @@ type JobStore interface {
 	// UpdatePayload overwrites jobs.payload with a newer webhook body.
 	// Used so the in_progress / completed workflow_job payloads -- which
 	// carry the populated steps[] array -- replace the queued-action
-	// snapshot stamped at enqueue time. Best-effort; callers log and
+	// snapshot stamped at enqueue time. Best-effort. Callers log and
 	// continue on error rather than fail the lifecycle transition.
 	UpdatePayload(ctx context.Context, id string, payload []byte) error
 	// UpdatePayloadIfRunning is the race-safe variant used by the
@@ -141,7 +141,7 @@ type JobStore interface {
 	MarkFailedWithLog(ctx context.Context, id, stage, message, log string, now time.Time) error
 	// MarkCancelled is the user-initiated-cancellation variant of
 	// MarkFailed. GitHub reports conclusion=cancelled when the user
-	// aborts a run; the distinct status lets the UI separate "broke"
+	// aborts a run. The distinct status lets the UI separate "broke"
 	// from "user cancelled" without text parsing.
 	MarkCancelled(ctx context.Context, id, stage, message string, now time.Time) error
 	MarkReaped(ctx context.Context, id string, now time.Time) error
@@ -161,7 +161,7 @@ type JobStore interface {
 	// FinalizeCost recomputes a job's estimated_cost_usd after its
 	// instance has been marked terminated/reaped. The Mark{Completed,
 	// Failed,Reaped} stamps an early estimate using the webhook /
-	// reaper firing time; this call replaces it with the
+	// reaper firing time. This call replaces it with the
 	// actual billable window (i.terminated_at - i.launched_at) so
 	// the runner-shutdown tail isn't excluded. No-op when the
 	// instance row is missing or its terminated_at / price is NULL.
@@ -183,7 +183,7 @@ type InstanceStore interface {
 }
 
 // AuditStore is the persistence contract for the audit log.
-// Entries are immutable - Put is the only writer; pruning goes through
+// Entries are immutable - Put is the only writer. Pruning goes through
 // DeleteOlderThan.
 type AuditStore interface {
 	Put(ctx context.Context, e *audit.Entry) error
@@ -195,7 +195,7 @@ type AuditStore interface {
 }
 
 // StatsStore is the read-only cost + activity rollup over completed jobs.
-// Best-effort: cost is launch-time price * elapsed time; jobs
+// Best-effort: cost is launch-time price * elapsed time. Jobs
 // whose pricing fetch failed at spawn contribute to JobsWithoutCost.
 type StatsStore interface {
 	Rollup(ctx context.Context, by stats.GroupBy, from, to time.Time) (stats.Totals, []stats.Bucket, error)

@@ -72,7 +72,7 @@ func TestSPAAllowlist_AllowsListedRoutes(t *testing.T) {
 	}
 	handler := spaAllowlist(sub)
 	// We can't easily exercise the fiber.Ctx here without spinning
-	// up a real app; instead, assert the prefix list is well-formed:
+	// up a real app. Instead, assert the prefix list is well-formed:
 	// each entry starts with "/" and has no trailing slash. Combined
 	// with the file-walk test above, that's enough to prevent the
 	// regression class we just hit.

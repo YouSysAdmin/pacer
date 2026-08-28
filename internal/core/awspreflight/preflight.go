@@ -7,7 +7,7 @@
 // land on Runtime.Health so the UI banner shows the problem before
 // any orphan instances accumulate. We do NOT fail-fast on a missing
 // perm -- an operator running with intentionally trimmed permissions
-// (e.g. read-only console mode) should still get the server up; the
+// (e.g. read-only console mode) should still get the server up. The
 // banner makes the cost explicit.
 package awspreflight
 
@@ -32,7 +32,7 @@ import (
 const healthComponent = "preflight"
 
 // API is the EC2 client surface used here. Narrow so tests can stub
-// it; *ec2.Client satisfies it for free.
+// it. *ec2.Client satisfies it for free.
 //
 // We intentionally only exercise DescribeInstances, not Terminate.
 // The IAM template gates Terminate on aws:ResourceTag/gha:managed-by,
@@ -104,8 +104,8 @@ func interpretDryRun(action string, err error) Result {
 		// endpoint can't silently pass preflight.
 		return Result{Action: action, OK: false, Reason: "no response (DryRun did not reach AWS)"}
 	}
-	var ae smithy.APIError
-	if !errors.As(err, &ae) {
+	ae, ok := errors.AsType[smithy.APIError](err)
+	if !ok {
 		return Result{Action: action, OK: false, Reason: fmt.Sprintf("non-API error: %v", err)}
 	}
 	switch ae.ErrorCode() {

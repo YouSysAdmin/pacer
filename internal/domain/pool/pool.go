@@ -5,7 +5,7 @@
 // Package pool owns the pool domain - both the HTTP API and the
 // SQLite-backed persistence. A pool is a named EC2 launch shape (AMI
 // / instance types / subnets / SGs / IAM profile / etc.) inside a
-// project. Each pool materializes one EC2 launch template; the
+// project. Each pool materializes one EC2 launch template. The
 // project picks a pool per job by matching workflow_job.labels[]
 // against the pool's generated label set.
 package pool
@@ -46,7 +46,7 @@ func RunnerLabels(projectName, poolName, repoFullName string, extras []string) [
 //  2. if any match's name appears in workflow labels, lowest-priority such pool wins
 //  3. else the project's default pool (if among matches)
 //  4. else the lowest-priority match
-//  5. no match -> nil; caller drops the job
+//  5. no match -> nil, caller drops the job
 //
 // All comparisons are case-insensitive via SanitizeLabel.
 func Match(pools []*poolmodel.Pool, workflowLabels []string, projectName, repoFullName string) *poolmodel.Pool {

@@ -99,7 +99,7 @@ func (h *Handler) Logout(c *fiber.Ctx) error {
 // Me returns the user resolved from the session cookie, or a hint
 // that auth is disabled entirely. Shapes:
 //   - 200 {"user": {...}}          authenticated
-//   - 200 {"auth_disabled": true}  auth.disabled=true; no user concept
+//   - 200 {"auth_disabled": true}  auth.disabled=true. No user concept
 //   - 401 {"error": "..."}         auth is on but caller has no session
 func (h *Handler) Me(c *fiber.Ctx) error {
 	if h.Runtime.Config.Auth.Disabled {

@@ -88,7 +88,7 @@ func (s *Store) Count(ctx context.Context, f auditmodel.ListFilter) (int, error)
 
 func (s *Store) DeleteOlderThan(ctx context.Context, cutoff time.Time) (int, error) {
 	cutoff = dbutil.UTC(cutoff)
-	// occurred_at is written in the driver's UTC text format; the
+	// occurred_at is written in the driver's UTC text format. The
 	// comparison is textual, so normalize the cutoff instead of
 	// trusting every caller to pass UTC.
 	res, err := s.db.ExecContext(ctx, `DELETE FROM audit_log WHERE occurred_at < ?`, cutoff.UTC())

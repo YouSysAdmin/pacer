@@ -5,7 +5,7 @@
 // Package repo owns the repo-to-project binding domain - both the
 // HTTP API and the SQLite-backed persistence.
 // Repos use "owner/name" (GitHub's repository.full_name webhook field) as the primary key.
-// One repo binds to at most one project; the binding optionally
+// One repo binds to at most one project. The binding optionally
 // overrides the project's max_concurrent_runners cap.
 //
 // HTTP routes for repos take owner + name as separate path params

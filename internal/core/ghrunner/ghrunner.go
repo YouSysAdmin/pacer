@@ -3,8 +3,8 @@
 // Pacer, Copyright (c) 2026 YouSysAdmin
 
 // Package ghrunner caches the latest actions/runner release tag.
-// Per-spawn user-data needs an exact runner version to download;
-// hitting the GitHub API on every spawn would bake in rate-limit
+// Per-spawn user-data needs an exact runner version to download.
+// Hitting the GitHub API on every spawn would bake in rate-limit
 // pressure (60 req/h unauthenticated) and add 200ms+ to every
 // spawn.
 // Instead we poll once at startup, refresh in the
@@ -36,7 +36,7 @@ const (
 )
 
 // Resolver wraps the cached "latest" tag.
-// Safe for concurrent reads; the background refresh goroutine is the only writer.
+// Safe for concurrent reads. The background refresh goroutine is the only writer.
 type Resolver struct {
 	mu      sync.RWMutex
 	version string // semver without leading "v" (e.g. "2.319.1")

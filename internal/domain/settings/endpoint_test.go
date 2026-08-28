@@ -6,7 +6,6 @@ package settings_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -99,7 +98,7 @@ func TestPutRetention_StoresOverrideAndReflectsInGet(t *testing.T) {
 		t.Fatalf("PUT status: %d body=%s", resp.StatusCode, body)
 	}
 	// Direct DB check: the override row exists with value "30".
-	row, _ := rt.Store.Settings.Get(context.Background(), settingsmodel.KeyAuditRetentionDays)
+	row, _ := rt.Store.Settings.Get(t.Context(), settingsmodel.KeyAuditRetentionDays)
 	if row == nil || row.Value != "30" {
 		t.Fatalf("settings row: got %+v", row)
 	}
@@ -122,7 +121,7 @@ func TestPutRetention_ZeroClearsOverride(t *testing.T) {
 	app, rt := newApp(t, 90, 7)
 
 	// Pre-seed an override.
-	_ = rt.Store.Settings.Put(context.Background(),
+	_ = rt.Store.Settings.Put(t.Context(),
 		settingsmodel.KeyAuditRetentionDays, "30")
 
 	// PUT 0 must clear the override (revert to YAML default).
@@ -133,7 +132,7 @@ func TestPutRetention_ZeroClearsOverride(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("PUT 0 status: %d body=%s", resp.StatusCode, body)
 	}
-	row, _ := rt.Store.Settings.Get(context.Background(), settingsmodel.KeyAuditRetentionDays)
+	row, _ := rt.Store.Settings.Get(t.Context(), settingsmodel.KeyAuditRetentionDays)
 	if row == nil {
 		t.Fatal("row should still exist with empty value, not be deleted")
 	}
@@ -141,7 +140,7 @@ func TestPutRetention_ZeroClearsOverride(t *testing.T) {
 		t.Errorf("Value: want empty (default), got %q", row.Value)
 	}
 	// Effective falls back to YAML default.
-	if eff := settingsdomain.EffectiveAuditDays(context.Background(), rt); eff != 90 {
+	if eff := settingsdomain.EffectiveAuditDays(t.Context(), rt); eff != 90 {
 		t.Errorf("effective post-clear: want 90, got %d", eff)
 	}
 }
@@ -198,7 +197,7 @@ func TestPutRetention_WritesAuditRow(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("status %d: %s", resp.StatusCode, body)
 	}
-	entries, err := rt.Store.Audit.List(context.Background(), auditmodel.ListFilter{Action: auditmodel.ActionRetentionUpdated, Limit: 10})
+	entries, err := rt.Store.Audit.List(t.Context(), auditmodel.ListFilter{Action: auditmodel.ActionRetentionUpdated, Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}

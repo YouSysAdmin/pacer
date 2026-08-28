@@ -37,7 +37,7 @@ func NewPruner(rt *env.Runtime) *Pruner {
 
 // Run sweeps every PruneInterval until ctx is cancelled. The first
 // tick fires after one interval (not at startup) so a flapping
-// process doesn't repeatedly delete rows; on a healthy install the
+// process doesn't repeatedly delete rows. On a healthy install the
 // queue is bounded by traffic anyway.
 func (p *Pruner) Run(ctx context.Context) {
 	t := time.NewTicker(PruneInterval)
@@ -71,7 +71,7 @@ func (p *Pruner) Tick(ctx context.Context) {
 	}
 
 	// Audit log: longer retention, operator-facing record of every
-	// state change. Effective period honors any DB override; YAML
+	// state change. Effective period honors any DB override. YAML
 	// default applies when unset (90 days out of the box).
 	auditDays := settingsdomain.EffectiveAuditDays(ctx, p.Runtime)
 	auditCutoff := now.Add(-time.Duration(auditDays) * 24 * time.Hour)

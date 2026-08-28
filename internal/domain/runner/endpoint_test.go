@@ -6,7 +6,6 @@ package runner
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -58,12 +57,12 @@ func (h *harness) postJSON(t *testing.T, path string, body any) *http.Response {
 
 func seedProjectAndPool(t *testing.T, rt *env.Runtime) {
 	t.Helper()
-	if err := rt.Store.Project.Put(context.Background(), &projectmodel.Project{
+	if err := rt.Store.Project.Put(t.Context(), &projectmodel.Project{
 		ID: "p-1", Name: "demo", Scope: projectmodel.ScopeRepo,
 	}); err != nil {
 		t.Fatalf("project: %v", err)
 	}
-	if err := rt.Store.Pool.Put(context.Background(), &poolmodel.Pool{
+	if err := rt.Store.Pool.Put(t.Context(), &poolmodel.Pool{
 		ID: "po-1", ProjectID: "p-1", Name: "default", IsDefault: true, Priority: 100,
 		AMIID: "ami-test", InstanceTypes: []string{"t3.large"},
 		SubnetIDs: []string{"subnet-1"}, SecurityGroupIDs: []string{"sg-1"},
@@ -86,10 +85,10 @@ func seedClaimedJob(t *testing.T, rt *env.Runtime, jobID, instanceID string) str
 		Status: jobmodel.StatusClaimed, InstanceID: instanceID, CallbackTokenHash: hash,
 		QueuedAt: now, ClaimedAt: &now, Payload: []byte("{}"),
 	}
-	if err := rt.Store.Job.Put(context.Background(), j); err != nil {
+	if err := rt.Store.Job.Put(t.Context(), j); err != nil {
 		t.Fatalf("job Put: %v", err)
 	}
-	if err := rt.Store.Instance.Put(context.Background(), &instancemodel.Instance{
+	if err := rt.Store.Instance.Put(t.Context(), &instancemodel.Instance{
 		ID: instanceID, JobID: jobID, ProjectID: "p-1", PoolID: "po-1",
 		State: instancemodel.StateStarting, LaunchedAt: now,
 	}); err != nil {
@@ -119,7 +118,7 @@ func TestRunner_Register_RejectsCrossJobToken(t *testing.T) {
 	tokForJ1 := seedClaimedJob(t, h.rt, "j-1", "i-1")
 	_ = seedClaimedJob(t, h.rt, "j-2", "i-2")
 
-	// Token was minted for j-1; sending it as j-2's token must fail
+	// Token was minted for j-1. Sending it as j-2's token must fail
 	// (parsedJobID != in.JobID gate).
 	resp := h.postJSON(t, "/api/runner/register", map[string]any{
 		"job_id":         "j-2",
@@ -135,7 +134,7 @@ func TestRunner_Register_RejectsBadStatus(t *testing.T) {
 	h := newHarness(t)
 	seedProjectAndPool(t, h.rt)
 	tok := seedClaimedJob(t, h.rt, "j-1", "i-1")
-	if _, err := h.rt.DB.DB().ExecContext(context.Background(),
+	if _, err := h.rt.DB.DB().ExecContext(t.Context(),
 		`UPDATE jobs SET status='running' WHERE id=?`, "j-1"); err != nil {
 		t.Fatalf("flip status: %v", err)
 	}
@@ -175,12 +174,12 @@ func TestRunner_Complete_HappyPath(t *testing.T) {
 		t.Fatalf("status: want 204, got %d", resp.StatusCode)
 	}
 
-	inst, _ := h.rt.Store.Instance.Get(context.Background(), "i-1")
+	inst, _ := h.rt.Store.Instance.Get(t.Context(), "i-1")
 	if inst == nil || inst.State != instancemodel.StateTerminated {
 		t.Fatalf("instance state: want terminated, got %v", inst)
 	}
 
-	entries, _ := h.rt.Store.Audit.List(context.Background(),
+	entries, _ := h.rt.Store.Audit.List(t.Context(),
 		auditmodel.ListFilter{Action: auditmodel.ActionInstanceTerminated})
 	if len(entries) != 1 {
 		t.Fatalf("want 1 instance.terminated audit entry, got %d", len(entries))
@@ -205,7 +204,7 @@ func TestRunner_Complete_RejectsBadToken(t *testing.T) {
 // Mark* helpers so tests can stage arbitrary lifecycle states.
 func setJobStatus(t *testing.T, rt *env.Runtime, jobID string, status jobmodel.Status) {
 	t.Helper()
-	if _, err := rt.DB.DB().ExecContext(context.Background(),
+	if _, err := rt.DB.DB().ExecContext(t.Context(),
 		`UPDATE jobs SET status=? WHERE id=?`, string(status), jobID); err != nil {
 		t.Fatalf("set status: %v", err)
 	}
@@ -228,7 +227,7 @@ func TestRunner_Register_RejectsInstanceMismatch(t *testing.T) {
 	if resp.StatusCode != 401 {
 		t.Fatalf("status: want 401, got %d", resp.StatusCode)
 	}
-	j, _ := h.rt.Store.Job.Get(context.Background(), "j-1")
+	j, _ := h.rt.Store.Job.Get(t.Context(), "j-1")
 	if j.Status != jobmodel.StatusClaimed {
 		t.Fatalf("job status: want claimed (untouched), got %q", j.Status)
 	}
@@ -242,7 +241,7 @@ func TestRunner_Complete_RejectedBeforeRegistration(t *testing.T) {
 	seedProjectAndPool(t, h.rt)
 	tok := seedClaimedJob(t, h.rt, "j-1", "i-1")
 
-	// Job still claimed = the runner never registered; a complete
+	// Job still claimed = the runner never registered. A complete
 	// callback here would stamp the instance terminated for a
 	// lifecycle it wasn't part of.
 	resp := h.postJSON(t, "/api/runner/complete", map[string]any{
@@ -253,7 +252,7 @@ func TestRunner_Complete_RejectedBeforeRegistration(t *testing.T) {
 	if resp.StatusCode != 409 {
 		t.Fatalf("status: want 409, got %d", resp.StatusCode)
 	}
-	inst, _ := h.rt.Store.Instance.Get(context.Background(), "i-1")
+	inst, _ := h.rt.Store.Instance.Get(t.Context(), "i-1")
 	if inst.State != instancemodel.StateStarting {
 		t.Fatalf("instance state: want starting (untouched), got %q", inst.State)
 	}
@@ -264,7 +263,7 @@ func TestRunner_Complete_AllowedAfterWebhookRacedAhead(t *testing.T) {
 	seedProjectAndPool(t, h.rt)
 	tok := seedClaimedJob(t, h.rt, "j-1", "i-1")
 	// The workflow_job completed webhook usually lands before the
-	// runner's own complete callback; the instance still needs its
+	// runner's own complete callback. The instance still needs its
 	// termination recorded.
 	setJobStatus(t, h.rt, "j-1", jobmodel.StatusCompleted)
 
@@ -276,7 +275,7 @@ func TestRunner_Complete_AllowedAfterWebhookRacedAhead(t *testing.T) {
 	if resp.StatusCode != 204 {
 		t.Fatalf("status: want 204, got %d", resp.StatusCode)
 	}
-	inst, _ := h.rt.Store.Instance.Get(context.Background(), "i-1")
+	inst, _ := h.rt.Store.Instance.Get(t.Context(), "i-1")
 	if inst.State != instancemodel.StateTerminated {
 		t.Fatalf("instance state: want terminated, got %q", inst.State)
 	}
@@ -310,7 +309,7 @@ func TestRunner_Error_DoesNotRegressTerminalJob(t *testing.T) {
 		tok := seedClaimedJob(t, h.rt, jobID, instID)
 		setJobStatus(t, h.rt, jobID, status)
 
-		// The callback token outlives the job by design; a late or
+		// The callback token outlives the job by design. A late or
 		// replayed error callback must not flip a terminal job to
 		// failed or attach a failure log.
 		resp := h.postJSON(t, "/api/runner/error", map[string]any{
@@ -323,7 +322,7 @@ func TestRunner_Error_DoesNotRegressTerminalJob(t *testing.T) {
 		if resp.StatusCode != 409 {
 			t.Fatalf("%s: status: want 409, got %d", status, resp.StatusCode)
 		}
-		j, _ := h.rt.Store.Job.Get(context.Background(), jobID)
+		j, _ := h.rt.Store.Job.Get(t.Context(), jobID)
 		if j.Status != status {
 			t.Fatalf("%s: job regressed to %q", status, j.Status)
 		}
@@ -349,7 +348,7 @@ func TestRunner_Error_AllowedWhileRunning(t *testing.T) {
 	if resp.StatusCode != 204 {
 		t.Fatalf("status: want 204, got %d", resp.StatusCode)
 	}
-	j, _ := h.rt.Store.Job.Get(context.Background(), "j-1")
+	j, _ := h.rt.Store.Job.Get(t.Context(), "j-1")
 	if j.Status != jobmodel.StatusFailed {
 		t.Fatalf("job status: want failed, got %q", j.Status)
 	}
@@ -372,7 +371,7 @@ func TestRunner_Error_MarksFailedAndStoresLog(t *testing.T) {
 		t.Fatalf("status: want 204, got %d", resp.StatusCode)
 	}
 
-	got, _ := h.rt.Store.Job.Get(context.Background(), "j-1")
+	got, _ := h.rt.Store.Job.Get(t.Context(), "j-1")
 	if got == nil || got.Status != jobmodel.StatusFailed {
 		t.Fatalf("job status: want failed, got %v", got)
 	}
@@ -401,14 +400,14 @@ func TestRunner_Error_TruncatesOversizedLog(t *testing.T) {
 		t.Fatalf("status: want 204, got %d", resp.StatusCode)
 	}
 
-	got, _ := h.rt.Store.Job.Get(context.Background(), "j-1")
+	got, _ := h.rt.Store.Job.Get(t.Context(), "j-1")
 	if got == nil {
 		t.Fatal("job missing")
 	}
 	if !strings.Contains(got.FailureLog, "...[truncated]...") {
 		t.Fatalf("expected truncation marker, got log of len %d", len(got.FailureLog))
 	}
-	// Cap is 64 KiB plus the short prefix; allow generous slack.
+	// Cap is 64 KiB plus the short prefix. Allow generous slack.
 	if len(got.FailureLog) > 64*1024+64 {
 		t.Fatalf("log not truncated: %d bytes", len(got.FailureLog))
 	}
@@ -419,8 +418,8 @@ func TestSplitRepoFullName(t *testing.T) {
 	if err != nil || owner != "octocat" || name != "hello-world" {
 		t.Fatalf("good: %q %q %v", owner, name, err)
 	}
-	// "a/b/c" is accepted today (SplitN with N=2 stops at the first slash);
-	// it's not a real GH full_name but the helper isn't responsible for that.
+	// "a/b/c" is accepted today (SplitN with N=2 stops at the first slash).
+	// It's not a real GH full_name but the helper isn't responsible for that.
 	for _, bad := range []string{"", "no-slash", "/leading", "trailing/", "/"} {
 		if _, _, err := splitRepoFullName(bad); err == nil {
 			t.Errorf("expected error for %q", bad)

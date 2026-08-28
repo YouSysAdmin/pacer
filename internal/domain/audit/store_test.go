@@ -5,7 +5,6 @@
 package audit
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -16,7 +15,7 @@ import (
 
 func TestAudit_PutListCount_RoundTrip(t *testing.T) {
 	s := NewStore(testutil.OpenTestDB(t))
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 
 	for i := range 5 {
@@ -54,7 +53,7 @@ func TestAudit_PutListCount_RoundTrip(t *testing.T) {
 
 func TestAudit_FilterAndPaginate_Consistent(t *testing.T) {
 	s := NewStore(testutil.OpenTestDB(t))
-	ctx := context.Background()
+	ctx := t.Context()
 	base := time.Now().UTC().Truncate(time.Second)
 
 	// 10 entries: 6 project.created (ours), 4 pool.created (other).
@@ -115,7 +114,7 @@ func TestAudit_FilterAndPaginate_Consistent(t *testing.T) {
 
 func TestAudit_TimeWindow(t *testing.T) {
 	s := NewStore(testutil.OpenTestDB(t))
-	ctx := context.Background()
+	ctx := t.Context()
 	base := time.Now().UTC().Truncate(time.Second)
 
 	for i := range 5 {
@@ -125,7 +124,7 @@ func TestAudit_TimeWindow(t *testing.T) {
 		})
 	}
 
-	// Hours [0..4] inserted; window [1..3) should match e-1, e-2.
+	// Hours [0..4] inserted. Window [1..3) should match e-1, e-2.
 	since := base.Add(1 * time.Hour)
 	until := base.Add(3 * time.Hour)
 	got, err := s.List(ctx, auditmodel.ListFilter{Since: since, Until: until})
@@ -147,7 +146,7 @@ func TestAudit_TimeWindow(t *testing.T) {
 
 func TestAudit_LimitCap(t *testing.T) {
 	s := NewStore(testutil.OpenTestDB(t))
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for i := range 5 {
 		_ = s.Put(ctx, &auditmodel.Entry{
@@ -183,7 +182,7 @@ func TestAudit_LimitCap(t *testing.T) {
 // operators actually look up an event from a clue they have.
 func TestAudit_Q_SearchAcrossColumns(t *testing.T) {
 	s := NewStore(testutil.OpenTestDB(t))
-	ctx := context.Background()
+	ctx := t.Context()
 	base := time.Now().UTC().Truncate(time.Second)
 
 	// Seed one row per searchable surface so each LIKE clause
@@ -288,7 +287,7 @@ func TestAudit_Q_CombinesWithOtherFilters(t *testing.T) {
 	// their text search to narrow within that subset, not blow it
 	// open to every action that happens to contain the needle.
 	s := NewStore(testutil.OpenTestDB(t))
-	ctx := context.Background()
+	ctx := t.Context()
 	base := time.Now().UTC().Truncate(time.Second)
 
 	_ = s.Put(ctx, &auditmodel.Entry{
@@ -322,7 +321,7 @@ func TestAudit_Q_EscapesLikeMetacharacters(t *testing.T) {
 	// difference between a literal substring search and a SQL LIKE
 	// pattern that happens to use the user's input as a pattern.
 	s := NewStore(testutil.OpenTestDB(t))
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Now().UTC()
 
 	_ = s.Put(ctx, &auditmodel.Entry{
@@ -365,7 +364,7 @@ func TestAudit_Q_EscapesLikeMetacharacters(t *testing.T) {
 
 func TestAudit_DeleteOlderThan(t *testing.T) {
 	s := NewStore(testutil.OpenTestDB(t))
-	ctx := context.Background()
+	ctx := t.Context()
 	base := time.Now().UTC().Truncate(time.Second)
 
 	for i := range 5 {

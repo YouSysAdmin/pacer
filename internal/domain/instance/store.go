@@ -98,7 +98,7 @@ func (s *Store) Touch(ctx context.Context, ids []string, now time.Time) error {
 		return nil
 	}
 	// Batch UPDATE via a single statement with an IN clause. sqlite
-	// caps placeholders at 999; the reaper only sweeps alive
+	// caps placeholders at 999. The reaper only sweeps alive
 	// instances, which are bounded by total concurrent runners
 	// across all pools -- effectively under a few hundred for any
 	// realistic install. If that ever grows, chunk here.

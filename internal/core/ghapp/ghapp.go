@@ -33,7 +33,7 @@ import (
 )
 
 // apiBase is a var (not const) solely so tests can point the client
-// at an httptest server; production code never mutates it.
+// at an httptest server. Production code never mutates it.
 var apiBase = "https://api.github.com"
 
 type Client struct {
@@ -90,7 +90,7 @@ func New(appID int64, privateKeyPath string) (*Client, error) {
 }
 
 // AppJWT mints a 9-minute JWT signed with the App private key.
-// GitHub caps app-JWT lifetime at 10 minutes; we use 9 + 30s skew to stay
+// GitHub caps app-JWT lifetime at 10 minutes. We use 9 + 30s skew to stay
 // safely inside the window.
 func (c *Client) AppJWT() (string, error) {
 	now := time.Now().UTC()
@@ -105,11 +105,11 @@ func (c *Client) AppJWT() (string, error) {
 
 // InstallationToken returns a cached or freshly-minted installation
 // access token.
-// GitHub installation tokens last ~1h; we refresh 5m before expiry
+// GitHub installation tokens last ~1h. We refresh 5m before expiry
 // so calls don't race the boundary.
 //
 // Concurrent callers for the same installation collapse into one
-// upstream POST via singleflight; the cache is re-checked under the
+// upstream POST via singleflight. The cache is re-checked under the
 // lock inside the flight to absorb a token a sibling goroutine
 // already minted.
 func (c *Client) InstallationToken(ctx context.Context, installationID int64) (string, error) {
@@ -126,7 +126,7 @@ func (c *Client) InstallationToken(ctx context.Context, installationID int64) (s
 		// request is aborted (browser poll disconnects), its
 		// cancellation would fail all waiters, including a runner's
 		// JIT-config mint. Detach from the initiator's cancellation
-		// and bound the fetch on its own timeout instead; the HTTP
+		// and bound the fetch on its own timeout instead. The HTTP
 		// client's 30s cap backstops it either way.
 		fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
@@ -187,16 +187,16 @@ func (c *Client) fetchInstallationToken(ctx context.Context, installationID int6
 
 // JITConfig mints a just-in-time runner registration config for ONE
 // ephemeral runner registered against a single repo. The returned
-// string is fed to the runner via `--jitconfig <value>`; the runner
+// string is fed to the runner via `--jitconfig <value>`. The runner
 // registers, claims one job, and exits.
 //
 // Returns (encoded_jit_config, runner_id, err). The runner_id is
-// GitHub's integer identity for the freshly-created runner; the
+// GitHub's integer identity for the freshly-created runner. The
 // caller stamps it on the instance row so the reaper can DELETE the
 // runner from GitHub when the host is lost (fast-fails the
 // workflow_job instead of waiting on heartbeat timeout).
 //
-// runnerGroupID is required for repo-level registration; the "Default"
+// runnerGroupID is required for repo-level registration. The "Default"
 // group on personal accounts is id 1.
 func (c *Client) JITConfig(ctx context.Context, installationID int64, repoOwner, repoName, runnerName string, labels []string, runnerGroupID int) (string, int64, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s/actions/runners/generate-jitconfig", apiBase, neturl.PathEscape(repoOwner), neturl.PathEscape(repoName))
@@ -311,7 +311,7 @@ func (c *Client) WorkflowJob(ctx context.Context, installationID int64, repoOwne
 }
 
 // mintJITConfig is the shared POST-and-decode for both repo and org
-// JIT-config endpoints. They differ only in the URL path; the
+// JIT-config endpoints. They differ only in the URL path. The
 // installation token, request shape, and response shape are identical.
 //
 // Returns (encoded_jit_config, runner_id, err). runner_id is the

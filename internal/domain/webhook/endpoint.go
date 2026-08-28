@@ -48,7 +48,7 @@ func (h *Handler) Receive(c *fiber.Ctx) error {
 	delivery := c.Get("X-GitHub-Delivery")
 	hadDeliveryID := delivery != ""
 	if !hadDeliveryID {
-		// GitHub always sets this header; missing means it isn't GitHub
+		// GitHub always sets this header. Missing means it isn't GitHub
 		// (e.g. an operator curl).
 		// Generate a synthetic id so the delivery row isn't all-NULL, but skip dedup -- random UUIDs
 		// won't collide so the check would be a no-op anyway.
@@ -272,7 +272,7 @@ func (h *Handler) enqueue(ctx context.Context, c *fiber.Ctx, p *workflowJobPaylo
 // order:
 //
 //  1. Per-repo binding -- if a Repo row exists for the full_name, its
-//     ProjectID wins (most specific; supports running repo-scoped and
+//     ProjectID wins (most specific, supports running repo-scoped and
 //     org-scoped projects in the same org).
 //  2. Org-scoped project for repository.owner.login.
 func (h *Handler) routeProject(ctx context.Context, p *workflowJobPayload) (*projectmodel.Project, error) {
@@ -310,7 +310,7 @@ func (h *Handler) markRunning(ctx context.Context, c *fiber.Ctx, p *workflowJobP
 	}
 	// Only pre-run states may transition to running. GitHub does not
 	// guarantee webhook ordering and retries can delay in_progress by
-	// minutes; a late one arriving after failed/cancelled/reaped must
+	// minutes. A late one arriving after failed/cancelled/reaped must
 	// not resurrect the job -- a resurrected row counts against the
 	// pool/project ceiling in Job.Claim forever, since no further
 	// webhook will terminate it again.
@@ -411,7 +411,7 @@ func persistDelivery(ctx context.Context, rt *env.Runtime, deliveryID, event str
 	// received_at is supplied explicitly (UTC) so the driver stores
 	// the same format as every other time column, instead of the
 	// column's DEFAULT CURRENT_TIMESTAMP shape. The pruner compares
-	// this column textually; one format keeps that comparison exact
+	// this column textually. One format keeps that comparison exact
 	// rather than relying on prefix ordering across mixed shapes.
 	res, err := rt.DB.DB().ExecContext(ctx, `
         INSERT INTO webhook_deliveries (id, event, payload, received_at)

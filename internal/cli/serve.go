@@ -73,7 +73,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	defer db.Close()
 
 	// aws.disabled flips off all AWS integration for local UI dev.
-	// awscfg.Load + ec2.NewFromConfig are skipped; Runtime.EC2 stays
+	// awscfg.Load + ec2.NewFromConfig are skipped. Runtime.EC2 stays
 	// nil and the pool handler short-circuits ec2lt.CreateOrUpdate
 	// (stamping a placeholder LT id).
 	// Pair with github.disabled for full UI-only dev.
@@ -170,7 +170,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// orphan instance accumulates. Skipped in UI-only dev. Result
 	// failures land on rt.Health but do NOT abort startup -- an
 	// operator with intentionally trimmed perms keeps a usable
-	// console; the banner makes the cost explicit.
+	// console. The banner makes the cost explicit.
 	if !cfg.AWS.Disabled && ec2Client != nil {
 		results := awspreflight.Run(context.Background(), ec2Client, rt.Health)
 		awspreflight.LogResults(log, results)
@@ -179,7 +179,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Auth bootstrap: when local login is enabled and there's no
 	// user yet, mint one with a random password and log the
 	// plaintext to stderr ONCE.
-	// Operator copies it; subsequent starts skip the mint.
+	// Operator copies it. Subsequent starts skip the mint.
 	if !cfg.Auth.Disabled && cfg.Auth.Local.Enabled {
 		if err := bootstrapUser(context.Background(), rt); err != nil {
 			return fmt.Errorf("auth bootstrap: %w", err)
@@ -212,9 +212,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 		// own Runtime pointer wired by NewReaper to avoid a half-
 		// constructed cycle.
 		rt.Reaper = reaper
-		bgWG.Add(2)
-		go func() { defer bgWG.Done(); orch.Run(bgCtx) }()
-		go func() { defer bgWG.Done(); reaper.Run(bgCtx) }()
+		bgWG.Go(func() { orch.Run(bgCtx) })
+		bgWG.Go(func() { reaper.Run(bgCtx) })
 	}
 	// Prune webhook_deliveries on a daily cadence even in UI-only
 	// dev so the table doesn't grow during ad-hoc curl tests against
@@ -239,8 +238,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 		cancelBG()
 		// Wait for orchestrator + reaper to finish their current
 		// tick before tearing down HTTP. An in-flight spawn (pricing
-		// API + CreateFleet + audit writes) can take several seconds;
-		// rushing past it would leave half-stamped jobs.
+		// API + CreateFleet + audit writes) can take several seconds.
+		// Rushing past it would leave half-stamped jobs.
 		bgWG.Wait()
 		return srv.Shutdown()
 	case err := <-errCh:

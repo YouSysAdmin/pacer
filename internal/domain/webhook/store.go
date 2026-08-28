@@ -13,7 +13,7 @@ import (
 
 // Store owns the webhook_deliveries table. The webhook handler writes
 // rows directly via persistDelivery (see endpoint.go) because the hot
-// path needs RowsAffected from the same statement; this store exists
+// path needs RowsAffected from the same statement. This store exists
 // for the other side of the lifecycle -- pruning -- so the table
 // doesn't grow forever on a busy install.
 type Store struct {
@@ -26,8 +26,8 @@ func NewStore(db *sql.DB) *Store {
 
 // DeleteOlderThan removes webhook_deliveries rows received before the
 // cutoff. Returns the number of rows deleted. The dedup-window the
-// receive path cares about is GitHub's redelivery window (~15 min);
-// keep the cutoff comfortably above that so a slow retry can't slip
+// receive path cares about is GitHub's redelivery window (~15 min).
+// Keep the cutoff comfortably above that so a slow retry can't slip
 // through after we've forgotten the delivery id.
 func (s *Store) DeleteOlderThan(ctx context.Context, cutoff time.Time) (int, error) {
 	cutoff = dbutil.UTC(cutoff)

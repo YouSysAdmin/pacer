@@ -6,7 +6,6 @@ package project_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -96,7 +95,7 @@ func TestProjectCreate_OrgScopeRequiresOrgName(t *testing.T) {
 	if resp.StatusCode != 400 {
 		t.Fatalf("status: want 400, got %d", resp.StatusCode)
 	}
-	// Friendly label is "Org login"; message should mention it so the
+	// Friendly label is "Org login". Message should mention it so the
 	// SPA's summary banner explains which field needs attention.
 	if !strings.Contains(bodyText(t, resp), "Org login") {
 		t.Fatal("response should explain that the org login is required")
@@ -157,7 +156,7 @@ func TestProjectCreate_DefaultsToRepoScope(t *testing.T) {
 	if resp.StatusCode != 201 {
 		t.Fatalf("status: want 201, got %d (%s)", resp.StatusCode, bodyText(t, resp))
 	}
-	got, err := rt.Store.Project.GetByName(context.Background(), "demo")
+	got, err := rt.Store.Project.GetByName(t.Context(), "demo")
 	if err != nil || got == nil {
 		t.Fatalf("GetByName: %v %v", got, err)
 	}
@@ -170,7 +169,7 @@ func TestProjectUpdate_OrgToRepoBlockedWhileJobsActive(t *testing.T) {
 	app, rt := newApp(t)
 	h := &project.Handler{Runtime: rt}
 	app.Put("/api/projects/:id", h.Update)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	pr := &projectmodel.Project{ID: "p-org", Name: "orgproj", Scope: projectmodel.ScopeOrg, OrgName: "octo", Tags: map[string]string{}}
 	if err := rt.Store.Project.Put(ctx, pr); err != nil {

@@ -5,7 +5,6 @@
 package server
 
 import (
-	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -83,7 +82,7 @@ func TestRequireAuth_SessionPaths(t *testing.T) {
 		AWS:    env.AWSConfig{Disabled: true},
 		Auth:   env.AuthConfig{JWTSecret: secret},
 	})
-	ctx := context.Background()
+	ctx := t.Context()
 	for _, u := range []*usermodel.User{
 		{ID: "u-ok", Email: "ok@example.com", Role: usermodel.RoleAdmin},
 		{ID: "u-off", Email: "off@example.com", Role: usermodel.RoleAdmin, Disabled: true},

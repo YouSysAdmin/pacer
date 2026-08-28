@@ -15,7 +15,7 @@ import (
 	"github.com/yousysadmin/pacer/internal/testutil"
 )
 
-// fixture is a project + pool inserted into the test DB; the helpers
+// fixture is a project + pool inserted into the test DB. The helpers
 // below stamp the FK columns onto every test job so Job.Claim's
 // project/pool joins succeed.
 type fixture struct {
@@ -41,10 +41,10 @@ func newFixture(t *testing.T) *fixture {
 
 func TestJob_Claim_PicksOldestQueued(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Now().UTC()
 
-	// Insert two queued jobs; older one wins.
+	// Insert two queued jobs. Older one wins.
 	mustPut(t, f, "job-old", jobmodel.StatusQueued, now.Add(-1*time.Minute), nil, 0)
 	mustPut(t, f, "job-new", jobmodel.StatusQueued, now, nil, 0)
 
@@ -68,7 +68,7 @@ func TestJob_Claim_PicksOldestQueued(t *testing.T) {
 
 func TestJob_Claim_NothingToClaim(t *testing.T) {
 	f := newFixture(t)
-	got, err := f.store.Claim(context.Background(), time.Now())
+	got, err := f.store.Claim(t.Context(), time.Now())
 	if err != nil {
 		t.Fatalf("Claim: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestJob_Claim_SkipsRowsBeyondPoolCap(t *testing.T) {
 	}
 	mustPut(t, f, "queued-blocked", jobmodel.StatusQueued, now, nil, 0)
 
-	got, err := f.store.Claim(context.Background(), now.Add(time.Second))
+	got, err := f.store.Claim(t.Context(), now.Add(time.Second))
 	if err != nil {
 		t.Fatalf("Claim: %v", err)
 	}
@@ -94,12 +94,12 @@ func TestJob_Claim_SkipsRowsBeyondPoolCap(t *testing.T) {
 		t.Fatalf("expected nil (pool at cap), got job %q", got.ID)
 	}
 
-	// Free a slot by completing one running job; now Claim should succeed.
-	if _, err := f.db.ExecContext(context.Background(),
+	// Free a slot by completing one running job. Now Claim should succeed.
+	if _, err := f.db.ExecContext(t.Context(),
 		`UPDATE jobs SET status='completed' WHERE id=?`, idN("running", 0)); err != nil {
 		t.Fatalf("free a slot: %v", err)
 	}
-	got, err = f.store.Claim(context.Background(), now.Add(time.Second))
+	got, err = f.store.Claim(t.Context(), now.Add(time.Second))
 	if err != nil {
 		t.Fatalf("Claim after free: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestJob_Claim_SkipsRowsBeyondPoolCap(t *testing.T) {
 
 func TestJob_Claim_RespectsProjectCeiling(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	// Tighten the project ceiling to 2 (pool cap stays 5 -- project wins).
 	if _, err := f.db.ExecContext(ctx,
 		`UPDATE projects SET max_concurrent_runners=2 WHERE id=?`, f.projectID); err != nil {
@@ -130,7 +130,7 @@ func TestJob_Claim_RespectsProjectCeiling(t *testing.T) {
 		t.Fatalf("project ceiling should block claim, got %q", got.ID)
 	}
 
-	// 0 means no project ceiling; pool cap 5 leaves room.
+	// 0 means no project ceiling. Pool cap 5 leaves room.
 	if _, err := f.db.ExecContext(ctx,
 		`UPDATE projects SET max_concurrent_runners=0 WHERE id=?`, f.projectID); err != nil {
 		t.Fatalf("relax project: %v", err)
@@ -146,7 +146,7 @@ func TestJob_Claim_RespectsProjectCeiling(t *testing.T) {
 
 func TestJob_Claim_RespectsRepoCap(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	// Bind the repo every test job uses, with a per-repo cap of 1.
 	// Pool cap stays 5 and no project ceiling -- the repo must be the
 	// binding constraint.
@@ -184,8 +184,8 @@ func TestJob_Claim_RespectsRepoCap(t *testing.T) {
 
 func TestJob_Claim_NullRepoCapDoesNotBlock(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
-	// repos.max_concurrent_runners is nullable; a bound repo with NULL
+	ctx := t.Context()
+	// repos.max_concurrent_runners is nullable. A bound repo with NULL
 	// cap must behave like "no cap", not exclude the row from Claim.
 	if _, err := f.db.ExecContext(ctx, `
 		INSERT INTO repos (full_name, project_id, max_concurrent_runners, tags)
@@ -207,7 +207,7 @@ func TestJob_Claim_NullRepoCapDoesNotBlock(t *testing.T) {
 
 func TestJob_FinalizeCost_NoOpWithoutTerminatedAt(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Now().UTC()
 
 	mustPut(t, f, "j-1", jobmodel.StatusRunning, now.Add(-time.Hour), nil, 0)
@@ -251,7 +251,7 @@ func TestJob_FinalizeCost_NoOpWithoutTerminatedAt(t *testing.T) {
 
 func TestJob_FinalizeCost_NoOpWithoutPrice(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Now().UTC()
 
 	mustPut(t, f, "j-1", jobmodel.StatusRunning, now.Add(-time.Hour), nil, 0)
@@ -277,7 +277,7 @@ func TestJob_FinalizeCost_NoOpWithoutPrice(t *testing.T) {
 }
 
 func TestJob_Claim_SkipsDisabledProjectAndPool(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Now().UTC()
 
 	t.Run("disabled project", func(t *testing.T) {
@@ -317,7 +317,7 @@ func TestJob_Claim_SkipsDisabledProjectAndPool(t *testing.T) {
 
 func TestJob_Claim_NextRetryAtGatesClaim(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Now().UTC()
 	future := now.Add(5 * time.Minute)
 
@@ -333,7 +333,7 @@ func TestJob_Claim_NextRetryAtGatesClaim(t *testing.T) {
 		t.Fatalf("expected ready, got %v", got)
 	}
 
-	// Advance past NextRetryAt; the rescheduled job is now visible.
+	// Advance past NextRetryAt. The rescheduled job is now visible.
 	got, err = f.store.Claim(ctx, future.Add(time.Second))
 	if err != nil {
 		t.Fatalf("Claim: %v", err)
@@ -345,7 +345,7 @@ func TestJob_Claim_NextRetryAtGatesClaim(t *testing.T) {
 
 func TestJob_Reschedule_FlipsBackToQueued(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Now().UTC()
 
 	mustPut(t, f, "j1", jobmodel.StatusQueued, now, nil, 0)
@@ -379,7 +379,7 @@ func TestJob_Reschedule_FlipsBackToQueued(t *testing.T) {
 
 func TestJob_UpdatePayloadIfRunning_OnlyUpdatesRunningRows(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Now().UTC()
 
 	mustPut(t, f, "j-run", jobmodel.StatusRunning, now, nil, 0)
@@ -418,7 +418,7 @@ func TestJob_UpdatePayloadIfRunning_OnlyUpdatesRunningRows(t *testing.T) {
 // and the filter is applied symmetrically to both.
 func TestJob_ListCountPaginate_Consistent(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	base := time.Now().UTC().Truncate(time.Second)
 
 	// 10 jobs: 6 completed, 4 failed. Older queued_at first so the
@@ -510,7 +510,7 @@ func mustPut(t *testing.T, f *fixture, id string, st jobmodel.Status, queuedAt t
 		Attempts:       attempts,
 		Payload:        []byte("{}"),
 	}
-	if err := f.store.Put(context.Background(), j); err != nil {
+	if err := f.store.Put(t.Context(), j); err != nil {
 		t.Fatalf("Put %q: %v", id, err)
 	}
 }
@@ -521,7 +521,7 @@ func insertProject(t *testing.T, db *sql.DB, id, name string, ceiling int, disab
 	if disabled {
 		d = 1
 	}
-	_, err := db.ExecContext(context.Background(), `
+	_, err := db.ExecContext(t.Context(), `
 		INSERT INTO projects (id, name, max_concurrent_runners, tags, scope, org_name, runner_group_id, disabled)
 		VALUES (?, ?, ?, '{}', 'repo', '', 0, ?)`,
 		id, name, ceiling, d)
@@ -536,7 +536,7 @@ func insertPool(t *testing.T, db *sql.DB, id, projectID, name string, cap int, d
 	if disabled {
 		d = 1
 	}
-	_, err := db.ExecContext(context.Background(), `
+	_, err := db.ExecContext(t.Context(), `
 		INSERT INTO pools (
 			id, project_id, name, is_default, priority,
 			ami_id, instance_types, subnet_ids, security_group_ids,
@@ -556,7 +556,7 @@ func insertPool(t *testing.T, db *sql.DB, id, projectID, name string, cap int, d
 
 func TestJob_ReclaimStale_RequeuesOnlyStaleUnstampedClaims(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Now().UTC()
 
 	// Three claimed jobs: stale without instance, stale with instance,
@@ -608,7 +608,7 @@ func TestJob_ReclaimStale_RequeuesOnlyStaleUnstampedClaims(t *testing.T) {
 
 func TestJob_ReclaimStale_CancelledContext(t *testing.T) {
 	f := newFixture(t)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	if _, err := f.store.ReclaimStale(ctx, time.Now()); err == nil {
 		t.Fatal("expected error on cancelled ctx")
@@ -617,7 +617,7 @@ func TestJob_ReclaimStale_CancelledContext(t *testing.T) {
 
 func TestJob_MarkTransitions_AtomicStatusGates(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Now().UTC()
 
 	// MarkRunning only from pre-run states. Second call conflicts.
@@ -658,7 +658,7 @@ func TestJob_MarkTransitions_AtomicStatusGates(t *testing.T) {
 
 func TestJob_NonUTCTimes_NormalizedBeforeCompare(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	loc := time.FixedZone("UTC+3", 3*3600)
 	nowLocal := time.Now().In(loc)
 

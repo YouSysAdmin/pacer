@@ -6,7 +6,6 @@ package backup_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -104,7 +103,7 @@ func TestImport_HappyPath(t *testing.T) {
 	if r.Projects.Created != 1 || r.Pools.Created != 1 || r.Repos.Created != 1 {
 		t.Fatalf("counts: %+v", r)
 	}
-	got, err := rt.Store.Project.GetByName(context.Background(), "demo")
+	got, err := rt.Store.Project.GetByName(t.Context(), "demo")
 	if err != nil || got == nil {
 		t.Fatalf("GetByName: %v %v", got, err)
 	}
@@ -125,7 +124,7 @@ func TestImport_RejectsReservedTagOnProject(t *testing.T) {
 		t.Fatalf("expected reason to mention 'reserved': %v", r.Errors)
 	}
 	// Project must NOT have been persisted.
-	got, _ := rt.Store.Project.GetByName(context.Background(), "demo")
+	got, _ := rt.Store.Project.GetByName(t.Context(), "demo")
 	if got != nil {
 		t.Fatal("project should not have been persisted")
 	}
@@ -275,7 +274,7 @@ func TestImport_DefaultsScopeToRepo(t *testing.T) {
 	if len(r.Errors) != 0 {
 		t.Fatalf("unexpected errors: %v", r.Errors)
 	}
-	got, err := rt.Store.Project.GetByName(context.Background(), "demo")
+	got, err := rt.Store.Project.GetByName(t.Context(), "demo")
 	if err != nil || got == nil {
 		t.Fatalf("GetByName: %v %v", got, err)
 	}
@@ -306,11 +305,11 @@ func TestImport_PartialImportProceedsAfterRowError(t *testing.T) {
 	if r.Projects.Created != 1 {
 		t.Fatalf("good project should still be created: %+v", r)
 	}
-	got, _ := rt.Store.Project.GetByName(context.Background(), "ok")
+	got, _ := rt.Store.Project.GetByName(t.Context(), "ok")
 	if got == nil {
 		t.Fatal("valid project should be persisted alongside the rejected one")
 	}
-	broken, _ := rt.Store.Project.GetByName(context.Background(), "broken")
+	broken, _ := rt.Store.Project.GetByName(t.Context(), "broken")
 	if broken != nil {
 		t.Fatal("invalid project must not be persisted")
 	}
@@ -338,8 +337,8 @@ func TestImport_DefaultPoolFlipsExistingDefault(t *testing.T) {
 	if r := decodeImport(t, resp); len(r.Errors) != 0 {
 		t.Fatalf("second import: %v", r.Errors)
 	}
-	pr, _ := rt.Store.Project.GetByName(context.Background(), "demo")
-	pools, _ := rt.Store.Pool.ListByProject(context.Background(), pr.ID)
+	pr, _ := rt.Store.Project.GetByName(t.Context(), "demo")
+	pools, _ := rt.Store.Pool.ListByProject(t.Context(), pr.ID)
 	defaults := 0
 	for _, p := range pools {
 		if p.IsDefault {
@@ -366,7 +365,7 @@ func TestImport_SnapshotWithTwoDefaultsRejected(t *testing.T) {
 	if len(r.Errors) == 0 || !strings.Contains(r.Errors[0], "is_default") {
 		t.Fatalf("expected is_default error, got %v", r.Errors)
 	}
-	if got, _ := rt.Store.Project.GetByName(context.Background(), "demo"); got != nil {
+	if got, _ := rt.Store.Project.GetByName(t.Context(), "demo"); got != nil {
 		t.Fatal("project must not be persisted when snapshot is invalid")
 	}
 }
@@ -381,7 +380,7 @@ func TestImport_OrgScopedProjectRejectsRepos(t *testing.T) {
 	if len(r.Errors) == 0 || !strings.Contains(strings.Join(r.Errors, " "), "org-scoped") {
 		t.Fatalf("expected org-scoped error, got %v", r.Errors)
 	}
-	if got, _ := rt.Store.Repo.Get(context.Background(), "octocat/hello"); got != nil {
+	if got, _ := rt.Store.Repo.Get(t.Context(), "octocat/hello"); got != nil {
 		t.Fatal("repo must not be bound to an org-scoped project")
 	}
 }

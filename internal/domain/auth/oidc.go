@@ -125,7 +125,7 @@ func (h *Handler) OIDCCallback(c *fiber.Ctx) error {
 }
 
 // findOrCreateOIDCUser maps the IdP claims to a local users row.
-// Lookup precedence: oidc_subject (most stable; survives email
+// Lookup precedence: oidc_subject (most stable, survives email
 // changes at the IdP) -> email (links a pre-existing local user to
 // this IdP identity on first SSO sign-in) -> create new.
 func (h *Handler) findOrCreateOIDCUser(c *fiber.Ctx, claims *pacoidc.Claims) (*usermodel.User, error) {
@@ -171,7 +171,7 @@ func (h *Handler) findOrCreateOIDCUser(c *fiber.Ctx, claims *pacoidc.Claims) (*u
 		return nil, fmt.Errorf("id_token has no email and no existing user matches sub %q", claims.Subject)
 	}
 	// First OIDC user gets RoleAdmin so the operator who set up the
-	// IdP can administer pacer; subsequent JIT-provisioned users
+	// IdP can administer pacer. Subsequent JIT-provisioned users
 	// default to RoleUser. Today middleware doesn't tier on role
 	// (CLAUDE.md: v1 is "in or out"), but we don't want to silently
 	// hand admin to anyone who happens to satisfy the allowlist -

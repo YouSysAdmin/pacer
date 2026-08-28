@@ -3,7 +3,7 @@
 // Pacer, Copyright (c) 2026 YouSysAdmin
 
 // Package systemhealth is the HTTP edge for the in-process health
-// bus. GET /api/health returns the current issues snapshot;
+// bus. GET /api/health returns the current issues snapshot.
 // POST /api/reconcile forces an immediate reaper sweep so an operator
 // who's just fixed an IAM perm doesn't have to wait for the next
 // 60s tick.
@@ -32,7 +32,7 @@ type listResponse struct {
 }
 
 // reconcileResponse is the POST /api/reconcile body. Checked is the
-// count of alive instances the sweep inspected; Issue is the
+// count of alive instances the sweep inspected. Issue is the
 // reaper's post-sweep verdict (the same Issue you'd see in /health)
 // or nil when the sweep is clean.
 type reconcileResponse struct {
@@ -59,7 +59,7 @@ func (h *Handler) Reconcile(c *fiber.Ctx) error {
 	checked, err := h.Runtime.Reaper.Tick(c.UserContext())
 	if err != nil {
 		// A panic-recovered tick still wrote Health and kept the
-		// goroutine alive; we want the operator to see that the
+		// goroutine alive. We want the operator to see that the
 		// sweep returned a verdict, so we don't 500. Return 200
 		// with the issue surfaced in the body.
 		return response.Success(c, reconcileResponse{

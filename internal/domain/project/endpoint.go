@@ -38,8 +38,8 @@ type Handler struct {
 //     org_name).
 //   - validate:"..." runs last over the cleaned shape.
 //
-// MaxLen sources: Name -> 128 (AWS launch-template name cap;
-// project name flows into LT name downstream). OrgName -> 39
+// MaxLen sources: Name -> 128 (AWS launch-template name cap.
+// Project name flows into LT name downstream). OrgName -> 39
 // (GitHub org-login cap). Scope is enum-bounded so no length tag.
 type input struct {
 	Name                 string            `json:"name"                   validate:"required,min=1,max=128"`
@@ -121,7 +121,7 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 		return response.BadRequestFields(c, validation.Summary(fes), fes)
 	}
 	// Block scope flips that would orphan existing state. Repo-bound
-	// projects can't become org-scoped while bindings exist; org
+	// projects can't become org-scoped while bindings exist. Org
 	// projects can't switch back to repo while pools have queued/active
 	// jobs from the org webhook path.
 	if (existing.Scope == "" || existing.Scope == projectmodel.ScopeRepo) && in.Scope == projectmodel.ScopeOrg {
@@ -178,7 +178,7 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 // rematerializePools bumps every pool's LT version to pick up the
 // project's new tag shape. Returns the count of successful bumps.
 // Per-pool failures are logged but never propagated -- the project
-// row is already persisted; we don't want a transient EC2 hiccup to
+// row is already persisted. We don't want a transient EC2 hiccup to
 // look like the whole update failed.
 func (h *Handler) rematerializePools(ctx context.Context, p *projectmodel.Project) int {
 	if h.Runtime.EC2 == nil {

@@ -17,7 +17,7 @@
 //
 // Partial failure: if CreateLaunchTemplate succeeds but the pool's
 // Put then fails, the LT is orphaned.
-// V1 surfaces the error verbatim; operators can clean up via the EC2 console.
+// V1 surfaces the error verbatim. Operators can clean up via the EC2 console.
 package ec2lt
 
 import (
@@ -55,7 +55,7 @@ const (
 // The user-data bash payload is rendered once here and baked into the
 // LT, so spawns never need to mint per-spawn LT versions. The
 // orchestrator threads per-job state (the HMAC callback token)
-// out-of-band via POST /api/runner/bootstrap; the bootstrap API
+// out-of-band via POST /api/runner/bootstrap. The bootstrap API
 // token (bootstrapAPIToken) is the shared secret embedded in
 // user-data that authenticates that request.
 //
@@ -190,7 +190,7 @@ func validateNetworking(ctx context.Context, c *ec2.Client, p *pool.Pool) error 
 // names a real instance profile.
 // Two failure modes are distinguished:
 //
-//   - NoSuchEntity      -- profile doesn't exist; fail fast with a
+//   - NoSuchEntity      -- profile doesn't exist. Fail fast with a
 //     readable error so the operator fixes the
 //     form rather than seeing the cryptic EC2
 //     "Invalid IAM Instance Profile name" later.
@@ -220,7 +220,7 @@ func validateIAMInstanceProfile(ctx context.Context, iamc *iam.Client, p *pool.P
 		if apiErr, ok := errors.AsType[smithy.APIError](err); ok && apiErr.ErrorCode() == "AccessDenied" {
 			// Soft-pass: the orchestrator role isn't allowed to read
 			// instance profiles.
-			// Pool save proceeds; if the profile
+			// Pool save proceeds. If the profile
 			// is also missing the orchestrator will surface that at
 			// RunInstances time as before.
 			return nil
@@ -341,7 +341,7 @@ func baseTagSet(p *pool.Pool, projectName string, projectTags map[string]string)
 
 // ltNameFor derives the EC2 launch template name from project + pool names.
 // Project rename does NOT rename the LT - the
-// LaunchTemplateId remains stable; the name in the EC2 console
+// LaunchTemplateId remains stable. The name in the EC2 console
 // reflects whatever it was at creation.
 //
 // AWS rejects launch template names that aren't 3-128 chars or

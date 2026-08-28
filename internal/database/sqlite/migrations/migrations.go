@@ -9,7 +9,7 @@ package migrations
 
 import "embed"
 
-// FS is the migrations filesystem; goose walks it for *.sql files.
+// FS is the migrations filesystem that goose walks for *.sql files.
 //
 //go:embed *.sql
 var FS embed.FS

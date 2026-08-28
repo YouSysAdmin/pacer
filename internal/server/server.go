@@ -33,7 +33,7 @@ type Options struct {
 }
 
 // bodyLimit caps the request body across the whole API. GitHub
-// webhook bodies are well under 256 KiB; the runner /error endpoint
+// webhook bodies are well under 256 KiB. The runner /error endpoint
 // has its own 256 KiB cap that's checked before this one. 1 MiB is
 // generous headroom for any operator-driven JSON CRUD without
 // inviting memory-pressure DoS from a 10 MiB-per-request flood.
@@ -134,10 +134,10 @@ func safeRecover(c *fiber.Ctx) (err error) {
 //     rendering goes through Svelte's escaping - but this is the
 //     trade we're explicit about.
 //   - style-src 'unsafe-inline': SvelteKit emits scoped style
-//     attributes; without this, hydration breaks visually.
+//     attributes. Without this, hydration breaks visually.
 //
-// Fonts (Inter Tight + Space Mono) are self-hosted under /fonts/;
-// no third-party origin is allowlisted for fonts or styles so the
+// Fonts (Inter Tight + Space Mono) are self-hosted under /fonts/.
+// No third-party origin is allowlisted for fonts or styles so the
 // SPA has zero runtime network dependency outside its own origin.
 // 'unsafe-eval' is OFF for both script-src and style-src so any
 // future bundling that needs eval has to opt in deliberately.

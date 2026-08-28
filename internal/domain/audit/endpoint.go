@@ -25,7 +25,7 @@ type Handler struct {
 
 // List is GET /api/audit?since=&until=&action=&actor=&target_type=&limit=&offset=.
 // All params are optional. since/until accept RFC3339 or YYYY-MM-DD
-// (UTC midnight); without them the response covers the whole log.
+// (UTC midnight). Without them the response covers the whole log.
 // limit defaults to 100 and is capped at 1000 to keep payloads bounded.
 func (h *Handler) List(c *fiber.Ctx) error {
 	since, until, err := parseWindow(c.Query("since"), c.Query("until"))
@@ -73,8 +73,8 @@ func (h *Handler) List(c *fiber.Ctx) error {
 	})
 }
 
-// parseWindow accepts either RFC3339 timestamps or YYYY-MM-DD dates;
-// dates are interpreted as UTC midnight. Empty values disable that side.
+// parseWindow accepts either RFC3339 timestamps or YYYY-MM-DD dates.
+// Dates are interpreted as UTC midnight. Empty values disable that side.
 func parseWindow(sinceS, untilS string) (time.Time, time.Time, error) {
 	var since, until time.Time
 	if sinceS != "" {
@@ -132,7 +132,7 @@ func errMsg(s string) error       { return errString(s) }
 // pruneInput is the body of POST /api/audit/prune. OlderThanDays is
 // the only knob: rows with occurred_at < (now - N*24h) are deleted.
 // Range guard: at least 1 day so a misclick can't wipe today's
-// activity; capped at 3650 (10y) so the value stays sane.
+// activity. Capped at 3650 (10y) so the value stays sane.
 type pruneInput struct {
 	OlderThanDays int `json:"older_than_days" validate:"required,min=1,max=3650"`
 }

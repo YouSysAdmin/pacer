@@ -24,12 +24,12 @@ import (
 //   - on-demand pools: AllocationStrategy=lowest-price (cheapest
 //     available type across all combos)
 //   - spot pools: AllocationStrategy=price-capacity-optimized
-//     (AWS-recommended; balances price with interruption probability)
+//     (AWS-recommended, balances price with interruption probability)
 //
 // Spot price never exceeds on-demand -- AWS guarantees this since
 // 2017, so we don't pass an explicit MaxPrice.
 //
-// The LT carries static user-data baked at pool-save time; per-job
+// The LT carries static user-data baked at pool-save time. Per-job
 // state (the HMAC callback token) is stamped on the instance via
 // post-launch CreateTags and read by the bootstrap script from IMDS.
 // This is why we reference Version=$Default rather than minting a
@@ -39,7 +39,7 @@ import (
 // Returns:
 //   - (result, false, nil)              success
 //   - (nil, true, summary err)          every override returned a
-//     capacity-class error; caller
+//     capacity-class error. Caller
 //     should reschedule
 //   - (nil, false, err)                 permanent failure
 func (o *Orchestrator) spawnFleet(ctx context.Context, sc *spawnContext) (*spawnResult, bool, error) {
@@ -97,9 +97,9 @@ func (o *Orchestrator) spawnFleet(ctx context.Context, sc *spawnContext) (*spawn
 		az := ""
 		if lts := out.Instances[0].LaunchTemplateAndOverrides; lts != nil && lts.Overrides != nil {
 			// Subnet-keyed overrides leave AvailabilityZone empty in
-			// the echoed response; resolve from the chosen subnet via
+			// the echoed response. Resolve from the chosen subnet via
 			// the orchestrator's per-subnet cache. Spot pricing needs
-			// the AZ; without it snapshotPrice degrades to NULL.
+			// the AZ. Without it snapshotPrice degrades to NULL.
 			az = aws.ToString(lts.Overrides.AvailabilityZone)
 			if az == "" {
 				az = o.resolveSubnetAZ(ctx, aws.ToString(lts.Overrides.SubnetId))
@@ -169,7 +169,7 @@ func defaultCapacityType(spot bool) ec2types.DefaultTargetCapacityType {
 // product into FleetLaunchTemplateOverridesRequest entries. Fleet's
 // allocation strategy picks one. When priorityMode is true, each
 // override's Priority field is set to the instance type's index in
-// the list (lower = preferred); subnets within the same type share
+// the list (lower = preferred). Subnets within the same type share
 // a priority so AWS can rotate AZs freely on capacity grounds.
 func buildFleetOverrides(instanceTypes, subnetIDs []string, priorityMode bool) []ec2types.FleetLaunchTemplateOverridesRequest {
 	out := make([]ec2types.FleetLaunchTemplateOverridesRequest, 0, len(instanceTypes)*len(subnetIDs))
@@ -192,8 +192,8 @@ func buildFleetOverrides(instanceTypes, subnetIDs []string, priorityMode bool) [
 // per-market allocation strategy enums.
 //
 //	"cost"         -> lowest-price (on-demand) + price-capacity-optimized (spot)   [default]
-//	"lowest_price" -> lowest-price (on-demand) + lowest-price (spot)               [pure cheapest; higher interruption]
-//	"capacity"     -> lowest-price (on-demand) + capacity-optimized (spot)         [deepest pool; ignore price]
+//	"lowest_price" -> lowest-price (on-demand) + lowest-price (spot)               [pure cheapest, higher interruption]
+//	"capacity"     -> lowest-price (on-demand) + capacity-optimized (spot)         [deepest pool, ignore price]
 //	"priority"     -> prioritized  (on-demand) + capacity-optimized-prioritized (spot)
 //
 // On-demand has no "capacity" concept (it's always available), so the
@@ -203,7 +203,7 @@ func buildFleetOverrides(instanceTypes, subnetIDs []string, priorityMode bool) [
 // "lowest_price" for spot is the deprecated AWS strategy: it picks the
 // instantaneously cheapest pool with no capacity signal, so it'll
 // happily land in shallow pools that interrupt soon after launch.
-// Useful when cost trumps reliability (short throwaway jobs); avoid
+// Useful when cost trumps reliability (short throwaway jobs). Avoid
 // for long-running workloads.
 //
 // For spot, capacity-optimized-prioritized respects the operator's
@@ -254,7 +254,7 @@ func (o *Orchestrator) postTagInstance(ctx context.Context, sc *spawnContext, in
 
 // postTagInstanceRetry calls postTagInstance, then retries once after
 // a short pause if the first attempt failed. CreateTags is the
-// canonical EC2 throttling endpoint; one retry covers the common
+// canonical EC2 throttling endpoint. One retry covers the common
 // transient-throttle case without delaying the spawn loop noticeably.
 func (o *Orchestrator) postTagInstanceRetry(ctx context.Context, sc *spawnContext, instID string) error {
 	err := o.postTagInstance(ctx, sc, instID)

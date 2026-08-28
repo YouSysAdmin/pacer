@@ -5,7 +5,6 @@
 package sqlite
 
 import (
-	"context"
 	"path/filepath"
 	"testing"
 )
@@ -17,7 +16,7 @@ func TestOpen_AppliesMigrationsAndIndexes(t *testing.T) {
 	}
 	defer db.Close()
 	var n int
-	err = db.DB().QueryRowContext(context.Background(),
+	err = db.DB().QueryRowContext(t.Context(),
 		`SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_jobs_instance_id'`).Scan(&n)
 	if err != nil || n != 1 {
 		t.Fatalf("idx_jobs_instance_id missing: n=%d err=%v", n, err)

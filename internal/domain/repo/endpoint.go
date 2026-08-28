@@ -24,7 +24,7 @@ type Handler struct {
 
 // bindInput is the repo-bind DTO.
 //
-// full_name shape is "owner/name"; the repo_full_name custom rule
+// full_name shape is "owner/name". The repo_full_name custom rule
 // rejects malformed shapes up-front so the handler doesn't have to
 // re-split. project_id length cap mirrors project.NameMax (uuid is
 // 36 chars but we leave headroom in case the ID format changes).
@@ -43,7 +43,7 @@ func (h *Handler) Bind(c *fiber.Ctx) error {
 		return response.BadRequestFields(c, validation.Summary(fes), fes)
 	}
 
-	// Verify the project exists; FK would catch this too but the
+	// Verify the project exists. FK would catch this too but the
 	// error is clearer here.
 	p, err := h.Runtime.Store.Project.Get(c.UserContext(), in.ProjectID)
 	if err != nil {

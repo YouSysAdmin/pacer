@@ -40,7 +40,7 @@ func (h *Handler) Timeseries(c *fiber.Ctx) error {
 
 // TopUsers is GET /api/stats/top-users?from=&to=&limit=.
 // Ranks GitHub senders by terminal-state job count in the requested
-// window; powers the stats page's top-N user panel. Limit defaults
+// window. Powers the stats page's top-N user panel. Limit defaults
 // to 10 and is capped at 100.
 func (h *Handler) TopUsers(c *fiber.Ctx) error {
 	from, to, err := parseWindow(c.Query("from"), c.Query("to"))
@@ -68,7 +68,7 @@ func (h *Handler) TopUsers(c *fiber.Ctx) error {
 }
 
 // Get is GET /api/stats?from=&to=&group_by=.
-// All three params are optional: from/to default to the last 30 days;
+// All three params are optional: from/to default to the last 30 days.
 // group_by defaults to project.
 // The response is a single JSON envelope with totals +
 // per-bucket rows so the UI doesn't need to make multiple calls.
@@ -97,8 +97,8 @@ func (h *Handler) Get(c *fiber.Ctx) error {
 	})
 }
 
-// parseWindow accepts either RFC3339 timestamps or YYYY-MM-DD dates;
-// dates are interpreted as UTC midnight.
+// parseWindow accepts either RFC3339 timestamps or YYYY-MM-DD dates.
+// Dates are interpreted as UTC midnight.
 // Empty values fall back to "last 30 days" -- a sensible default for a UI that lands without
 // any query string.
 func parseWindow(fromS, toS string) (time.Time, time.Time, error) {

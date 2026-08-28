@@ -8,14 +8,14 @@
 // project / pool / repo tag cascade -- repo tags override pool
 // tags which override project tags on key conflict.
 // Repo tags are stamped at orchestrator spawn time on the instance + volumes
-// only; they don't affect the pool's launch template (which is
+// only. They don't affect the pool's launch template (which is
 // shared across repos).
 package repo
 
 import "time"
 
 type Repo struct {
-	FullName             string            `json:"full_name"` // "org/repo"; primary key
+	FullName             string            `json:"full_name"` // "org/repo". Primary key
 	ProjectID            string            `json:"project_id"`
 	MaxConcurrentRunners *int              `json:"max_concurrent_runners,omitempty"` // nil = inherit project
 	Tags                 map[string]string `json:"tags,omitempty"`

@@ -14,7 +14,7 @@ import (
 )
 
 // RetentionLimits caps operator-supplied overrides. AuditMax matches
-// the manual prune endpoint's cap; WebhookMax is intentionally lower
+// the manual prune endpoint's cap. WebhookMax is intentionally lower
 // since long webhook-delivery retention serves no debug purpose past
 // a couple of weeks.
 const (

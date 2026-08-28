@@ -26,7 +26,7 @@ type Claims struct {
 // operator who confused two installs), a token minted by the other
 // side won't validate here - the iss/aud strings won't match.
 // Constants instead of config knobs because the cookie never leaves
-// this process; nothing else should produce tokens with these
+// this process. Nothing else should produce tokens with these
 // markers.
 const (
 	jwtIssuer   = "pacer"
@@ -34,7 +34,7 @@ const (
 )
 
 // CreateToken signs a session JWT for the given user.
-// TTL is the lifetime; a sensible value is 12h-24h for an operator console.
+// TTL is the lifetime. A sensible value is 12h-24h for an operator console.
 // The secret comes from auth.jwt_secret in YAML (HS256).
 func CreateToken(secret, userID, email string, ttl time.Duration) (string, error) {
 	if secret == "" {

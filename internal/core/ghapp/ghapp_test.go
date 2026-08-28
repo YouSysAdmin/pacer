@@ -47,7 +47,7 @@ func TestInstallationToken_HappyPathAndCache(t *testing.T) {
 	defer srv.Close()
 	c := newTestClient(t, srv.URL)
 
-	tok, err := c.InstallationToken(context.Background(), 42)
+	tok, err := c.InstallationToken(t.Context(), 42)
 	if err != nil {
 		t.Fatalf("InstallationToken: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestInstallationToken_HappyPathAndCache(t *testing.T) {
 		t.Fatalf("token: %q", tok)
 	}
 	// Second call must come from the cache.
-	if _, err := c.InstallationToken(context.Background(), 42); err != nil {
+	if _, err := c.InstallationToken(t.Context(), 42); err != nil {
 		t.Fatalf("cached InstallationToken: %v", err)
 	}
 	if calls != 1 {
@@ -70,7 +70,7 @@ func TestInstallationToken_UpstreamError(t *testing.T) {
 	defer srv.Close()
 	c := newTestClient(t, srv.URL)
 
-	if _, err := c.InstallationToken(context.Background(), 42); err == nil {
+	if _, err := c.InstallationToken(t.Context(), 42); err == nil {
 		t.Fatal("want error on upstream 401")
 	}
 }
@@ -90,10 +90,10 @@ func TestInstallationToken_InitiatorCancelDoesNotFailWaiters(t *testing.T) {
 	defer srv.Close()
 	c := newTestClient(t, srv.URL)
 
-	ctxA, cancelA := context.WithCancel(context.Background())
+	ctxA, cancelA := context.WithCancel(t.Context())
 	var wg sync.WaitGroup
 	wg.Go(func() {
-		// Initiates the flight; its result is irrelevant (may error or
+		// Initiates the flight. Its result is irrelevant (may error or
 		// succeed depending on how far the fetch got).
 		_, _ = c.InstallationToken(ctxA, 42)
 	})
@@ -104,7 +104,7 @@ func TestInstallationToken_InitiatorCancelDoesNotFailWaiters(t *testing.T) {
 	var errB error
 	go func() {
 		defer wg.Done()
-		tokB, errB = c.InstallationToken(context.Background(), 42)
+		tokB, errB = c.InstallationToken(t.Context(), 42)
 	}()
 
 	// Give B a moment to join the open flight, then abort A mid-fetch.
@@ -136,7 +136,7 @@ func TestJITConfigOrg_EscapesOrgPathSegment(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := newTestClient(t, srv.URL)
-	if _, _, err := c.JITConfigOrg(context.Background(), 1, "evil/../../admin", "r", []string{"a"}, 1); err != nil {
+	if _, _, err := c.JITConfigOrg(t.Context(), 1, "evil/../../admin", "r", []string{"a"}, 1); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	if gotPath != "/orgs/evil%2F..%2F..%2Fadmin/actions/runners/generate-jitconfig" {

@@ -32,7 +32,7 @@ type Handler struct {
 // input is the pool create/update DTO.
 //
 // MaxLen sources track the AWS / GitHub natural caps:
-//   - name                  -> 128 (LT name; runner_label rule rejects "---")
+//   - name                  -> 128 (LT name, runner_label rule rejects "---")
 //   - ami_id                -> 32  (AWS AMI IDs are well under)
 //   - instance type entries -> 64
 //   - subnet / SG IDs       -> 32  (AWS resource IDs)
@@ -44,7 +44,7 @@ type Handler struct {
 //
 // Slice caps stop unbounded list payloads even when each entry is
 // short (32 across InstanceTypes / SubnetIDs / SecurityGroupIDs /
-// ExtraLabels; 50 for Tags).
+// ExtraLabels. 50 for Tags).
 type input struct {
 	Name                 string            `json:"name"                   validate:"required,min=1,max=128,runner_label_strict"`
 	IsDefault            bool              `json:"is_default"`
@@ -279,7 +279,7 @@ func (h *Handler) Delete(c *fiber.Ctx) error {
 	// Gate on every non-terminal job, queued included: Delete NULLs
 	// jobs.pool_id, and a queued job without a pool can never be
 	// claimed, failed, or expired -- it would sit invisible forever.
-	// The count error is a hard failure; treating it as zero would let
+	// The count error is a hard failure. Treating it as zero would let
 	// a transient DB error wave the delete through with jobs in flight.
 	active, err := h.Runtime.Store.Pool.ActiveJobCount(c.UserContext(), id)
 	if err != nil {
@@ -363,8 +363,8 @@ func (h *Handler) bootstrapAPIToken() string {
 }
 
 // resolveRunnerVersion returns the actions/runner tag to bake into
-// the LT's user-data. Per-pool pin wins; otherwise the server's
-// cached latest; otherwise empty (the script falls back to whatever
+// the LT's user-data. Per-pool pin wins. Otherwise the server's
+// cached latest. Otherwise empty (the script falls back to whatever
 // the AMI baked).
 //
 // Resolved at LT-materialize time, frozen in the LT until the next
@@ -451,7 +451,7 @@ func poolFromInput(in *input, projectID string) *poolmodel.Pool {
 // isFKConstraint matches modernc/sqlite's FK-violation error string.
 // Used by Delete handlers to turn a 500 into a 409 when a child row is
 // blocking the cascade. modernc/sqlite is the only backend, so a string
-// match is fine; revisit if/when a postgres backend lands and we need
+// match is fine. Revisit if/when a postgres backend lands and we need
 // errors.Is on a typed error.
 func isFKConstraint(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "FOREIGN KEY constraint failed")
@@ -459,7 +459,7 @@ func isFKConstraint(err error) bool {
 
 // poolDetailJSON renders the operationally-meaningful pool fields for
 // the audit log. Skips bulky/secret-adjacent fields (tags, user_data_extra)
-// and per-row metadata (timestamps); the row itself is the source of truth
+// and per-row metadata (timestamps). The row itself is the source of truth
 // for those.
 func poolDetailJSON(p *poolmodel.Pool) string {
 	b, _ := json.Marshal(struct {

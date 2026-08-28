@@ -5,7 +5,7 @@
 // Package awscfg loads aws.Config from the SDK's default credential
 // chain (instance profile / env / shared credentials file) plus an
 // optional named profile override.
-// Built once at server startup and stamped on env.Runtime; per-service
+// Built once at server startup and stamped on env.Runtime, and per-service
 // clients are constructed against it on demand.
 package awscfg
 

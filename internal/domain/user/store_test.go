@@ -5,7 +5,6 @@
 package user
 
 import (
-	"context"
 	"testing"
 
 	usermodel "github.com/yousysadmin/pacer/internal/models/user"
@@ -14,7 +13,7 @@ import (
 
 func TestUser_Put_DefaultsToRoleUser(t *testing.T) {
 	s := NewStore(testutil.OpenTestDB(t))
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.Put(ctx, &usermodel.User{ID: "u1", Email: "a@example.com"}); err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +34,7 @@ func TestUser_Put_DefaultsToRoleUser(t *testing.T) {
 
 func TestUser_Put_DuplicateEmailRejected(t *testing.T) {
 	s := NewStore(testutil.OpenTestDB(t))
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := s.Put(ctx, &usermodel.User{ID: "u1", Email: "a@example.com"}); err != nil {
 		t.Fatal(err)
 	}

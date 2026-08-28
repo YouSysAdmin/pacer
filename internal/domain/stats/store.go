@@ -25,12 +25,12 @@ func NewStore(db *sql.DB) *Store {
 // Rollup runs a single GROUP BY query over the terminal-state jobs
 // in [from, to], returning one row per project / pool / repo plus
 // the unfiltered totals for the same window.
-// julianday() arithmetic gives runner-minutes from launched_at to completed_at;
-// rows with no instance row (spawn-failed jobs) contribute zero minutes.
+// julianday() arithmetic gives runner-minutes from launched_at to completed_at.
+// Rows with no instance row (spawn-failed jobs) contribute zero minutes.
 //
 // Both timestamps are sliced to chars 1..19 (YYYY-MM-DDTHH:MM:SS)
 // before julianday() because modernc/sqlite writes time.Time with
-// 9-digit nanosecond precision; some sqlite builds return NULL
+// 9-digit nanosecond precision. Some sqlite builds return NULL
 // from julianday() on the wider format. Sub-second truncation is
 // negligible for cost / runtime rollups.
 func (s *Store) Rollup(ctx context.Context, by statsmodel.GroupBy, from, to time.Time) (statsmodel.Totals, []statsmodel.Bucket, error) {
@@ -116,7 +116,7 @@ func groupExpr(by statsmodel.GroupBy) (keyCol, nameJoin string, err error) {
 // TopUsers ranks senders by terminal-state job count in [from, to),
 // limit-clamped at the call site. Rows where sender_login = "" are
 // excluded (jobs predating the column, or webhook payloads with no
-// sender block); they would all collapse into a single misleading
+// sender block). They would all collapse into a single misleading
 // "anonymous" bucket otherwise.
 func (s *Store) TopUsers(ctx context.Context, from, to time.Time, limit int) ([]statsmodel.UserBucket, error) {
 	from = dbutil.UTC(from)
@@ -165,7 +165,7 @@ func nameCol(by statsmodel.GroupBy) string {
 	case statsmodel.ByProject:
 		return "COALESCE(p.name, j.project_id)"
 	case statsmodel.ByPool:
-		// Display as <project>/<pool>; fall back to the raw IDs when
+		// Display as <project>/<pool>. Fall back to the raw IDs when
 		// either parent row was deleted after the job ran.
 		return "COALESCE(p.name, j.project_id) || '/' || COALESCE(po.name, j.pool_id)"
 	case statsmodel.ByRepo:

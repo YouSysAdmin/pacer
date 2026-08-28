@@ -20,14 +20,14 @@ import (
 // token) is fetched from pacer's /api/runner/bootstrap endpoint using
 // the global bootstrap API token baked in here as the bearer secret.
 // The orchestrator stashes the per-job HMAC token on jobs.bootstrap_token
-// at spawn time; bootstrap returns it (and clears the column,
+// at spawn time. Bootstrap returns it (and clears the column,
 // enforcing single-use) so subsequent /register POSTs authenticate
 // normally.
 //
 // The AMI must ship: bash, curl, jq, tar.
 // The actions/runner is auto-installed at boot from the GitHub
 // release tarball, version resolved server-side at LT materialize
-// time; the AMI doesn't have to bake it.
+// time. The AMI doesn't have to bake it.
 //
 // Robustness:
 //   - exec > >(tee LOG) 2>&1 captures everything for the error trap
@@ -248,7 +248,7 @@ var userDataTmpl = template.Must(template.New("userdata").
 //
 // serverURL is the orchestrator's public URL. runnerVersion is the
 // resolved actions/runner tag (pool pin or server-cached latest at
-// the moment the LT was materialized); the script skips the runner
+// the moment the LT was materialized). The script skips the runner
 // download when empty and uses whatever the AMI baked.
 // bootstrapAPIToken authenticates POST /api/runner/bootstrap -- it's
 // the operator-managed shared secret in the settings table.

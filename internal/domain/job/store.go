@@ -109,8 +109,8 @@ func (s *Store) GetByGHJobID(ctx context.Context, ghJobID int64) (*jobmodel.Job,
 // PROJECT-wide ceiling (when set non-zero) is not yet reached AND
 // whose REPO cap (when bound and non-zero) is not yet reached, then
 // flips it to claimed.
-// MaxOpenConns(1) on the connection pool serializes this with all other writes;
-// explicit transaction kept for clarity and ease of porting to postgres.
+// MaxOpenConns(1) on the connection pool serializes this with all other writes.
+// Explicit transaction kept for clarity and ease of porting to postgres.
 func (s *Store) Claim(ctx context.Context, now time.Time) (*jobmodel.Job, error) {
 	now = dbutil.UTC(now)
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -168,7 +168,7 @@ func (s *Store) Claim(ctx context.Context, now time.Time) (*jobmodel.Job, error)
 		return nil, err
 	}
 	// The deferred Rollback returns sql.ErrTxDone after a successful
-	// Commit; that's expected and the standard library treats it as a
+	// Commit. That's expected and the standard library treats it as a
 	// no-op, so the blank-identifier discard is intentional.
 	return s.Get(ctx, id)
 }
@@ -201,7 +201,7 @@ func (s *Store) StampSpawn(ctx context.Context, id, instanceID, callbackTokenHas
 //   - claimed_at is older than ttl (stale spawn), OR
 //   - bootstrap_token is NULL (already consumed -- single-use).
 //
-// Single-use is enforced by the UPDATE clearing bootstrap_token; a
+// Single-use is enforced by the UPDATE clearing bootstrap_token. A
 // concurrent second call will find NULL and return ErrBootstrapUnavailable.
 func (s *Store) ConsumeBootstrap(ctx context.Context, instanceID string, ttl time.Duration, now time.Time) (token, jobID string, err error) {
 	now = dbutil.UTC(now)
@@ -260,7 +260,7 @@ func (s *Store) MarkRunning(ctx context.Context, id, instanceID string, now time
 // blob than the queued action (steps[] is populated, started_at /
 // completed_at are stamped, sender drift is reflected) and the modal
 // is more useful when that data is on hand. Job-row state columns
-// (status, claimed_at, etc.) are authoritative; the payload is purely
+// (status, claimed_at, etc.) are authoritative. The payload is purely
 // for display.
 func (s *Store) UpdatePayload(ctx context.Context, id string, payload []byte) error {
 	_, err := s.db.ExecContext(ctx,
@@ -287,7 +287,7 @@ func (s *Store) UpdatePayloadIfRunning(ctx context.Context, id string, payload [
 // costSubquery is the SQL fragment that derives a job's estimated
 // USD cost at terminal-state time -- price_per_hour * elapsed-hours
 // since the instance launched, looked up via the job's instance_id.
-// julianday() returns days; * 24 converts to hours.
+// julianday() returns days. * 24 converts to hours.
 // NULL-safe: a missing instance row, or a NULL price, leaves the result NULL.
 //
 // Both timestamps are sliced to YYYY-MM-DDTHH:MM:SS (chars 1..19)
@@ -516,7 +516,7 @@ func scanJobRow(r interface{ Scan(...any) error }) (*jobmodel.Job, error) {
 		&j.Attempts, &nextRetryAt, &senderLogin, &payload, &bootstrapTok); err != nil {
 		return nil, err
 	}
-	_ = bootstrapTok // raw token is read-and-cleared via ConsumeBootstrap; not surfaced on the model
+	_ = bootstrapTok // raw token is read-and-cleared via ConsumeBootstrap. Not surfaced on the model
 	j.SenderLogin = senderLogin
 	j.PoolID = poolID.String
 	j.Status = jobmodel.Status(status)
@@ -548,7 +548,7 @@ func scanJobRow(r interface{ Scan(...any) error }) (*jobmodel.Job, error) {
 // instance's full billable window (terminated_at - launched_at), so
 // the runner-shutdown tail that runs AFTER the workflow_job webhook
 // fires is included. Called from every UpdateState(terminated|reaped)
-// path; the earlier estimate stamped at MarkCompleted/MarkFailed/
+// path. The earlier estimate stamped at MarkCompleted/MarkFailed/
 // MarkReaped is overwritten in place.
 //
 // Both timestamps are sliced to char 1..19 for the same reason as

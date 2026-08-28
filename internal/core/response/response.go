@@ -84,7 +84,7 @@ func Gone(c *fiber.Ctx, msg string) error {
 // 500 to the caller. The raw err is intentionally NOT echoed back - it
 // commonly contains stack-revealing detail (file paths, SQL state,
 // AWS request IDs) that's useful to attackers but not to operators
-// using the UI. Operators see the full error in the access log; the
+// using the UI. Operators see the full error in the access log. The
 // caller sees a uniform message they can correlate by request_id (TBD)
 // or timestamp.
 //

@@ -6,7 +6,6 @@ package job_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -34,7 +33,7 @@ func newApp(t *testing.T) (*fiber.App, *env.Runtime) {
 
 func TestJobGet_IncludesProjectAndPoolNames(t *testing.T) {
 	app, rt := newApp(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	pr := &projectmodel.Project{
 		ID:    "proj-uuid",
@@ -117,9 +116,9 @@ func TestJobGet_IncludesProjectAndPoolNames(t *testing.T) {
 func TestJobGet_EmptyPoolIDLeavesNameBlank(t *testing.T) {
 	// A job stamped before pool.Match runs (or that didn't match any
 	// pool) has PoolID == "". The detail endpoint must still succeed
-	// and return an empty pool_name; the frontend falls back to "—".
+	// and return an empty pool_name. The frontend falls back to a dash placeholder.
 	app, rt := newApp(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	pr := &projectmodel.Project{ID: "p1", Name: "alpha", Scope: "repo", Tags: map[string]string{}}
 	if err := rt.Store.Project.Put(ctx, pr); err != nil {
@@ -174,7 +173,7 @@ func TestJobList_FiltersByProjectPoolRepo(t *testing.T) {
 	app, rt := newApp(t)
 	h := &job.Handler{Runtime: rt}
 	app.Get("/api/jobs", h.List)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, id := range []string{"p1", "p2"} {
 		if err := rt.Store.Project.Put(ctx, &projectmodel.Project{ID: id, Name: id, Scope: "repo", Tags: map[string]string{}}); err != nil {

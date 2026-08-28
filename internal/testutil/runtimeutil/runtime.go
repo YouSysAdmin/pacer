@@ -32,7 +32,7 @@ import (
 )
 
 // NOTE: webhook is intentionally NOT imported here. The webhook
-// package has internal _test.go files; pulling it in would create a
+// package has internal _test.go files. Pulling it in would create a
 // webhook (test binary) -> runtimeutil -> webhook import cycle.
 // Tests that need a Webhook store wire it themselves after calling
 // NewRuntime (see pruner_test.go).

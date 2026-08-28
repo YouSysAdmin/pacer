@@ -43,7 +43,7 @@ const bootstrapTTL = 15 * time.Minute
 
 // bootstrapInput is the body of POST /api/runner/bootstrap. The
 // instance_id is the EC2 instance ID the in-instance script reads
-// from IMDS; pacer matches it against jobs.instance_id (status=claimed,
+// from IMDS. Pacer matches it against jobs.instance_id (status=claimed,
 // claimed_at within TTL, bootstrap_token still set).
 //
 // instance_type and az are informational -- we record them on the
@@ -82,7 +82,7 @@ type completeInput struct {
 // (operator-supplied bash labels: "imdsv2", "runner-download",
 // "register", "run.sh", ...) so we cap length but don't constrain
 // charset. Log has NO max tag because the existing handler-side
-// truncation logic keeps the trailing 64 KiB; a hard reject here
+// truncation logic keeps the trailing 64 KiB. A hard reject here
 // would lose the tail of a runaway script before the user could see
 // what blew up. Content-Length pre-check (256 KiB) still bounds the
 // inbound payload.
@@ -178,7 +178,7 @@ func (h *Handler) checkBootstrapToken(c *fiber.Ctx) bool {
 
 // Register is POST /api/runner/register.
 // Returns the JIT runner
-// configuration on success; the instance feeds it to
+// configuration on success. The instance feeds it to
 // `./run.sh --jitconfig <value>`.
 func (h *Handler) Register(c *fiber.Ctx) error {
 	in, err := validation.BindAndValidate[registerInput](c)
@@ -209,7 +209,7 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 
 	// Look up project + pool to derive runner labels.
 	// Both lookups are required - a missing pool means the binding was deleted
-	// mid-flight; fail the registration rather than fall back to
+	// mid-flight. Fail the registration rather than fall back to
 	// generic labels.
 	proj, err := h.Runtime.Store.Project.Get(c.UserContext(), j.ProjectID)
 	if err != nil {
@@ -306,7 +306,7 @@ func (h *Handler) Complete(c *fiber.Ctx) error {
 	// -- the instance really did run and its termination + final cost
 	// still need recording. queued/claimed means the runner never
 	// registered, and reaped means the reaper already terminated the
-	// instance and stamped terminated_at; accepting either would stamp
+	// instance and stamped terminated_at. Accepting either would stamp
 	// state (and re-finalize cost off a fresh terminated_at) for a
 	// lifecycle this callback wasn't part of.
 	switch j.Status {
@@ -364,7 +364,7 @@ func (h *Handler) Error(c *fiber.Ctx) error {
 	// reject 256 KiB+ bodies before unmarshal to discourage chatty
 	// runners from blasting multi-MB logs we'd just truncate below.
 	// Checked via Content-Length so we don't have to read the body
-	// first; a missing or malformed header falls through to the
+	// first. A missing or malformed header falls through to the
 	// global BodyLimit + truncation.
 	if cl := c.Get("Content-Length"); cl != "" {
 		if n, err := strconv.Atoi(cl); err == nil && n > errorRequestMaxBytes {

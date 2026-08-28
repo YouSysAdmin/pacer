@@ -60,7 +60,7 @@ func Put(ctx context.Context, s Store, clientIP, action, targetType, targetID, d
 // PutCtx is the Fiber-flavored convenience wrapper: pulls request
 // context + client IP from the *fiber.Ctx so handlers don't have to
 // thread them through. The vast majority of production call sites
-// use this form; the bare Put exists for tests and any non-Fiber
+// use this form. The bare Put exists for tests and any non-Fiber
 // caller (e.g. orchestrator background goroutines).
 func PutCtx(c *fiber.Ctx, s Store, action, targetType, targetID, detail string) {
 	Put(c.UserContext(), s, c.IP(), action, targetType, targetID, detail)

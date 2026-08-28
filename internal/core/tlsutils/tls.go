@@ -4,7 +4,7 @@
 
 // Package tlsutils builds the server's *tls.Config from operator
 // config (none / manual / self-signed / ACME).
-// Build is the single entry point; per-mode field validation lives in builder.go so
+// Build is the single entry point. Per-mode field validation lives in builder.go so
 // non-listening commands skip the cert path checks.
 package tlsutils
 
@@ -70,8 +70,8 @@ func AutoTLS(ac ACME) *tls.Config {
 	go func() {
 		// HTTPHandler(fallback) serves /.well-known/acme-challenge/*
 		// from the autocert cache and forwards everything else to
-		// fallback. Default behavior (nil) only redirects GET/HEAD;
-		// supplying our own handler 308-redirects every method to
+		// fallback. Default behavior (nil) only redirects GET/HEAD.
+		// Supplying our own handler 308-redirects every method to
 		// HTTPS so a misdirected POST doesn't get a confusing 405.
 		// 308 (vs 301) preserves the request method on retry.
 		srv := &http.Server{

@@ -27,7 +27,7 @@ func registerCustom(v *validator.Validate) {
 	// posix_user matches ^[a-z_][a-z0-9_-]*$ -- belt-and-braces
 	// against shell metacharacters slipping through user-data into
 	// the sudo command line. Empty string passes (the field is
-	// optional in the pool DTO; required-ness is a separate tag).
+	// optional in the pool DTO, required-ness is a separate tag).
 	_ = v.RegisterValidation("posix_user", func(fl validator.FieldLevel) bool {
 		s := fl.Field().String()
 		if s == "" {
@@ -77,7 +77,7 @@ func registerCustom(v *validator.Validate) {
 	})
 
 	// repo_full_name verifies "<owner>/<name>" with non-empty halves.
-	// The repo Bind handler splits on '/' downstream; we want the
+	// The repo Bind handler splits on '/' downstream. We want the
 	// shape error here so the SPA can highlight the field.
 	_ = v.RegisterValidation("repo_full_name", func(fl validator.FieldLevel) bool {
 		s := fl.Field().String()

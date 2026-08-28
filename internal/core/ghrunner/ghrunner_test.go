@@ -11,7 +11,7 @@ import (
 
 func TestNew_FailedFetchStillReturnsResolver(t *testing.T) {
 	// A cancelled ctx makes the initial fetch fail immediately.
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	r := New(ctx)
 	if r == nil {

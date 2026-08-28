@@ -13,7 +13,7 @@
 // fallback, "run_instances" spawn method) referencing the pool's
 // LT at $Default. The callback token rides as the gha:callback-token
 // instance tag (stamped at-launch for RunInstances, post-launch for
-// Fleet); the LT's baked user-data reads it via IMDS at boot. The
+// Fleet). The LT's baked user-data reads it via IMDS at boot. The
 // LT itself is never mutated by the orchestrator -- it only changes
 // when the operator saves the pool. Capacity-class failures (no
 // capacity for any type+AZ combo) are RESCHEDULED rather than
@@ -26,7 +26,7 @@
 //
 // The orchestrator is a single goroutine -- sqlite's MaxOpenConns(1)
 // serializes writes anyway. Bumping throughput means moving to
-// postgres + parallel claim workers; not in scope for V1.
+// postgres + parallel claim workers. Not in scope for V1.
 package orchestrator
 
 import (
@@ -78,7 +78,7 @@ const (
 	orchestratorHealthComponent = "orchestrator"
 
 	// SpawnMethodFleet uses CreateFleet(Type=instant) with multi-type
-	// + multi-subnet overrides; AWS picks an available combo using a
+	// + multi-subnet overrides. AWS picks an available combo using a
 	// price/capacity-aware allocation strategy. Recommended.
 	SpawnMethodFleet = "fleet"
 	// SpawnMethodRunInstances loops RunInstances over pool.InstanceTypes
@@ -93,7 +93,7 @@ type Orchestrator struct {
 	// hit DescribeSubnets at most once per subnet over the
 	// orchestrator's lifetime. CreateFleet's response echoes the
 	// chosen subnet but leaves AvailabilityZone empty for
-	// subnet-keyed overrides; the cache lets snapshotPrice get an AZ
+	// subnet-keyed overrides. The cache lets snapshotPrice get an AZ
 	// for the spot-pricing lookup without an API call per spawn.
 	subnetAZ sync.Map // map[string]string
 }
@@ -253,7 +253,7 @@ func retryBackoff(attempt int) time.Duration {
 // spawnContext bundles the per-spawn inputs the backend impls need.
 // Built once in spawn() and threaded into spawnFleet/spawnRunInstances.
 //
-// callbackToken is the raw HMAC token (`<job_id>.<exp>.<sig>`); the
+// callbackToken is the raw HMAC token (`<job_id>.<exp>.<sig>`). The
 // orchestrator stamps it on the instance as the gha:callback-token
 // tag so the in-instance bootstrap script can read it via IMDS. Per
 // CLAUDE.md, raw tokens never hit disk -- only the sha256 hash lives
@@ -282,7 +282,7 @@ type spawnResult struct {
 // spawn coordinates one spawn attempt. Returns (err, capacityExhausted).
 //   - err == nil, capacityExhausted == false: success
 //   - capacityExhausted == true: every type+subnet combo returned a
-//     capacity error; caller should reschedule rather than fail
+//     capacity error. Caller should reschedule rather than fail
 //   - err != nil, capacityExhausted == false: permanent failure
 func (o *Orchestrator) spawn(ctx context.Context, j *job.Job) (error, bool) {
 	if j.PoolID == "" {
@@ -397,7 +397,7 @@ func (o *Orchestrator) recordSpawn(ctx context.Context, sc *spawnContext, r *spa
 
 	if err := o.Runtime.Store.Job.StampSpawn(ctx, sc.job.ID, r.InstanceID, sc.tokenHash, sc.callbackToken); err != nil {
 		// Without this stamp the runner can't authenticate against
-		// /api/runner/register; the spawn would burn a full max_runtime
+		// /api/runner/register. The spawn would burn a full max_runtime
 		// before the reaper noticed. Roll back: terminate the instance
 		// and mark the local row terminated so the reaper skips it.
 		slog.Error("orchestrator: job stamp spawn failed; rolling back spawn",
@@ -463,7 +463,7 @@ func (o *Orchestrator) rollbackInstance(ctx context.Context, instanceID, jobID, 
 		slog.Error("orchestrator: rollback update instance state failed",
 			"instance_id", instanceID, "err", err)
 	}
-	// terminated_at is stamped above; finalize the job's cost
+	// terminated_at is stamped above. Finalize the job's cost
 	// against the actual billable window even though this row never
 	// successfully booked the spawn (the brief launch-then-rollback
 	// window is still billable).
@@ -532,7 +532,7 @@ func (o *Orchestrator) snapshotPrice(ctx context.Context, instanceType, az strin
 // last so user tags can never accidentally shadow them.
 //
 // Note: with the Fleet path, instance/volume tags come from the LT
-// (project + pool + gha:{managed-by,project,pool}); per-job + repo
+// (project + pool + gha:{managed-by,project,pool}). Per-job + repo
 // tags + the callback-token tag are added by spawnFleet via a
 // post-launch CreateTags call (see postLaunchTags).
 func buildTagSpecs(sc *spawnContext) []ec2types.TagSpecification {
@@ -567,8 +567,8 @@ func buildAllTags(sc *spawnContext) []ec2types.Tag {
 }
 
 // isCapacityError detects transient EC2 capacity-related failures.
-// Prefers smithy.APIError typed-code matching when AWS surfaces one;
-// falls back to substring matching for paths where the SDK only
+// Prefers smithy.APIError typed-code matching when AWS surfaces one.
+// Falls back to substring matching for paths where the SDK only
 // returns a wrapped *smithy.GenericAPIError or a plain string (notably
 // CreateFleet's Errors[] response array, which is just text codes).
 // Add new substrings to isCapacityErrorString when AWS surfaces a new
@@ -619,7 +619,7 @@ func isCapacityErrorString(s string) bool {
 }
 
 // auditAction is the orchestrator's best-effort audit helper. detail
-// is a map so callers can express the structured shape directly;
+// is a map so callers can express the structured shape directly.
 // audit.Detail handles the JSON encoding (proper escaping for the
 // occasional Unicode in instance types or error strings).
 func (o *Orchestrator) auditAction(ctx context.Context, action, targetType, targetID string, detail map[string]any) {

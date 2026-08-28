@@ -20,7 +20,7 @@ const (
 )
 
 // Config is the operator-facing TLS surface. ACME nests its block
-// because it has four fields; manual/self stay flat.
+// because it has four fields, while manual/self stay flat.
 type Config struct {
 	// Mode selects the TLS strategy. Empty is treated as ModeNone.
 	Mode string `mapstructure:"mode" yaml:"mode"`
@@ -30,7 +30,7 @@ type Config struct {
 	Key  string `mapstructure:"key"  yaml:"key,omitempty"`
 
 	// Self-signed mode - FQDN becomes a SubjectAltName alongside
-	// "localhost"; Alg is "ed25519" or "rsa" (empty -> rsa).
+	// "localhost". Alg is "ed25519" or "rsa" (empty -> rsa).
 	FQDN string `mapstructure:"fqdn" yaml:"fqdn,omitempty"`
 	Alg  string `mapstructure:"alg"  yaml:"alg,omitempty"`
 

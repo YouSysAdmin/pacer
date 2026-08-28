@@ -124,7 +124,7 @@ func (s *Store) Put(ctx context.Context, p *poolmodel.Pool) error {
 // FK ON DELETE RESTRICT, so this transactionally NULLs out their pool_id
 // first (preserving the rows for audit/cost rollups, severing only the link)
 // then drops the pool row. The handler still blocks delete while *active*
-// jobs exist; this only handles terminated rows that would otherwise wedge
+// jobs exist. This only handles terminated rows that would otherwise wedge
 // the FK.
 func (s *Store) Delete(ctx context.Context, id string) error {
 	tx, err := s.db.BeginTx(ctx, nil)

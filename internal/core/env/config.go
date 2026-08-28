@@ -30,12 +30,12 @@ type Config struct {
 }
 
 // RetentionConfig is the YAML default for DB-row retention. The
-// operator can override either field at runtime via the Settings UI;
-// the YAML value is the floor everyone starts at. The pruner reads
+// operator can override either field at runtime via the Settings UI.
+// The YAML value is the floor everyone starts at. The pruner reads
 // the effective value (DB override else this default) on every tick.
 //
 // Defaults applied in Load (audit_days=90, webhook_days=7). Both
-// must be >= 1; Validate rejects zero / negative.
+// must be >= 1. Validate rejects zero / negative.
 type RetentionConfig struct {
 	// AuditDays is how long audit_log rows are kept before the
 	// daily pruner deletes them. Default 90.
@@ -81,13 +81,13 @@ type AuthOIDCConfig struct {
 	Scopes       []string `mapstructure:"scopes"`
 
 	// RequireEmailVerified rejects sign-ins whose ID token doesn't
-	// carry email_verified=true. Default true; flip to false only for
+	// carry email_verified=true. Default true. Flip to false only for
 	// IdPs that don't surface the claim.
 	RequireEmailVerified *bool `mapstructure:"require_email_verified"`
 
 	// Allowlists. All-empty means "any user the IdP authenticates is
 	// admitted" (the IdP is the gate). Domains compared case-insensitive
-	// against the email's host part; emails compared case-insensitive
+	// against the email's host part. Emails compared case-insensitive
 	// after lowercase+trim.
 	AllowedDomains []string `mapstructure:"allowed_domains"`
 	AllowedEmails  []string `mapstructure:"allowed_emails"`
@@ -236,7 +236,7 @@ func (c *Config) Validate() error {
 	if c.Database.Path == "" {
 		return fmt.Errorf("database.path required")
 	}
-	// Retention defaults are applied in Load; Validate enforces the
+	// Retention defaults are applied in Load. Validate enforces the
 	// minimum so a misconfigured override can't wipe today's rows.
 	if c.Retention.AuditDays < 1 {
 		return fmt.Errorf("retention.audit_days must be >= 1 (got %d)", c.Retention.AuditDays)
@@ -254,7 +254,7 @@ func (c *Config) Validate() error {
 		if c.Auth.JWTSecret == "" {
 			return fmt.Errorf("auth.jwt_secret required when auth is enabled (set auth.disabled: true to skip)")
 		}
-		// HS256 is keyed on the raw bytes of the secret; under 32 is
+		// HS256 is keyed on the raw bytes of the secret. Under 32 is
 		// brute-forceable. Fail fast on weak keys.
 		if len(c.Auth.JWTSecret) < 32 {
 			return fmt.Errorf("auth.jwt_secret must be at least 32 characters (generate with `openssl rand -hex 32`)")
@@ -269,7 +269,7 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("auth enabled but no method configured: enable auth.local or auth.oidc")
 		}
 		// OIDC takes precedence: auto-disable local when both are on.
-		// Local is intended for first-setup / break-glass; flip the
+		// Local is intended for first-setup / break-glass. Flip the
 		// YAML and restart for emergency fallback.
 		if c.Auth.OIDC.Enabled && c.Auth.Local.Enabled {
 			c.Auth.Local.Enabled = false
@@ -330,7 +330,7 @@ func (c *Config) Validate() error {
 			}
 			// Lower groups too. Most IdPs preserve the casing the
 			// admin entered (Cognito + Keycloak ship UPPERCASE roles
-			// out of the box) and the YAML rarely matches; treating
+			// out of the box) and the YAML rarely matches. Treating
 			// "Admins" and "admins" as the same group is the
 			// least-surprise behavior. Group names from the claim are
 			// lowered at compare time in oidc/allow.go.
@@ -348,7 +348,7 @@ func (c *Config) Validate() error {
 // point the operator at the offending YAML key.
 //
 // Accepts http for local dev (e.g. Keycloak on localhost during
-// integration tests); operators running prod should keep https.
+// integration tests). Operators running prod should keep https.
 func validateHTTPSURL(field, raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -365,7 +365,7 @@ func validateHTTPSURL(field, raw string) error {
 
 // requireDistinctHosts catches the recurring operator mistake of
 // pointing auth.oidc.issuer at pacer's own URL. issuer must be the
-// IdP (Cognito, Auth0, Okta, ...); redirect_url must be pacer.
+// IdP (Cognito, Auth0, Okta, ...), while redirect_url must be pacer.
 // Sharing a host means OIDC discovery fetches /.well-known/... from
 // pacer itself, hits 404 / connection-refused, and the deep
 // "dial tcp ...: connect refused" error doesn't point the operator
@@ -373,7 +373,7 @@ func validateHTTPSURL(field, raw string) error {
 func requireDistinctHosts(issuer, redirectURL string) error {
 	iu, err := url.Parse(issuer)
 	if err != nil {
-		return nil // already validated upstream; bail to avoid double-erroring
+		return nil // already validated upstream. Bail to avoid double-erroring
 	}
 	ru, err := url.Parse(redirectURL)
 	if err != nil {

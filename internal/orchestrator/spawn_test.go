@@ -52,7 +52,7 @@ func TestSpawnRunInstances_EmptyPoolIsPermanent(t *testing.T) {
 		{Name: "no-subnets", InstanceTypes: []string{"t3.micro"}},
 	} {
 		sc := &spawnContext{job: &job.Job{ID: "j"}, pool: p, project: &projectInfo{Name: "p"}}
-		res, exhausted, err := o.spawnRunInstances(context.Background(), sc)
+		res, exhausted, err := o.spawnRunInstances(t.Context(), sc)
 		if res != nil || exhausted || err == nil {
 			t.Errorf("%s: want permanent error, got res=%v exhausted=%v err=%v", p.Name, res, exhausted, err)
 		}
@@ -71,7 +71,7 @@ func TestOrchestratorSafeTick_RecoversPanic(t *testing.T) {
 }
 
 func TestDetach_SurvivesParentCancel(t *testing.T) {
-	parent, cancel := context.WithCancel(context.Background())
+	parent, cancel := context.WithCancel(t.Context())
 	cancel()
 	ctx, done := detach(parent)
 	defer done()

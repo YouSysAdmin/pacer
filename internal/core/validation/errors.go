@@ -15,7 +15,7 @@ import (
 )
 
 // FieldError is the normalized error item the SPA renders next to
-// the offending input. JSON-stable; the SPA's fields[].field matches
+// the offending input. JSON-stable. The SPA's fields[].field matches
 // the json tag the user actually sent.
 type FieldError struct {
 	Field   string `json:"field"`
@@ -28,8 +28,8 @@ type FieldError struct {
 // BindAndValidate) collapse to a single field-less entry so the
 // caller can still render something.
 func Humanize(err error) []FieldError {
-	var ve validator.ValidationErrors
-	if !errors.As(err, &ve) {
+	ve, ok := errors.AsType[validator.ValidationErrors](err)
+	if !ok {
 		return []FieldError{decodeError(err)}
 	}
 	out := make([]FieldError, 0, len(ve))
@@ -47,16 +47,14 @@ func Humanize(err error) []FieldError {
 // decodeError maps a JSON decode failure to a stable client-facing
 // message. Go type and struct names from encoding/json stay server-side.
 func decodeError(err error) FieldError {
-	var ute *json.UnmarshalTypeError
-	if errors.As(err, &ute) {
+	if ute, ok := errors.AsType[*json.UnmarshalTypeError](err); ok {
 		field := ute.Field
-		if i := strings.LastIndex(field, "."); i >= 0 {
-			field = field[i+1:]
+		if _, last, found := strings.CutLast(field, "."); found {
+			field = last
 		}
 		return FieldError{Field: field, Rule: "type", Message: friendlyField(field) + " has the wrong type"}
 	}
-	var se *json.SyntaxError
-	if errors.As(err, &se) {
+	if _, ok := errors.AsType[*json.SyntaxError](err); ok {
 		return FieldError{Rule: "syntax", Message: "request body is not valid JSON"}
 	}
 	return FieldError{Message: err.Error()}
@@ -92,7 +90,7 @@ func defaultMessage(fe validator.FieldError) string {
 		return field + " must be a valid UUID"
 	case "min":
 		// Numeric vs string min/max are surfaced with the same tag
-		// in validator/v10; the parameter is unitless. Keep the
+		// in validator/v10. The parameter is unitless. Keep the
 		// message neutral ("at least N") so it reads both for
 		// counts ("at least 1") and lengths ("at least 1 character").
 		return fmt.Sprintf("%s must be at least %s", field, fe.Param())
@@ -148,7 +146,7 @@ var friendlyLabels = map[string]string{
 
 // friendlyField converts a json tag name to a human-readable label
 // suitable for an end-user-facing error message. Known cases come
-// from the friendlyLabels map; everything else falls through to a
+// from the friendlyLabels map. Everything else falls through to a
 // sentence-cased version with underscores replaced by spaces
 // ("max_concurrent_runners" -> "Max concurrent runners").
 //

@@ -25,7 +25,7 @@ import (
 
 // refreshThrottle bounds how often a single running job can trigger
 // an upstream GitHub fetch. The modal polls the detail endpoint every
-// 5s; matching the throttle to the poll cadence means one tab hits
+// 5s. Matching the throttle to the poll cadence means one tab hits
 // GitHub once per cycle, multiple tabs viewing the same job collapse
 // to the same rate, and an idle modal generates zero traffic.
 const refreshThrottle = 5 * time.Second
@@ -40,7 +40,7 @@ type Handler struct {
 }
 
 // detail is the bundle returned by GET /api/jobs/:id. The list view
-// stays slim (Job rows only); the detail view joins in the linked
+// stays slim (Job rows only). The detail view joins in the linked
 // instance, the parsed webhook payload, and the per-job audit trail
 // so the modal can render everything in one round trip.
 //
@@ -64,8 +64,8 @@ type detail struct {
 // List is GET /api/jobs. Optional query params:
 //
 //	status=<status>   filter by job status
-//	limit=<n>         clamp at 500; default 100
-//	offset=<n>        skip n rows for pagination; default 0
+//	limit=<n>         clamp at 500, default 100
+//	offset=<n>        skip n rows for pagination, default 0
 //
 // Response envelope: {entries, total, limit, offset}. total is the
 // matching-row count ignoring pagination so the UI can render
@@ -186,7 +186,7 @@ func (h *Handler) Get(c *fiber.Ctx) error {
 // UpdatePayloadIfRunning.
 //
 // Returns (newPayload, true) only on a successful fetch + non-empty
-// write; (nil, false) for every skip / error path so the caller falls
+// write. (nil, false) for every skip / error path so the caller falls
 // back to whatever was already on the row.
 //
 // All failure modes (GHApp not configured, ctx-cancelled mid-flight,

@@ -5,7 +5,6 @@
 package instance
 
 import (
-	"context"
 	"database/sql"
 	"testing"
 	"time"
@@ -40,7 +39,7 @@ func seedInstance(t *testing.T, s *Store, db *sql.DB, id string) {
 		t.Fatalf("seed job: %v", err)
 	}
 	now := time.Now().UTC()
-	err := s.Put(context.Background(), &instancemodel.Instance{
+	err := s.Put(t.Context(), &instancemodel.Instance{
 		ID:         id,
 		JobID:      "job-" + id,
 		ProjectID:  "proj-1",
@@ -62,13 +61,13 @@ func rowSeq() int64 {
 }
 
 // TestTouch_BumpsLastSeenAt is the heartbeat-update happy path. The
-// reaper calls Touch on every alive instance every tick; the round
+// reaper calls Touch on every alive instance every tick. The round
 // trip back through Get must reflect the new timestamp so the UI
 // has a value to render.
 func TestTouch_BumpsLastSeenAt(t *testing.T) {
 	s, db := newTestStore(t)
 	_ = db
-	ctx := context.Background()
+	ctx := t.Context()
 
 	seedInstance(t, s, db, "i-aaa")
 
@@ -108,7 +107,7 @@ func TestTouch_BumpsLastSeenAt(t *testing.T) {
 func TestTouch_Batch(t *testing.T) {
 	s, db := newTestStore(t)
 	_ = db
-	ctx := context.Background()
+	ctx := t.Context()
 	seedInstance(t, s, db, "i-1")
 	seedInstance(t, s, db, "i-2")
 	seedInstance(t, s, db, "i-3")
@@ -134,10 +133,10 @@ func TestTouch_EmptyIDs_NoOp(t *testing.T) {
 	// Should not error and should not touch the DB. Reaper hits
 	// this path on every idle sweep (no alive instances), so it's
 	// the most common call -- it has to be cheap.
-	if err := s.Touch(context.Background(), nil, time.Now()); err != nil {
+	if err := s.Touch(t.Context(), nil, time.Now()); err != nil {
 		t.Fatalf("Touch with empty ids: %v", err)
 	}
-	if err := s.Touch(context.Background(), []string{}, time.Now()); err != nil {
+	if err := s.Touch(t.Context(), []string{}, time.Now()); err != nil {
 		t.Fatalf("Touch with empty slice: %v", err)
 	}
 }
@@ -149,7 +148,7 @@ func TestTouch_UnknownID_NoError(t *testing.T) {
 	// through without filtering against ListAlive twice.
 	s, db := newTestStore(t)
 	_ = db
-	if err := s.Touch(context.Background(), []string{"i-does-not-exist"}, time.Now()); err != nil {
+	if err := s.Touch(t.Context(), []string{"i-does-not-exist"}, time.Now()); err != nil {
 		t.Fatalf("Touch unknown id: %v", err)
 	}
 }

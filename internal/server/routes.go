@@ -38,7 +38,7 @@ func registerRoutes(app *fiber.App, rt *env.Runtime) {
 	api := app.Group("/api", noStoreCache)
 
 	// GitHub webhook ingest - HMAC-verified at the handler.
-	// Skipped when github.disabled=true (UI-only dev mode); GHApp is nil and
+	// Skipped when github.disabled=true (UI-only dev mode). GHApp is nil and
 	// the orchestrator that consumes webhook-enqueued jobs isn't
 	// running, so the route would 500 anyway.
 	// NOT under requireAuth: GitHub authenticates via the X-Hub-Signature HMAC,
@@ -49,9 +49,9 @@ func registerRoutes(app *fiber.App, rt *env.Runtime) {
 	}
 
 	// Auth endpoints - open (login obviously can't require an
-	// existing session; logout / me are cheap enough to not gate).
+	// existing session. Logout / me are cheap enough to not gate).
 	// /auth/login carries a per-IP rate limit so a leaked URL can't
-	// be hammered for slow brute-force; bcrypt cost-12 already makes
+	// be hammered for slow brute-force. Bcrypt cost-12 already makes
 	// it slow, this caps the absolute throughput.
 	ah := &auth.Handler{Runtime: rt}
 	loginLimiter := limiter.New(limiter.Config{
@@ -106,7 +106,7 @@ func registerRoutes(app *fiber.App, rt *env.Runtime) {
 	apiAuth := api.Group("", requireAuth(rt))
 
 	// Project CRUD.
-	// Project is the logical grouping; EC2 launch settings live on its pools.
+	// Project is the logical grouping. EC2 launch settings live on its pools.
 	ph := &project.Handler{Runtime: rt}
 	apiAuth.Post("/projects", ph.Create)
 	apiAuth.Get("/projects", ph.List)
@@ -115,8 +115,8 @@ func registerRoutes(app *fiber.App, rt *env.Runtime) {
 	apiAuth.Delete("/projects/:id", ph.Delete)
 
 	// Pool CRUD.
-	// Pools are nested under a project for create + list;
-	// individual pool reads / updates / deletes use a flat
+	// Pools are nested under a project for create + list.
+	// Individual pool reads / updates / deletes use a flat
 	// /api/pools/:id surface.
 	poolH := &pooldomain.Handler{Runtime: rt}
 	apiAuth.Post("/projects/:project_id/pools", poolH.Create)
@@ -152,8 +152,8 @@ func registerRoutes(app *fiber.App, rt *env.Runtime) {
 	apiAuth.Get("/stats/timeseries", sh.Timeseries)
 	apiAuth.Get("/stats/top-users", sh.TopUsers)
 
-	// Audit log - read-only, paginated, time-windowed. Append-only;
-	// the prune endpoint is the only mutation path and it logs its
+	// Audit log - read-only, paginated, time-windowed. Append-only.
+	// The prune endpoint is the only mutation path and it logs its
 	// own action so the trace survives the cleanup it describes.
 	auh := &audit.Handler{Runtime: rt}
 	apiAuth.Get("/audit", auh.List)
@@ -161,7 +161,7 @@ func registerRoutes(app *fiber.App, rt *env.Runtime) {
 
 	// Config backup - export the full project/pool/repo set as a
 	// single JSON document, or import one back. Import is upsert by
-	// name (no UUID match across systems); pools re-materialize their
+	// name (no UUID match across systems). Pools re-materialize their
 	// LT through the same ec2lt path the pool handler uses.
 	bh := &backup.Handler{Runtime: rt}
 	apiAuth.Get("/backup/export", bh.Export)
@@ -230,7 +230,7 @@ var spaRoutePrefixes = []string{
 // for a real embedded file OR an owned SPA route reach the
 // filesystem layer. Everything else is 404'd up front.
 //
-// The embed file set is materialized once via fs.WalkDir at startup;
+// The embed file set is materialized once via fs.WalkDir at startup.
 // per-request lookup is O(1) map access plus a short prefix loop.
 // Mounted at app.Use("/", ...), so /healthz and /api/* (registered
 // earlier) are unaffected.
@@ -261,8 +261,8 @@ func spaAllowlist(sub fs.FS) fiber.Handler {
 }
 
 // noStoreCache forces Cache-Control: no-store on every /api/* response.
-// JSON returned by the API is session-bound or otherwise dynamic;
-// default browser heuristics could cache it on disk, leaking across
+// JSON returned by the API is session-bound or otherwise dynamic.
+// Default browser heuristics could cache it on disk, leaking across
 // users on shared machines or showing stale state after logout /
 // privilege change. no-store is stricter than no-cache: it forbids
 // storing entirely, in the browser AND in any intermediate proxy.
@@ -282,18 +282,18 @@ func noStoreCache(c *fiber.Ctx) error {
 // SvelteKit's adapter-static produces three classes of asset:
 //
 //   - /_app/immutable/* - content-hashed bundles (e.g.
-//     /_app/immutable/chunks/B72M0WY1.js). Safe to cache forever; the
+//     /_app/immutable/chunks/B72M0WY1.js). Safe to cache forever. The
 //     filename changes whenever the content changes. "immutable"
 //     additionally tells the browser to skip even revalidation.
 //   - *.html - per-route SPA shells. They reference the latest hashed
-//     bundle; if a stale shell is served after a deploy the user
+//     bundle. If a stale shell is served after a deploy the user
 //     would load old JS pointing at API contracts that may have moved.
 //     Use no-cache so the browser revalidates with If-Modified-Since,
 //     getting a cheap 304 most of the time but always picking up new
 //     deploys.
 //   - everything else (fonts, logos) - stable filenames, no hash. A
 //     1-day public cache balances bandwidth against the rare font/
-//     logo replacement; the embedded ETag/Last-Modified will catch
+//     logo replacement. The embedded ETag/Last-Modified will catch
 //     updates on revalidation.
 func spaCacheControl(c *fiber.Ctx) error {
 	if err := c.Next(); err != nil {

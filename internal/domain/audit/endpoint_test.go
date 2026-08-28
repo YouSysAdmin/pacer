@@ -6,7 +6,6 @@ package audit_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -60,7 +59,7 @@ func decodeBody(t *testing.T, r *http.Response, into any) {
 
 func TestPrune_DeletesOnlyOlderThanCutoff(t *testing.T) {
 	app, rt := newApp(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Now().UTC()
 
 	// 10 rows: 5 older than 30 days, 5 newer.
@@ -96,7 +95,7 @@ func TestPrune_DeletesOnlyOlderThanCutoff(t *testing.T) {
 		t.Errorf("older_than_days echo: %d", body.OlderThanDays)
 	}
 
-	// The 5 "new" rows must survive; none of the "old" rows do.
+	// The 5 "new" rows must survive. None of the "old" rows do.
 	n, _ := rt.Store.Audit.Count(ctx, auditmodel.ListFilter{})
 	// 5 surviving rows + 1 audit.pruned row that the endpoint
 	// wrote to record its own action.
@@ -121,7 +120,7 @@ func TestPrune_AuditRecordSurvivesItsOwnCutoff(t *testing.T) {
 	// AFTER the cutoff so it isn't deleted by the very prune it
 	// describes. Regression for the obvious off-by-one footgun.
 	app, rt := newApp(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// 30-day prune. The audit-of-prune row is stamped at "now",
 	// which is by definition > now-30d.
@@ -185,7 +184,7 @@ func TestPrune_EmptyTable_DeletedZero(t *testing.T) {
 	if body.Deleted != 0 {
 		t.Errorf("deleted on empty table: want 0, got %d", body.Deleted)
 	}
-	n, _ := rt.Store.Audit.Count(context.Background(), auditmodel.ListFilter{})
+	n, _ := rt.Store.Audit.Count(t.Context(), auditmodel.ListFilter{})
 	if n != 1 {
 		t.Errorf("post-prune count: want 1 (the prune record itself), got %d", n)
 	}

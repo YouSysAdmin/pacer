@@ -6,7 +6,6 @@ package pool
 
 import (
 	"bytes"
-	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -83,7 +82,7 @@ func poolInput(name string, isDefault bool) map[string]any {
 
 func seedProject(t *testing.T, h *harness, id, name string) {
 	t.Helper()
-	if _, err := h.db.ExecContext(context.Background(), `
+	if _, err := h.db.ExecContext(t.Context(), `
 		INSERT INTO projects (id, name, max_concurrent_runners, tags, scope, org_name, runner_group_id, disabled)
 		VALUES (?, ?, 0, '{}', 'repo', '', 0, 0)`, id, name); err != nil {
 		t.Fatalf("seed project: %v", err)
@@ -110,12 +109,12 @@ func TestPool_Delete_BlockedByQueuedJobs(t *testing.T) {
 	if resp.StatusCode != 409 {
 		t.Fatalf("status: want 409, got %d", resp.StatusCode)
 	}
-	got, err := store.Get(context.Background(), "po-1")
+	got, err := store.Get(t.Context(), "po-1")
 	if err != nil || got == nil {
 		t.Fatalf("pool must survive: %v (pool=%v)", err, got)
 	}
 	var poolID string
-	if err := db.QueryRowContext(context.Background(),
+	if err := db.QueryRowContext(t.Context(),
 		`SELECT pool_id FROM jobs WHERE id = ?`, "job-q").Scan(&poolID); err != nil {
 		t.Fatalf("read job: %v", err)
 	}
@@ -159,7 +158,7 @@ func TestPool_Delete_AllowedWithOnlyTerminalJobs(t *testing.T) {
 	if resp.StatusCode != 204 {
 		t.Fatalf("status: want 204, got %d", resp.StatusCode)
 	}
-	got, _ := store.Get(context.Background(), "po-1")
+	got, _ := store.Get(t.Context(), "po-1")
 	if got != nil {
 		t.Fatal("pool should be deleted")
 	}
@@ -180,7 +179,7 @@ func TestPool_CreateDefault_FlipsSiblingDefault(t *testing.T) {
 	}
 
 	store := NewStore(h.db)
-	pools, err := store.ListByProject(context.Background(), "p-1")
+	pools, err := store.ListByProject(t.Context(), "p-1")
 	if err != nil {
 		t.Fatalf("ListByProject: %v", err)
 	}
@@ -211,7 +210,7 @@ func TestPool_Create_DuplicateNameIs409(t *testing.T) {
 	if resp.StatusCode != 409 {
 		t.Fatalf("duplicate create: want 409, got %d", resp.StatusCode)
 	}
-	pools, _ := h.rt.Store.Pool.ListByProject(context.Background(), "p-dup")
+	pools, _ := h.rt.Store.Pool.ListByProject(t.Context(), "p-dup")
 	if len(pools) != 1 {
 		t.Fatalf("want 1 pool, got %d", len(pools))
 	}
@@ -222,7 +221,7 @@ func TestPool_Update_RenameOntoSiblingIs409(t *testing.T) {
 	seedProject(t, h, "p-ren", "demo")
 	h.do(t, "POST", "/api/projects/p-ren/pools", poolInput("a", true))
 	h.do(t, "POST", "/api/projects/p-ren/pools", poolInput("b", false))
-	pools, _ := h.rt.Store.Pool.ListByProject(context.Background(), "p-ren")
+	pools, _ := h.rt.Store.Pool.ListByProject(t.Context(), "p-ren")
 	var bID string
 	for _, p := range pools {
 		if p.Name == "b" {

@@ -5,13 +5,13 @@
 // Package validation centralizes JSON-body parsing, normalization,
 // and struct-tag validation for the API. Domain handlers declare
 // their input shape with `validate:"..."` + `normalize:"..."` tags
-// and call BindAndValidate; field-level errors come back through
+// and call BindAndValidate. Field-level errors come back through
 // Humanize for response.BadRequestFields to render.
 //
 // Tag vocabulary used in this codebase:
 //
 //	validate:"required"                  field must be set/non-zero
-//	validate:"min=N,max=N"               byte-length bounds for strings;
+//	validate:"min=N,max=N"               byte-length bounds for strings,
 //	                                     element-count bounds for slices/maps
 //	validate:"oneof=a b c"               enum-style allowed values
 //	validate:"required_if=Field val"     cross-field requirement
@@ -101,7 +101,7 @@ type Normalizer interface {
 }
 
 // fiberCtx is the slice of Fiber's *fiber.Ctx that BindAndValidate
-// needs. Declared as an interface so unit tests can stub it; in
+// needs. Declared as an interface so unit tests can stub it. In
 // practice the only caller passes a real *fiber.Ctx.
 type fiberCtx interface {
 	Body() []byte
@@ -154,7 +154,7 @@ func NormalizeAndValidate(payload any) error {
 // applyNormalizeTags walks v and runs normalize:"..." tags on every
 // settable string field (recursing into structs / slices / arrays /
 // string-keyed maps). Map values are NOT mutated in place because
-// reflect doesn't allow that for native maps; if a map value needs
+// reflect doesn't allow that for native maps. If a map value needs
 // normalization, do it in Normalize().
 func applyNormalizeTags(v reflect.Value) {
 	if !v.IsValid() {

@@ -31,7 +31,7 @@ type Job struct {
 	PoolID            string     `json:"pool_id"`
 	Status            Status     `json:"status"`
 	InstanceID        string     `json:"instance_id,omitempty"`
-	CallbackTokenHash string     `json:"-"` // sha256 of the callback token; HMAC payload is (job_id, exp_unix). Raw token never stored.
+	CallbackTokenHash string     `json:"-"` // sha256 of the callback token. HMAC payload is (job_id, exp_unix). Raw token never stored.
 	QueuedAt          time.Time  `json:"queued_at"`
 	ClaimedAt         *time.Time `json:"claimed_at,omitempty"`
 	StartedAt         *time.Time `json:"started_at,omitempty"`
@@ -42,7 +42,7 @@ type Job struct {
 	// spawned instance when /api/runner/error fires.
 	// Empty for jobs that completed normally or failed before any instance
 	// came up.
-	// Multi-line; the UI renders it in a code block.
+	// Multi-line. The UI renders it in a code block.
 	FailureLog string `json:"failure_log,omitempty"`
 	// EstimatedCostUSD is filled at completion / reap / fail by
 	// multiplying the instance's stamped price_per_hour by the
@@ -52,7 +52,7 @@ type Job struct {
 	EstimatedCostUSD *float64 `json:"estimated_cost_usd,omitempty"`
 	// Attempts counts orchestrator spawn attempts. Capacity-class
 	// errors (InsufficientInstanceCapacity etc.) reschedule the job
-	// rather than failing it; each reschedule bumps Attempts. The
+	// rather than failing it. Each reschedule bumps Attempts. The
 	// final hard-failure path also bumps it.
 	Attempts int `json:"attempts"`
 	// NextRetryAt gates Job.Claim: rows with NextRetryAt > now are

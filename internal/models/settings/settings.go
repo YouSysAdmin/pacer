@@ -4,7 +4,7 @@
 
 // Package settings models the pacer-managed key-value config that
 // lives in the database (as opposed to YAML-frozen config in
-// env.Config). Today this is just the bootstrap API token; future
+// env.Config). Today this is just the bootstrap API token. Future
 // single-row settings live alongside under different keys.
 package settings
 
@@ -12,15 +12,15 @@ import "time"
 
 // KeyBootstrapAPIToken is the secret the bootstrap script presents in
 // `Authorization: Bearer <token>` when calling /api/runner/bootstrap.
-// Auto-generated on first pacer start; rotatable via the Settings UI.
+// Auto-generated on first pacer start. Rotatable via the Settings UI.
 const KeyBootstrapAPIToken = "bootstrap_api_token"
 
 // KeyAuditRetentionDays / KeyWebhookRetentionDays are operator
 // overrides for the YAML retention.audit_days / retention.webhook_days
-// defaults. Stored as decimal strings ("90"); the pruner reads them
+// defaults. Stored as decimal strings ("90"). The pruner reads them
 // on every tick so a Settings UI change takes effect at the next
 // daily sweep without a process restart. Missing key = use YAML
-// default; a malformed value logs a warning and falls back too.
+// default. A malformed value logs a warning and falls back too.
 const (
 	KeyAuditRetentionDays   = "audit_retention_days"
 	KeyWebhookRetentionDays = "webhook_retention_days"

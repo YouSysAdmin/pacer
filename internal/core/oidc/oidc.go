@@ -80,7 +80,7 @@ func New(ctx context.Context, cfg Config) (*Provider, error) {
 	}, nil
 }
 
-// Config returns the resolved config; handlers consult it to read
+// Config returns the resolved config. Handlers consult it to read
 // the allowlist surface + RequireEmailVerified.
 func (p *Provider) Config() Config { return p.cfg }
 

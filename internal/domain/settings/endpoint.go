@@ -44,7 +44,7 @@ type bootstrapTokenStatus struct {
 
 // rotateResult reports what happened on POST /api/settings/bootstrap-token/rotate.
 // PoolsRematerialized is the count of pools whose LT was bumped to
-// carry the new token; PoolsFailed lists the names that errored so the
+// carry the new token. PoolsFailed lists the names that errored so the
 // operator can re-save manually.
 type rotateResult struct {
 	RotatedAt           time.Time `json:"rotated_at"`
@@ -72,12 +72,12 @@ func (h *Handler) GetBootstrapToken(c *fiber.Ctx) error {
 // RotateBootstrapToken regenerates the token, writes it to settings,
 // then re-materializes every pool's LT in parallel so the new token
 // is baked into the user-data of every future spawn. Pools whose LT
-// rebake fails are surfaced in the response; the operator can re-save
+// rebake fails are surfaced in the response. The operator can re-save
 // those by hand.
 //
 // Trade-off: in-flight instances launched against an old LT version
 // still carry the old token in their user-data and will 401 against
-// /api/runner/bootstrap. That's the operational cost of rotation; the
+// /api/runner/bootstrap. That's the operational cost of rotation. The
 // failure surfaces immediately as a spawn-failure in the UI rather
 // than a silent stranding.
 func (h *Handler) RotateBootstrapToken(c *fiber.Ctx) error {
@@ -208,7 +208,7 @@ func maskToken(t string) string {
 
 // retentionStatus is what GET /api/settings/retention returns.
 // audit / webhook are the EFFECTIVE values the pruner is using right
-// now; audit_default / webhook_default echo the YAML floor so the
+// now. The audit_default / webhook_default fields echo the YAML floor so the
 // UI can render "(default: 90)" next to the input. The pruner
 // re-resolves on every tick, so PUT takes effect at the next daily
 // sweep -- documented in the UI.
@@ -222,7 +222,7 @@ type retentionStatus struct {
 }
 
 // retentionInput is the body of PUT /api/settings/retention. Either
-// field may be omitted; a nil pointer means "leave that setting
+// field may be omitted. A nil pointer means "leave that setting
 // alone." Use 0 to explicitly clear an override (revert to YAML
 // default) -- the handler distinguishes nil from 0 via the pointer.
 type retentionInput struct {

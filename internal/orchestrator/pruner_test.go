@@ -5,7 +5,6 @@
 package orchestrator_test
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -20,7 +19,7 @@ import (
 
 // newPrunerRT builds a Runtime with the Webhook store wired in.
 // runtimeutil intentionally omits Webhook to dodge an import cycle
-// (see comment in runtime.go); the orchestrator package can wire it
+// (see comment in runtime.go). The orchestrator package can wire it
 // here without triggering the cycle because the orchestrator test
 // binary doesn't share a package boundary with webhook.
 func newPrunerRT(t *testing.T, cfg *env.Config) *env.Runtime {
@@ -33,7 +32,7 @@ func TestPruner_PrunesAuditAndWebhook(t *testing.T) {
 	rt := newPrunerRT(t, &env.Config{
 		Retention: env.RetentionConfig{AuditDays: 30, WebhookDays: 7},
 	})
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Now().UTC()
 
 	// Audit: 4 rows older than 30d (should be pruned) + 3 newer
@@ -61,12 +60,12 @@ func TestPruner_PrunesAuditAndWebhook(t *testing.T) {
 }
 
 func TestPruner_DBOverrideShortensRetention(t *testing.T) {
-	// YAML default is 30d; operator overrides to 5d via the settings
+	// YAML default is 30d. Operator overrides to 5d via the settings
 	// table. The next prune must respect the override.
 	rt := newPrunerRT(t, &env.Config{
 		Retention: env.RetentionConfig{AuditDays: 30, WebhookDays: 7},
 	})
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Now().UTC()
 
 	// 5 rows at 0d, 2d, 4d, 6d, 8d back.

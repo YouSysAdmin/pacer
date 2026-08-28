@@ -9,11 +9,11 @@
 // live on the pool, not here.
 //
 // Project.MaxConcurrentRunners is a project-wide ceiling across all
-// pools (zero = no project-level cap; per-pool caps still apply).
+// pools (zero = no project-level cap, per-pool caps still apply).
 //
 // Runner-label generation lives in the pool package
 // (`internal/domain/pool/pool.go::RunnerLabels`) since labels include
-// the pool name; project never spawns runners on its own.
+// the pool name. Project never spawns runners on its own.
 //
 // File layout:
 //

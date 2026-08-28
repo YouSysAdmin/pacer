@@ -31,7 +31,7 @@ type Handler struct {
 }
 
 // formatVersion is the schema version stamped into every export.
-// Bump when the snapshot shape changes incompatibly; Import refuses
+// Bump when the snapshot shape changes incompatibly. Import refuses
 // payloads from a different version so an upgrade can't silently
 // truncate fields the operator doesn't realize are gone.
 const formatVersion = 1
@@ -399,7 +399,7 @@ func (h *Handler) applyRepo(ctx context.Context, pmodel *projectmodel.Project, i
 }
 
 // sanitizeAndDedupeLabels mirrors pool/endpoint.go::input.finalizeLabels.
-// Returned slice is fresh; the caller's input is not aliased. Empty
+// Returned slice is fresh. The caller's input is not aliased. Empty
 // post-sanitize entries and duplicates collapse so the persisted
 // extra_labels exactly match what the runner registers with.
 func sanitizeAndDedupeLabels(in []string) []string {

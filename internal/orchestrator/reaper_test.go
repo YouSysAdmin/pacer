@@ -39,7 +39,7 @@ func (e *fakeAPIError) ErrorFault() smithy.ErrorFault { return smithy.FaultClien
 var _ smithy.APIError = (*fakeAPIError)(nil)
 
 // stubEC2 is a hand-rolled ec2API for tests. The Describe/Terminate
-// closures let each test program the response sequence; both are
+// closures let each test program the response sequence. Both are
 // invocation-counted so assertions can pin the retry path.
 type stubEC2 struct {
 	describeCalls  int
@@ -129,7 +129,7 @@ func TestCheckEC2HealthVia_DescribeError_SetsHealth(t *testing.T) {
 	}
 	insts := []*instance.Instance{{ID: "i-abc"}}
 
-	view := checkEC2HealthVia(context.Background(), stub, h, insts)
+	view := checkEC2HealthVia(t.Context(), stub, h, insts)
 	if len(view.Dead) != 0 {
 		t.Fatalf("want empty dead map on describe failure, got %d", len(view.Dead))
 	}
@@ -174,7 +174,7 @@ func TestCheckEC2HealthVia_SuccessClearsHealth(t *testing.T) {
 	}
 	insts := []*instance.Instance{{ID: "i-abc"}}
 
-	view := checkEC2HealthVia(context.Background(), stub, h, insts)
+	view := checkEC2HealthVia(t.Context(), stub, h, insts)
 	if d, ok := view.Dead["i-abc"]; !ok {
 		t.Fatal("want i-abc in dead map")
 	} else if d.StateName != string(ec2types.InstanceStateNameTerminated) {
@@ -221,7 +221,7 @@ func TestCheckEC2HealthVia_AliveInstance_GoesToSeenAlive(t *testing.T) {
 		{ID: "i-running"}, {ID: "i-pending"}, {ID: "i-dead"},
 	}
 
-	view := checkEC2HealthVia(context.Background(), stub, h, insts)
+	view := checkEC2HealthVia(t.Context(), stub, h, insts)
 	if _, ok := view.Dead["i-dead"]; !ok {
 		t.Fatal("i-dead should be in Dead")
 	}
@@ -256,7 +256,7 @@ func TestCheckEC2HealthVia_NotFoundDoesNotSetHealth(t *testing.T) {
 	}
 	insts := []*instance.Instance{{ID: "i-abc"}}
 
-	view := checkEC2HealthVia(context.Background(), stub, h, insts)
+	view := checkEC2HealthVia(t.Context(), stub, h, insts)
 	if _, ok := view.Dead["i-abc"]; !ok {
 		t.Fatal("NotFound should mark the instance lost")
 	}
@@ -267,7 +267,7 @@ func TestCheckEC2HealthVia_NotFoundDoesNotSetHealth(t *testing.T) {
 
 func TestCheckEC2HealthVia_PartialNotFoundDoesPartialRetry(t *testing.T) {
 	// Mixed batch: one ID is unknown, the other is terminated. The
-	// first call fails NotFound for the missing one; the retry
+	// first call fails NotFound for the missing one. The retry
 	// covers the survivor. Both must end up in the dead map.
 	h := health.New()
 	stub := &stubEC2{
@@ -297,7 +297,7 @@ func TestCheckEC2HealthVia_PartialNotFoundDoesPartialRetry(t *testing.T) {
 	}
 	insts := []*instance.Instance{{ID: "i-missing"}, {ID: "i-alive"}}
 
-	view := checkEC2HealthVia(context.Background(), stub, h, insts)
+	view := checkEC2HealthVia(t.Context(), stub, h, insts)
 	if _, ok := view.Dead["i-missing"]; !ok {
 		t.Error("i-missing should be in dead map")
 	}
@@ -314,12 +314,12 @@ func TestCheckEC2HealthVia_PartialNotFoundDoesPartialRetry(t *testing.T) {
 
 func TestCheckEC2HealthVia_EmptyInputNoCalls(t *testing.T) {
 	// Trivial guard: no alive instances means no AWS call. The
-	// describe path runs every tick; skipping it on an empty list
+	// describe path runs every tick. Skipping it on an empty list
 	// avoids a needless API hit + lets idle Pacer instances stay
 	// completely quiet.
 	h := health.New()
 	stub := &stubEC2{}
-	view := checkEC2HealthVia(context.Background(), stub, h, nil)
+	view := checkEC2HealthVia(t.Context(), stub, h, nil)
 	if len(view.Dead) != 0 || len(view.SeenAlive) != 0 {
 		t.Fatalf("empty input: want empty view, got dead=%d alive=%d", len(view.Dead), len(view.SeenAlive))
 	}
@@ -332,7 +332,7 @@ func TestCheckEC2HealthVia_EmptyInputNoCalls(t *testing.T) {
 // banner self-heals on the order of a minute. If someone bumps it
 // past a few minutes the operator experience regresses badly.
 func TestTerminateLostVia_TerminatesStoppedOnly(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	for _, tc := range []struct {
 		state         string
 		wantTerminate bool
@@ -366,7 +366,7 @@ func TestTerminateLostVia_TerminateFailureStillReported(t *testing.T) {
 	}
 	// The attempt is reported even when AWS errors -- the caller's
 	// DB-side cleanup proceeds either way, the error is log-only.
-	if !terminateLostVia(context.Background(), stub, "i-lost", deadState{
+	if !terminateLostVia(t.Context(), stub, "i-lost", deadState{
 		StateName: string(ec2types.InstanceStateNameStopped),
 	}) {
 		t.Fatal("terminate attempt should be reported despite the AWS error")
@@ -376,7 +376,7 @@ func TestTerminateLostVia_TerminateFailureStillReported(t *testing.T) {
 	}
 }
 
-// blockingInstanceStore fakes just ListAlive; the embedded nil
+// blockingInstanceStore fakes just ListAlive. The embedded nil
 // interface panics on any other method, which the empty ListAlive
 // result guarantees is never reached.
 type blockingInstanceStore struct {
@@ -399,7 +399,7 @@ func (s *blockingInstanceStore) ListAlive(context.Context) ([]*instance.Instance
 }
 
 // The background ticker and the manual /api/reconcile endpoint both
-// call Tick; overlapping sweeps would duplicate terminate/audit side
+// call Tick. Overlapping sweeps would duplicate terminate/audit side
 // effects, so Tick must serialize.
 func TestReaper_Tick_Serialized(t *testing.T) {
 	fake := &blockingInstanceStore{}
@@ -408,7 +408,7 @@ func TestReaper_Tick_Serialized(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 4 {
 		wg.Go(func() {
-			_, _ = r.Tick(context.Background())
+			_, _ = r.Tick(t.Context())
 		})
 	}
 	wg.Wait()

@@ -16,7 +16,7 @@
 //  1. HMAC-verifies the token against the server-side key
 //     (proves the token came from this server, not yet expired)
 //  2. Hashes the presented token and compares to the stored hash
-//     (binds the token to a single job; replay across jobs blocked)
+//     (binds the token to a single job, so replay across jobs is blocked)
 //  3. Checks job status (rejects callbacks after job terminated)
 //
 // Layers (1) and (2) together mean a leaked token can only be used

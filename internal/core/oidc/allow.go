@@ -62,7 +62,7 @@ func (p *Provider) Admit(c *Claims) error {
 			return fmt.Errorf("allowed_groups set but claim %q is empty/missing on id_token", cfg.GroupsClaim)
 		}
 		// Case-insensitive match: AllowedGroups are pre-lowered by
-		// config.Validate(); lower the IdP-supplied claim values here
+		// config.Validate(). Lower the IdP-supplied claim values here
 		// rather than mutating cfg or pre-walking. Most IdPs
 		// (Cognito, Keycloak) ship uppercase role names, so this is
 		// the path that actually fires in practice.

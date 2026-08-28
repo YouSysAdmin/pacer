@@ -136,7 +136,7 @@ func safeTick(rt *env.Runtime, component string, do func() error) (err error) {
 
 // doTick is the original tick body, hoisted to a method so safeTick
 // can call it under recover. Returns the number of alive rows seen +
-// any fatal error (today only ListAlive can fatal-error; per-instance
+// any fatal error (today only ListAlive can fatal-error, per-instance
 // errors are logged and the sweep continues).
 func (r *Reaper) doTick(ctx context.Context) (int, error) {
 	insts, err := r.Runtime.Store.Instance.ListAlive(ctx)
@@ -180,7 +180,7 @@ func (r *Reaper) doTick(ctx context.Context) (int, error) {
 // deadState carries AWS's verdict for an instance that is no longer
 // healthy. An empty StateName means AWS no longer returns the instance
 // from DescribeInstances at all (the row was purged ~1h after
-// termination); we still treat it as lost.
+// termination). We still treat it as lost.
 type deadState struct {
 	StateName       string
 	StateReasonCode string
@@ -188,7 +188,7 @@ type deadState struct {
 }
 
 // sweepView is the structured output of one EC2-side health pass.
-// Dead is the subset AWS considers gone (terminated/stopping/...);
+// Dead is the subset AWS considers gone (terminated/stopping/...).
 // SeenAlive is every ID AWS confirmed in any non-dead state. The
 // reaper bumps last_seen_at on SeenAlive so the UI can show a
 // per-row heartbeat -- the signal the operator needs to spot
@@ -211,7 +211,7 @@ type sweepView struct {
 // NotFound error -- which fails the entire batch even if only one ID
 // is bad -- we parse the missing IDs out of the error message, mark
 // them lost, and re-batch the survivors. On any other error we log
-// and skip the health pass; the max-runtime check below still runs,
+// and skip the health pass. The max-runtime check below still runs,
 // so a flaky describe call doesn't strand a dead row.
 // checkEC2HealthVia is the testable form of the EC2-side health check.
 // Separated from the *Reaper method so tests can swap a fake ec2API
@@ -248,8 +248,8 @@ func checkEC2HealthVia(ctx context.Context, c ec2API, h *health.Health, insts []
 		return view
 	}
 
-	var ae smithy.APIError
-	if !errors.As(err, &ae) || ae.ErrorCode() != "InvalidInstanceID.NotFound" {
+	ae, ok := errors.AsType[smithy.APIError](err)
+	if !ok || ae.ErrorCode() != "InvalidInstanceID.NotFound" {
 		slog.Warn("reaper: describe instances failed; skipping ec2 health pass", "err", err)
 		if h != nil {
 			h.Set(healthComponent, fmt.Sprintf("describe instances failed: %v", err))
@@ -495,7 +495,7 @@ func lostReasonMessage(d deadState) string {
 
 func (r *Reaper) maybeReap(ctx context.Context, i *instance.Instance) error {
 	if i.PoolID == "" {
-		// Pre-pools instance - skip; operator can clean up via console.
+		// Pre-pools instance - skip. Operator can clean up via console.
 		return nil
 	}
 	pl, err := r.Runtime.Store.Pool.Get(ctx, i.PoolID)
@@ -575,7 +575,7 @@ func (r *Reaper) maybeReap(ctx context.Context, i *instance.Instance) error {
 // from GitHub all log + return without surfacing -- the local cleanup
 // the caller already did is the authoritative pacer-side state.
 //
-// j may be nil when the caller couldn't fetch the job row; we'll skip
+// j may be nil when the caller couldn't fetch the job row. We'll skip
 // silently in that case rather than try to recover.
 func (r *Reaper) deleteGitHubRunner(ctx context.Context, i *instance.Instance, j *jobmodel.Job) {
 	if i.GHRunnerID == 0 || j == nil || r.Runtime.GHApp == nil {
