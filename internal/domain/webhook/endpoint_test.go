@@ -471,3 +471,35 @@ func seedOrgScopedProject(t *testing.T, rt *env.Runtime, projID, projName, orgLo
 		t.Fatalf("seed pool: %v", err)
 	}
 }
+
+func TestWebhook_LateCompleted_DoesNotOverwriteReapedJob(t *testing.T) {
+	h := newHarness(t)
+	seedRepoBoundProject(t, h.rt, "p-1", "demo", "octocat/hello-world", "po-1", "default", true, nil)
+	ctx := context.Background()
+	ghID := int64(9100)
+
+	queued := workflowJobQueued("octocat/hello-world", ghID, []string{"self-hosted", "demo"})
+	if resp := h.post(t, queued, map[string]string{
+		"X-GitHub-Event": "workflow_job", "X-GitHub-Delivery": "del-q-late-completed",
+	}); resp.StatusCode != 200 {
+		t.Fatalf("enqueue: %d", resp.StatusCode)
+	}
+	j, _ := h.rt.Store.Job.GetByGHJobID(ctx, ghID)
+	if err := h.rt.Store.Job.MarkReaped(ctx, j.ID, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, conclusion := range []string{"success", "failure", "cancelled"} {
+		late := workflowJobAction("completed", "octocat/hello-world", ghID, conclusion)
+		resp := h.post(t, late, map[string]string{
+			"X-GitHub-Event": "workflow_job", "X-GitHub-Delivery": "del-late-completed-" + conclusion,
+		})
+		if resp.StatusCode != 204 {
+			t.Fatalf("late completed(%s): want 204, got %d", conclusion, resp.StatusCode)
+		}
+		got, _ := h.rt.Store.Job.GetByGHJobID(ctx, ghID)
+		if got.Status != jobmodel.StatusReaped {
+			t.Fatalf("late completed(%s) overwrote reaped: %q", conclusion, got.Status)
+		}
+	}
+}

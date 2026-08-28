@@ -256,6 +256,9 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 		return response.Internal(c, err)
 	}
 	if err := h.Runtime.Store.Job.MarkRunning(c.UserContext(), j.ID, in.InstanceID, now); err != nil {
+		if errors.Is(err, jobstore.ErrStatusConflict) {
+			return response.Conflict(c, "job already started")
+		}
 		return response.Internal(c, err)
 	}
 	if err := h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
@@ -408,6 +411,9 @@ func (h *Handler) Error(c *fiber.Ctx) error {
 
 	now := time.Now().UTC()
 	if err := h.Runtime.Store.Job.MarkFailedWithLog(c.UserContext(), j.ID, stage, msg, logBody, now); err != nil {
+		if errors.Is(err, jobstore.ErrStatusConflict) {
+			return response.Conflict(c, "job already finalized")
+		}
 		return response.Internal(c, err)
 	}
 	if j.InstanceID != "" {

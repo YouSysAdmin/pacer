@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"strconv"
 	"sync"
@@ -198,7 +199,7 @@ func (c *Client) fetchInstallationToken(ctx context.Context, installationID int6
 // runnerGroupID is required for repo-level registration; the "Default"
 // group on personal accounts is id 1.
 func (c *Client) JITConfig(ctx context.Context, installationID int64, repoOwner, repoName, runnerName string, labels []string, runnerGroupID int) (string, int64, error) {
-	url := fmt.Sprintf("%s/repos/%s/%s/actions/runners/generate-jitconfig", apiBase, repoOwner, repoName)
+	url := fmt.Sprintf("%s/repos/%s/%s/actions/runners/generate-jitconfig", apiBase, neturl.PathEscape(repoOwner), neturl.PathEscape(repoName))
 	return c.mintJITConfig(ctx, installationID, url, runnerName, labels, runnerGroupID)
 }
 
@@ -217,7 +218,7 @@ func (c *Client) JITConfigOrg(ctx context.Context, installationID int64, orgName
 	if runnerGroupID == 0 {
 		runnerGroupID = 1
 	}
-	url := fmt.Sprintf("%s/orgs/%s/actions/runners/generate-jitconfig", apiBase, orgName)
+	url := fmt.Sprintf("%s/orgs/%s/actions/runners/generate-jitconfig", apiBase, neturl.PathEscape(orgName))
 	return c.mintJITConfig(ctx, installationID, url, runnerName, labels, runnerGroupID)
 }
 
@@ -231,14 +232,14 @@ func (c *Client) JITConfigOrg(ctx context.Context, installationID int64, orgName
 // deregistered (ephemeral runners auto-deregister when run.sh exits
 // cleanly, or GitHub purged it after its own timeout).
 func (c *Client) DeleteRunnerRepo(ctx context.Context, installationID int64, repoOwner, repoName string, runnerID int64) error {
-	url := fmt.Sprintf("%s/repos/%s/%s/actions/runners/%d", apiBase, repoOwner, repoName, runnerID)
+	url := fmt.Sprintf("%s/repos/%s/%s/actions/runners/%d", apiBase, neturl.PathEscape(repoOwner), neturl.PathEscape(repoName), runnerID)
 	return c.deleteRunner(ctx, installationID, url)
 }
 
 // DeleteRunnerOrg is the org-scoped variant of DeleteRunnerRepo. Used
 // when the project's scope is "org".
 func (c *Client) DeleteRunnerOrg(ctx context.Context, installationID int64, orgName string, runnerID int64) error {
-	url := fmt.Sprintf("%s/orgs/%s/actions/runners/%d", apiBase, orgName, runnerID)
+	url := fmt.Sprintf("%s/orgs/%s/actions/runners/%d", apiBase, neturl.PathEscape(orgName), runnerID)
 	return c.deleteRunner(ctx, installationID, url)
 }
 
@@ -285,7 +286,7 @@ func (c *Client) WorkflowJob(ctx context.Context, installationID int64, repoOwne
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/repos/%s/%s/actions/jobs/%d", apiBase, repoOwner, repoName, jobID)
+	url := fmt.Sprintf("%s/repos/%s/%s/actions/jobs/%d", apiBase, neturl.PathEscape(repoOwner), neturl.PathEscape(repoName), jobID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build workflow-job request: %w", err)

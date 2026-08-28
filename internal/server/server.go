@@ -67,6 +67,9 @@ func New(opts Options) (*Server, error) {
 	app := fiber.New(fiberCfg)
 	app.Use(safeRecover)
 	app.Use(securityHeaders)
+	if tlsCfg != nil {
+		app.Use(hstsHeader)
+	}
 	app.Use(slogfiber.NewWithFilters(opts.Runtime.Log, accessLogFilters()...))
 
 	registerRoutes(app, opts.Runtime)
@@ -154,6 +157,13 @@ func securityHeaders(c *fiber.Ctx) error {
 			"frame-ancestors 'none'; "+
 			"base-uri 'self'; "+
 			"form-action 'self'")
+	return c.Next()
+}
+
+// hstsHeader is added only when this process terminates TLS, so a
+// plain-HTTP deployment behind a proxy is not accidentally pinned.
+func hstsHeader(c *fiber.Ctx) error {
+	c.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 	return c.Next()
 }
 

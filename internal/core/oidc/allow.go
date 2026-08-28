@@ -27,7 +27,7 @@ func (p *Provider) Admit(c *Claims) error {
 	cfg := p.cfg
 	email := strings.ToLower(strings.TrimSpace(c.Email))
 
-	if cfg.RequireEmailVerified && !c.EmailVerified {
+	if cfg.RequireEmailVerified && !bool(c.EmailVerified) {
 		return fmt.Errorf("email_verified=false on id_token")
 	}
 

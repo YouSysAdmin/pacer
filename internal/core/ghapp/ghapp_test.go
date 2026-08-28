@@ -10,6 +10,7 @@ import (
 	"crypto/rsa"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -118,5 +119,27 @@ func TestInstallationToken_InitiatorCancelDoesNotFailWaiters(t *testing.T) {
 	}
 	if tokB != "ghs_test" {
 		t.Fatalf("waiter token: %q", tokB)
+	}
+}
+
+func TestJITConfigOrg_EscapesOrgPathSegment(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/access_tokens") {
+			tokenResponse(w)
+			return
+		}
+		gotPath = r.URL.EscapedPath()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"encoded_jit_config":"abc","runner":{"id":7}}`))
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv.URL)
+	if _, _, err := c.JITConfigOrg(context.Background(), 1, "evil/../../admin", "r", []string{"a"}, 1); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if gotPath != "/orgs/evil%2F..%2F..%2Fadmin/actions/runners/generate-jitconfig" {
+		t.Fatalf("org segment not escaped: %q", gotPath)
 	}
 }

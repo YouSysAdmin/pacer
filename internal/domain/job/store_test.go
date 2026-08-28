@@ -7,6 +7,7 @@ package job
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 	"time"
 
@@ -611,5 +612,46 @@ func TestJob_ReclaimStale_CancelledContext(t *testing.T) {
 	cancel()
 	if _, err := f.store.ReclaimStale(ctx, time.Now()); err == nil {
 		t.Fatal("expected error on cancelled ctx")
+	}
+}
+
+func TestJob_MarkTransitions_AtomicStatusGates(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	// MarkRunning only from pre-run states. Second call conflicts.
+	mustPut(t, f, "r1", jobmodel.StatusQueued, now, nil, 0)
+	if err := f.store.MarkRunning(ctx, "r1", "i-1", now); err != nil {
+		t.Fatalf("first MarkRunning: %v", err)
+	}
+	if err := f.store.MarkRunning(ctx, "r1", "i-1", now); !errors.Is(err, ErrStatusConflict) {
+		t.Fatalf("second MarkRunning: want ErrStatusConflict, got %v", err)
+	}
+
+	// Terminal marks refuse to overwrite a terminal row.
+	mustPut(t, f, "t1", jobmodel.StatusQueued, now, nil, 0)
+	if err := f.store.MarkReaped(ctx, "t1", now); err != nil {
+		t.Fatal(err)
+	}
+	for name, fn := range map[string]func() error{
+		"completed": func() error { return f.store.MarkCompleted(ctx, "t1", now) },
+		"failed":    func() error { return f.store.MarkFailed(ctx, "t1", "github", "x", now) },
+		"cancelled": func() error { return f.store.MarkCancelled(ctx, "t1", "github", "x", now) },
+		"failedlog": func() error { return f.store.MarkFailedWithLog(ctx, "t1", "bootstrap", "x", "log", now) },
+		"running":   func() error { return f.store.MarkRunning(ctx, "t1", "", now) },
+	} {
+		if err := fn(); !errors.Is(err, ErrStatusConflict) {
+			t.Errorf("%s on reaped row: want ErrStatusConflict, got %v", name, err)
+		}
+	}
+	got, _ := f.store.Get(ctx, "t1")
+	if got.Status != jobmodel.StatusReaped {
+		t.Fatalf("reaped row was overwritten: %q", got.Status)
+	}
+
+	// Missing row is reported distinctly.
+	if err := f.store.MarkCompleted(ctx, "nope", now); !errors.Is(err, ErrJobMissing) {
+		t.Fatalf("missing row: want ErrJobMissing, got %v", err)
 	}
 }

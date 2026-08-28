@@ -56,9 +56,26 @@ func (p *Provider) Authorize(jwtSecret []byte) (redirectURL, cookieValue string,
 type Claims struct {
 	Subject       string         `json:"sub"`
 	Email         string         `json:"email"`
-	EmailVerified bool           `json:"email_verified"`
+	EmailVerified FlexBool       `json:"email_verified"`
 	Name          string         `json:"name"`
 	Raw           map[string]any `json:"-"` // for groups_claim lookup
+}
+
+// FlexBool decodes a JSON bool or the strings "true"/"false". Some
+// IdPs emit email_verified as a string, which would otherwise fail
+// the whole claims decode and lock every user out.
+type FlexBool bool
+
+func (b *FlexBool) UnmarshalJSON(data []byte) error {
+	switch string(data) {
+	case "true", `"true"`:
+		*b = true
+	case "false", `"false"`, "null":
+		*b = false
+	default:
+		return fmt.Errorf("email_verified: cannot decode %s as bool", data)
+	}
+	return nil
 }
 
 // Exchange verifies the callback URL parameters against the

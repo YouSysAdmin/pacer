@@ -174,7 +174,7 @@ func (o *Orchestrator) tick(ctx context.Context) {
 		// permanent failure
 		slog.Error("orchestrator: spawn failed", "job_id", j.ID, "err", spawnErr)
 		if err := o.Runtime.Store.Job.MarkFailed(wctx, j.ID, "spawn", spawnErr.Error(), time.Now().UTC()); err != nil {
-			slog.Error("orchestrator: mark failed write failed, job stuck in claimed state",
+			slog.Error("orchestrator: mark failed write failed, job may be stuck in claimed state",
 				"job_id", j.ID, "err", err)
 		}
 		o.auditAction(wctx, audit.ActionJobFailed, "job", j.ID, map[string]any{

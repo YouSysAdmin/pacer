@@ -5,6 +5,7 @@
 package server
 
 import (
+	"log/slog"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -45,7 +46,10 @@ func requireAuth(rt *env.Runtime) fiber.Handler {
 		}
 		claims, err := authenticator.ParseToken(rt.Config.Auth.JWTSecret, raw)
 		if err != nil {
-			return response.Unauthorized(c, "invalid session: "+err.Error())
+			// Keep the reason server-side. Distinguishing "expired"
+			// from "bad signature" only helps a token forger.
+			slog.Debug("auth: session token rejected", "err", err, "client_ip", c.IP())
+			return response.Unauthorized(c, "invalid session")
 		}
 		u, err := rt.Store.User.GetByID(c.UserContext(), claims.UserID)
 		if err != nil {

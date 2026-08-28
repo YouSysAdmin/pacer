@@ -19,7 +19,9 @@ import (
 	"errors"
 	"log/slog"
 	"math/big"
+	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -74,7 +76,7 @@ func AutoTLS(ac ACME) *tls.Config {
 		// 308 (vs 301) preserves the request method on retry.
 		srv := &http.Server{
 			Addr:              addr,
-			Handler:           m.HTTPHandler(http.HandlerFunc(redirectToHTTPS)),
+			Handler:           m.HTTPHandler(redirectToHTTPS(ac.Hosts)),
 			ReadHeaderTimeout: 10 * time.Second,
 		}
 		slog.Info("ACME HTTP challenge listener", "addr", addr, "hosts", ac.Hosts)
@@ -88,12 +90,23 @@ func AutoTLS(ac ACME) *tls.Config {
 	return &tls.Config{GetCertificate: m.GetCertificate, MinVersion: tls.VersionTLS12}
 }
 
-// redirectToHTTPS is the fallback handler behind autocert's HTTP-01
-// listener. Builds the HTTPS URL from r.Host (already validated by
-// HostPolicy upstream) + r.URL so query strings round-trip.
-func redirectToHTTPS(w http.ResponseWriter, r *http.Request) {
-	target := "https://" + r.Host + r.URL.RequestURI()
-	http.Redirect(w, r, target, http.StatusPermanentRedirect)
+// redirectToHTTPS returns the fallback handler behind autocert's
+// HTTP-01 listener. HostPolicy only gates certificate issuance, not
+// this handler, so r.Host is attacker-controlled. A request for a
+// host outside the allowlist is redirected to the first configured
+// host rather than echoing the header back as an open redirect.
+func redirectToHTTPS(hosts []string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		if len(hosts) > 0 && !slices.Contains(hosts, host) {
+			host = hosts[0]
+		}
+		target := "https://" + host + r.URL.RequestURI()
+		http.Redirect(w, r, target, http.StatusPermanentRedirect)
+	})
 }
 
 // LoadManualTLS load user provided TLS certs

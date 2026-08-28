@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/yousysadmin/pacer/internal/core/env"
 	"github.com/yousysadmin/pacer/internal/core/response"
+	jobstore "github.com/yousysadmin/pacer/internal/domain/job"
 	"github.com/yousysadmin/pacer/internal/domain/pool"
 	"github.com/yousysadmin/pacer/internal/models/audit"
 	"github.com/yousysadmin/pacer/internal/models/job"
@@ -318,6 +320,9 @@ func (h *Handler) markRunning(ctx context.Context, c *fiber.Ctx, p *workflowJobP
 		return response.NoContent(c)
 	}
 	if err := h.Runtime.Store.Job.MarkRunning(ctx, j.ID, j.InstanceID, time.Now().UTC()); err != nil {
+		if errors.Is(err, jobstore.ErrStatusConflict) {
+			return response.NoContent(c)
+		}
 		return response.Internal(c, err)
 	}
 	return response.NoContent(c)
@@ -339,19 +344,22 @@ func (h *Handler) markCompleted(ctx context.Context, c *fiber.Ctx, p *workflowJo
 		slog.Warn("webhook.completed: payload refresh failed", "job_id", j.ID, "err", err)
 	}
 	now := time.Now().UTC()
+	var markErr error
 	switch p.WorkflowJob.Conclusion {
 	case "cancelled":
-		if err := h.Runtime.Store.Job.MarkCancelled(ctx, j.ID, "github", "conclusion=cancelled", now); err != nil {
-			return response.Internal(c, err)
-		}
+		markErr = h.Runtime.Store.Job.MarkCancelled(ctx, j.ID, "github", "conclusion=cancelled", now)
 	case "failure", "timed_out":
-		if err := h.Runtime.Store.Job.MarkFailed(ctx, j.ID, "github", "conclusion="+p.WorkflowJob.Conclusion, now); err != nil {
-			return response.Internal(c, err)
-		}
+		markErr = h.Runtime.Store.Job.MarkFailed(ctx, j.ID, "github", "conclusion="+p.WorkflowJob.Conclusion, now)
 	default:
-		if err := h.Runtime.Store.Job.MarkCompleted(ctx, j.ID, now); err != nil {
-			return response.Internal(c, err)
+		markErr = h.Runtime.Store.Job.MarkCompleted(ctx, j.ID, now)
+	}
+	if markErr != nil {
+		// A redelivery after the reaper or orchestrator finalized the
+		// row must not rewrite status or cost. Ack so GitHub stops.
+		if errors.Is(markErr, jobstore.ErrStatusConflict) {
+			return response.NoContent(c)
 		}
+		return response.Internal(c, markErr)
 	}
 	_ = h.Runtime.Store.Audit.Put(ctx, &audit.Entry{
 		ID:         uuid.NewString(),

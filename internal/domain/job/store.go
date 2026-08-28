@@ -31,6 +31,41 @@ var errNotImpl = errors.New("job.Store: not implemented yet")
 // roll-back signal: the orchestrator unwinds an in-flight spawn.
 var ErrJobMissing = errors.New("job: row missing")
 
+// ErrStatusConflict is returned by the Mark* transitions when the row
+// exists but its current status does not allow the transition. The
+// check lives in the UPDATE's WHERE clause so two concurrent callers
+// cannot both win a read-then-write race.
+var ErrStatusConflict = errors.New("job: status does not allow transition")
+
+// terminalStatuses is the SQL list of states no webhook or runner
+// callback may overwrite. A late redelivery after the reaper or the
+// orchestrator finalized the row must be a no-op.
+const terminalStatuses = `('completed','failed','cancelled','reaped')`
+
+// execTransition runs an UPDATE that carries its own status predicate
+// and maps "0 rows" to ErrJobMissing or ErrStatusConflict.
+func (s *Store) execTransition(ctx context.Context, id, query string, args ...any) error {
+	res, err := s.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	var exists int
+	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM jobs WHERE id = ?`, id).Scan(&exists); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrJobMissing
+		}
+		return err
+	}
+	return ErrStatusConflict
+}
+
 // ErrBootstrapUnavailable is returned by ConsumeBootstrap when no
 // valid job row matches the requested instance_id (missing,
 // already-consumed, stale, or no longer in claimed state). Handler
@@ -206,11 +241,14 @@ func (s *Store) ConsumeBootstrap(ctx context.Context, instanceID string, ttl tim
 	return btok.String, id, nil
 }
 
+// MarkRunning moves a pre-run job to running. Only queued, claimed
+// and starting rows qualify, so a late in_progress webhook or a
+// second Register call cannot resurrect or double-start a job.
 func (s *Store) MarkRunning(ctx context.Context, id, instanceID string, now time.Time) error {
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE jobs SET status = 'running', instance_id = COALESCE(?, instance_id), started_at = ? WHERE id = ?`,
+	return s.execTransition(ctx, id,
+		`UPDATE jobs SET status = 'running', instance_id = COALESCE(?, instance_id), started_at = ?
+		 WHERE id = ? AND status IN ('queued','claimed','starting')`,
 		dbutil.NullStr(instanceID), now, id)
-	return err
 }
 
 // UpdatePayload overwrites jobs.payload with the latest workflow_job
@@ -261,23 +299,25 @@ const costSubquery = `(
     WHERE i.id = jobs.instance_id
 )`
 
+// MarkCompleted finalizes a job as completed. Rows already in a
+// terminal state are left untouched and ErrStatusConflict is returned.
 func (s *Store) MarkCompleted(ctx context.Context, id string, now time.Time) error {
-	_, err := s.db.ExecContext(ctx,
+	return s.execTransition(ctx, id,
 		`UPDATE jobs SET status = 'completed', completed_at = ?,
 		    estimated_cost_usd = `+costSubquery+`
-		 WHERE id = ?`,
+		 WHERE id = ? AND status NOT IN `+terminalStatuses,
 		now, now, id)
-	return err
 }
 
+// MarkFailed finalizes a job as failed with a stage and message.
+// Same terminal-state guard as MarkCompleted.
 func (s *Store) MarkFailed(ctx context.Context, id, stage, message string, now time.Time) error {
-	_, err := s.db.ExecContext(ctx,
+	return s.execTransition(ctx, id,
 		`UPDATE jobs SET status = 'failed', failure_stage = ?, failure_message = ?,
 		    completed_at = ?,
 		    estimated_cost_usd = `+costSubquery+`
-		 WHERE id = ?`,
+		 WHERE id = ? AND status NOT IN `+terminalStatuses,
 		stage, message, now, now, id)
-	return err
 }
 
 // MarkCancelled is the user-initiated-cancellation variant: GitHub
@@ -287,13 +327,12 @@ func (s *Store) MarkFailed(ctx context.Context, id, stage, message string, now t
 // status lets the UI distinguish "the job blew up" from "the user
 // cancelled it" without parsing failure_message.
 func (s *Store) MarkCancelled(ctx context.Context, id, stage, message string, now time.Time) error {
-	_, err := s.db.ExecContext(ctx,
+	return s.execTransition(ctx, id,
 		`UPDATE jobs SET status = 'cancelled', failure_stage = ?, failure_message = ?,
 		    completed_at = ?,
 		    estimated_cost_usd = `+costSubquery+`
-		 WHERE id = ?`,
+		 WHERE id = ? AND status NOT IN `+terminalStatuses,
 		stage, message, now, now, id)
-	return err
 }
 
 // MarkFailedWithLog is the runner-bootstrap-error variant: the
@@ -302,13 +341,12 @@ func (s *Store) MarkCancelled(ctx context.Context, id, stage, message string, no
 // see what blew up before the runner ever connected.
 // Same lifecycle as MarkFailed otherwise.
 func (s *Store) MarkFailedWithLog(ctx context.Context, id, stage, message, log string, now time.Time) error {
-	_, err := s.db.ExecContext(ctx,
+	return s.execTransition(ctx, id,
 		`UPDATE jobs SET status = 'failed', failure_stage = ?, failure_message = ?,
 		    failure_log = ?, completed_at = ?,
 		    estimated_cost_usd = `+costSubquery+`
-		 WHERE id = ?`,
+		 WHERE id = ? AND status NOT IN `+terminalStatuses,
 		stage, message, log, now, now, id)
-	return err
 }
 
 func (s *Store) MarkReaped(ctx context.Context, id string, now time.Time) error {

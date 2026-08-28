@@ -49,8 +49,10 @@ func (h *Handler) OIDCCallback(c *fiber.Ctx) error {
 	}
 
 	if errParam := c.Query("error"); errParam != "" {
-		desc := c.Query("error_description")
-		h.auditOIDCFailed(c, "", fmt.Sprintf("idp returned error: %s (%s)", errParam, desc))
+		// Both values are caller-controlled and reach the audit table.
+		// Cap them so an unauthenticated client cannot bloat rows.
+		desc := truncate(c.Query("error_description"), idpErrorMaxLen)
+		h.auditOIDCFailed(c, "", fmt.Sprintf("idp returned error: %s (%s)", truncate(errParam, idpErrorMaxLen), desc))
 		c.Cookie(buildOIDCStateCookie(h.Runtime, "", -time.Hour))
 		return redirectLogin(c, "sso_idp_error")
 	}
@@ -137,7 +139,11 @@ func (h *Handler) findOrCreateOIDCUser(c *fiber.Ctx, claims *pacoidc.Claims) (*u
 		return u, nil
 	}
 
-	if email != "" {
+	// Linking an IdP identity to an existing local account by email is
+	// only safe when the IdP vouches for that email. Without the flag
+	// a user who controls their own email claim could take over a
+	// local admin account.
+	if email != "" && bool(claims.EmailVerified) {
 		existing, err := h.Runtime.Store.User.Get(c.UserContext(), email)
 		if err != nil {
 			return nil, err
@@ -255,4 +261,14 @@ func buildOIDCStateCookie(rt *env.Runtime, value string, ttl time.Duration) *fib
 		Secure:   cookieSecure(rt),
 		Expires:  time.Now().Add(ttl),
 	}
+}
+
+// idpErrorMaxLen caps IdP-supplied error text stored in the audit log.
+const idpErrorMaxLen = 200
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
