@@ -5,9 +5,9 @@
 // Package logger builds the process-wide slog handler.
 // Levels: debug/info/warn/error.
 // Format: text (with optional ANSI color) or json.
-// Sink: stdout or an absolute file path.
+// Sink: stdout, stderr, or an absolute file path.
 // InitLogger is called once from cli/serve.go and installs the handler as the
-// slog default; everything else just calls slog.Info / slog.Error /etc.
+// slog default. Everything else just calls slog.Info / slog.Error.
 package logger
 
 import (
@@ -50,20 +50,32 @@ func InitLogger(levelStr, outputDest, format string, color bool) (*slog.Logger, 
 		level = slog.LevelWarn
 	case "ERROR":
 		level = slog.LevelError
-	default:
+	case "":
 		level = slog.LevelInfo
+	default:
+		return nil, fmt.Errorf("invalid log level: %s", levelStr)
+	}
+
+	// Reject a bad format before touching the filesystem so an error
+	// path never leaves a log file open.
+	format = strings.ToLower(format)
+	if format != "json" && format != "text" {
+		return nil, fmt.Errorf("invalid log format: %s", format)
 	}
 
 	// Determine output destination
 	var output *os.File
-	if !strings.EqualFold(strings.ToLower(outputDest), "stdout") && outputDest != "" {
+	switch {
+	case outputDest == "" || strings.EqualFold(outputDest, "stdout"):
+		output = os.Stdout
+	case strings.EqualFold(outputDest, "stderr"):
+		output = os.Stderr
+	default:
 		var err error
 		output, err = os.OpenFile(outputDest, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 		if err != nil {
 			return nil, err
 		}
-	} else {
-		output = os.Stdout
 	}
 
 	opts := &slog.HandlerOptions{
@@ -72,10 +84,10 @@ func InitLogger(levelStr, outputDest, format string, color bool) (*slog.Logger, 
 
 	var handler slog.Handler
 
-	switch strings.ToLower(format) {
+	switch format {
 	case "json":
 		handler = slog.NewJSONHandler(output, opts)
-	case "text":
+	default:
 		if color {
 			handler = &ColorHandler{
 				output: output,
@@ -84,8 +96,6 @@ func InitLogger(levelStr, outputDest, format string, color bool) (*slog.Logger, 
 		} else {
 			handler = slog.NewTextHandler(output, opts)
 		}
-	default:
-		return nil, fmt.Errorf("invalid log format: %s", format)
 	}
 
 	logger := slog.New(handler)

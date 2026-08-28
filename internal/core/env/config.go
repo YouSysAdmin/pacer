@@ -193,6 +193,11 @@ func Load(path string) (*Config, error) {
 // Validate checks required fields. Defaults handle the rest. When
 // github.disabled is true every github.* field becomes optional.
 func (c *Config) Validate() error {
+	// The orchestrator and reaper need a live EC2 client. Running them
+	// without one would nil-deref on the first claimed job.
+	if c.AWS.Disabled && !c.GitHub.Disabled {
+		return fmt.Errorf("aws.disabled requires github.disabled: true (orchestrator cannot spawn without EC2)")
+	}
 	if !c.GitHub.Disabled {
 		if c.GitHub.AppID == 0 {
 			return fmt.Errorf("github.app_id required (set github.disabled: true to skip GitHub integration for local UI dev)")
@@ -206,9 +211,27 @@ func (c *Config) Validate() error {
 		if c.GitHub.CallbackHMACSecret == "" {
 			return fmt.Errorf("github.callback_hmac_secret required (signs runner self-registration tokens)")
 		}
-		if c.Server.PublicURL == "" {
-			return fmt.Errorf("server.public_url required (spawned instances POST callbacks here)")
+	}
+	// public_url is baked into every LT user-data and drives the
+	// Secure cookie flag, so when set it must be a real http(s) URL.
+	if !c.GitHub.Disabled && c.Server.PublicURL == "" {
+		return fmt.Errorf("server.public_url required (spawned instances POST callbacks here)")
+	}
+	if c.Server.PublicURL != "" {
+		if err := validateHTTPSURL("server.public_url", c.Server.PublicURL); err != nil {
+			return err
 		}
+		c.Server.PublicURL = strings.TrimRight(c.Server.PublicURL, "/")
+	}
+	switch strings.ToLower(c.Logging.Level) {
+	case "", "debug", "info", "warn", "error":
+	default:
+		return fmt.Errorf("logging.level %q invalid: want debug, info, warn, or error", c.Logging.Level)
+	}
+	switch strings.ToLower(c.Logging.Format) {
+	case "", "json", "text":
+	default:
+		return fmt.Errorf("logging.format %q invalid: want json or text", c.Logging.Format)
 	}
 	if c.Database.Path == "" {
 		return fmt.Errorf("database.path required")

@@ -1,7 +1,7 @@
 .PHONY: all build build-linux-amd64 build-docker frontend run dev test test-go test-frontend lint release clean help
 
 VERSION       := $(shell git describe --tags --always --dirty 2>/dev/null || echo devel)
-LDFLAGS       := -ldflags "-X pacer/pkg.Version=$(VERSION)"
+LDFLAGS       := -ldflags "-X github.com/yousysadmin/pacer/pkg.Version=$(VERSION)"
 BIN           := bin/pacer
 BIN_LINUX_X64 := bin/pacer-linux-amd64
 DEV_CONFIG    := examples/dev.yaml

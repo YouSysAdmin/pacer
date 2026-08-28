@@ -5,7 +5,7 @@
 // Package pkg owns build-time identity (binary name + version string).
 // Version is a var so the build can override it via:
 //
-//	-ldflags "-X pacer/pkg.Version=$(git describe --tags --always --dirty)"
+//	-ldflags "-X github.com/yousysadmin/pacer/pkg.Version=$(git describe --tags --always --dirty)"
 package pkg
 
 const AppName = "pacer"

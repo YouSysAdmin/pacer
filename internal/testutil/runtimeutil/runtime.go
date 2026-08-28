@@ -13,6 +13,7 @@ package runtimeutil
 
 import (
 	"database/sql"
+	"path/filepath"
 	"testing"
 
 	"github.com/yousysadmin/pacer/internal/core/env"
@@ -36,10 +37,13 @@ import (
 // Tests that need a Webhook store wire it themselves after calling
 // NewRuntime (see pruner_test.go).
 
-type dbWrapper struct{ db *sql.DB }
+type dbWrapper struct {
+	db   *sql.DB
+	path string
+}
 
 func (w *dbWrapper) Close() error   { return w.db.Close() }
-func (w *dbWrapper) Path() string   { return ":memory:" }
+func (w *dbWrapper) Path() string   { return w.path }
 func (w *dbWrapper) Engine() string { return "sqlite" }
 func (w *dbWrapper) DB() *sql.DB    { return w.db }
 
@@ -50,10 +54,11 @@ func (w *dbWrapper) DB() *sql.DB    { return w.db }
 // construct fakes themselves.
 func NewRuntime(t *testing.T, cfg *env.Config) *env.Runtime {
 	t.Helper()
-	db := testutil.OpenTestDB(t)
+	path := filepath.Join(t.TempDir(), "test.db")
+	db := testutil.OpenTestDBAt(t, path)
 	return &env.Runtime{
 		Config: cfg,
-		DB:     database.Database(&dbWrapper{db: db}),
+		DB:     database.Database(&dbWrapper{db: db, path: path}),
 		Store: &store.Store{
 			User:     user.NewStore(db),
 			Project:  project.NewStore(db),

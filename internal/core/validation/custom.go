@@ -20,7 +20,7 @@ func registerCustom(v *validator.Validate) {
 	// reserved: the orchestrator stamps gha:* last, and an
 	// operator-supplied tag with the same prefix would shadow it.
 	_ = v.RegisterValidation("gha_safe", func(fl validator.FieldLevel) bool {
-		s := fl.Field().String()
+		s := strings.TrimSpace(fl.Field().String())
 		return !strings.HasPrefix(strings.ToLower(s), "gha:")
 	})
 
@@ -80,8 +80,12 @@ func registerCustom(v *validator.Validate) {
 	// The repo Bind handler splits on '/' downstream; we want the
 	// shape error here so the SPA can highlight the field.
 	_ = v.RegisterValidation("repo_full_name", func(fl validator.FieldLevel) bool {
-		parts := strings.SplitN(fl.Field().String(), "/", 2)
-		return len(parts) == 2 && parts[0] != "" && parts[1] != ""
+		s := fl.Field().String()
+		if strings.Count(s, "/") != 1 || strings.ContainsAny(s, " \t") {
+			return false
+		}
+		owner, name, _ := strings.Cut(s, "/")
+		return owner != "" && name != ""
 	})
 
 	// not_self_hosted rejects strings that sanitize to "self-hosted".

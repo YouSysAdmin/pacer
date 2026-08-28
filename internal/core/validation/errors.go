@@ -5,6 +5,7 @@
 package validation
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -29,7 +30,7 @@ type FieldError struct {
 func Humanize(err error) []FieldError {
 	var ve validator.ValidationErrors
 	if !errors.As(err, &ve) {
-		return []FieldError{{Message: err.Error()}}
+		return []FieldError{decodeError(err)}
 	}
 	out := make([]FieldError, 0, len(ve))
 	for _, fe := range ve {
@@ -41,6 +42,24 @@ func Humanize(err error) []FieldError {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Field < out[j].Field })
 	return out
+}
+
+// decodeError maps a JSON decode failure to a stable client-facing
+// message. Go type and struct names from encoding/json stay server-side.
+func decodeError(err error) FieldError {
+	var ute *json.UnmarshalTypeError
+	if errors.As(err, &ute) {
+		field := ute.Field
+		if i := strings.LastIndex(field, "."); i >= 0 {
+			field = field[i+1:]
+		}
+		return FieldError{Field: field, Rule: "type", Message: friendlyField(field) + " has the wrong type"}
+	}
+	var se *json.SyntaxError
+	if errors.As(err, &se) {
+		return FieldError{Rule: "syntax", Message: "request body is not valid JSON"}
+	}
+	return FieldError{Message: err.Error()}
 }
 
 // Summary collapses []FieldError into one human line, suitable for

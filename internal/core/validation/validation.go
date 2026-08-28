@@ -82,15 +82,12 @@ func Init() *validator.Validate {
 	return v
 }
 
-// V returns the singleton *validator.Validate, initializing it if
-// the production startup path didn't (e.g. unit tests that exercise
-// a handler without booting cli.serve). sync.Once makes the lazy
-// init safe under concurrent access.
+// V returns the singleton *validator.Validate, initializing it on
+// first use when the production startup path did not (unit tests that
+// exercise a handler without booting cli.serve). The read goes through
+// Init so no caller observes v outside the sync.Once.
 func V() *validator.Validate {
-	if v == nil {
-		Init()
-	}
-	return v
+	return Init()
 }
 
 // Normalizer lets DTOs run custom normalization (cross-field
