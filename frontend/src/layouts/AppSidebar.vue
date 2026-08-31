@@ -7,6 +7,7 @@ import { NAVIGATION } from './navigation'
 import { getIcon } from './icons'
 import BrandMark from '@/components/BrandMark.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
+import ScopeSwitcher from './ScopeSwitcher.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -29,6 +30,8 @@ async function logout() {
       <BrandMark :size="20" />
       <span class="brand-name">Pacer</span>
     </RouterLink>
+
+    <ScopeSwitcher />
 
     <nav v-for="g in NAVIGATION" :key="g.label" class="nav-group" :aria-label="g.label">
       <div class="nav-group-label">{{ g.label }}</div>

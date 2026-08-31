@@ -5,9 +5,10 @@
 
 // Cost/usage rollups over a picked window, grouped by project, pool,
 // or repo, plus the top-users panel.
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { stats } from '@/api'
 import { useNotificationStore } from '@/stores/notification'
+import { useScopeStore } from '@/stores/scope'
 import PageHeader from '@/components/PageHeader.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import FormField from '@/components/FormField.vue'
@@ -40,6 +41,7 @@ interface TopUser {
 }
 
 const notify = useNotificationStore()
+const scope = useScopeStore()
 
 // Default window: last 30 days, UTC midnight to UTC midnight.
 function todayUTC(): Date {
@@ -81,8 +83,18 @@ async function refresh() {
     // Both calls share the same window. Fired in parallel so the
     // top-users panel doesn't add a serial round-trip to the page.
     const [rollup, users] = await Promise.all([
-      stats.rollup({ from: from.value, to: toExclusive, groupBy: groupBy.value }),
-      stats.topUsers({ from: from.value, to: toExclusive, limit: 10 }),
+      stats.rollup({
+        from: from.value,
+        to: toExclusive,
+        groupBy: groupBy.value,
+        projectID: scope.projectParam,
+      }),
+      stats.topUsers({
+        from: from.value,
+        to: toExclusive,
+        limit: 10,
+        projectID: scope.projectParam,
+      }),
     ])
     data.value = rollup as Rollup
     topUsers.value = users as { users?: TopUser[] }
@@ -112,6 +124,10 @@ function setRange(days: number) {
   from.value = isoDate(new Date(todayUTC().getTime() - days * 86400_000))
   refresh()
 }
+
+// The scope narrows the totals too, so the whole page reloads rather
+// than filtering the buckets it already has.
+watch(() => scope.currentId, refresh)
 
 onMounted(refresh)
 </script>

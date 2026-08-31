@@ -6,9 +6,10 @@
 // The dashboard: live count tiles (5 s), month-to-date spend + daily
 // chart (60 s). Two cadences because /api/stats is daily-grain -- it
 // doesn't change between 5 s ticks.
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { projects, repos, jobs, stats } from '@/api'
 import { useNotificationStore } from '@/stores/notification'
+import { useScopeStore } from '@/stores/scope'
 import PageHeader from '@/components/PageHeader.vue'
 import StatCard from '@/components/StatCard.vue'
 import BarChart, { type DayPoint } from './BarChart.vue'
@@ -24,6 +25,7 @@ interface Bucket {
 }
 
 const notify = useNotificationStore()
+const scope = useScopeStore()
 
 const counts = ref({ projects: 0, repos: 0, queued: 0, running: 0, completed: 0, failed: 0 })
 const liveLoading = ref(true)
@@ -66,16 +68,21 @@ async function refreshLive() {
     const [ps, rs, js] = await Promise.all([
       projects.list(),
       repos.list(),
-      jobs.list({ limit: 200 }),
+      jobs.list({ limit: 200, projectID: scope.projectParam }),
     ])
     // jobs.list returns the envelope {entries, total, ...}. The
     // overview chips count by status within the most-recent window
     // only.
     const entries = ((js as { entries?: JobEntry[] })?.entries || []) as JobEntry[]
     const byStatus = (s: string) => entries.filter((j) => j.status === s).length
+    // Repos has no pagination and every row carries project_id, so
+    // the scope is applied here rather than asking the server.
+    const repoRows = ((rs as Array<{ project_id: string }>) || []).filter(
+      (r) => !scope.currentId || r.project_id === scope.currentId,
+    )
     counts.value = {
       projects: ((ps as unknown[]) || []).length,
-      repos: ((rs as unknown[]) || []).length,
+      repos: repoRows.length,
       queued: byStatus('queued') + byStatus('claimed') + byStatus('starting'),
       running: byStatus('running'),
       completed: byStatus('completed'),
@@ -96,9 +103,9 @@ async function refreshRollup() {
   const monthFrom = firstOfMonthUTC()
   try {
     const [byProj, byRepo, ts] = await Promise.all([
-      stats.rollup({ from: monthFrom, groupBy: 'project' }),
-      stats.rollup({ from: monthFrom, groupBy: 'repo' }),
-      stats.timeseries({ from: monthFrom }),
+      stats.rollup({ from: monthFrom, groupBy: 'project', projectID: scope.projectParam }),
+      stats.rollup({ from: monthFrom, groupBy: 'repo', projectID: scope.projectParam }),
+      stats.timeseries({ from: monthFrom, projectID: scope.projectParam }),
     ])
     const proj = byProj as {
       totals?: { est_cost_usd?: number; jobs_without_cost?: number }
@@ -128,6 +135,11 @@ function refreshAll() {
 let liveTimer: ReturnType<typeof setInterval> | undefined
 let rollupTimer: ReturnType<typeof setInterval> | undefined
 
+// Both cadences re-read the scope on their next tick anyway; this
+// refreshes immediately so the page does not sit on the old project's
+// numbers for up to a minute.
+watch(() => scope.currentId, refreshAll)
+
 onMounted(() => {
   refreshAll()
   liveTimer = setInterval(refreshLive, 5000)
@@ -150,7 +162,15 @@ onUnmounted(() => {
   <div class="overview-grid">
     <section class="overview-main">
       <div class="stats-grid">
-        <StatCard label="Projects" icon="total" :value="String(counts.projects)" />
+        <!-- Projects stays a global count even under a scope: it is
+             how many there are to switch between, not a property of
+             the one selected. The sub-line says so. -->
+        <StatCard
+          label="Projects"
+          icon="total"
+          :value="String(counts.projects)"
+          :sub="scope.currentId ? 'across the installation' : ''"
+        />
         <StatCard label="Bound repos" icon="instances" :value="String(counts.repos)" />
         <StatCard label="Queued / starting" icon="queued" :value="String(counts.queued)" />
         <StatCard label="Running" icon="running" :value="String(counts.running)" />

@@ -139,6 +139,15 @@ const derived = computed(() => {
   }
 })
 
+// The market, and how its price was quoted. The two usually agree, so
+// naming the model as well would read as "spot (spot)"; it is only
+// worth saying when the pricing lookup fell back to something else.
+function marketLabel(i: Instance): string {
+  const market = i.spot ? 'spot' : 'on-demand'
+  if (!i.price_model || i.price_model === market) return market
+  return `${market} (priced ${i.price_model})`
+}
+
 function shortSHA(sha: string): string {
   return sha ? sha.slice(0, 7) : ''
 }
@@ -350,10 +359,7 @@ function fmtAuditDetail(s?: string): string {
           <dt>AZ</dt>
           <dd class="code-font">{{ detail.instance.az || '-' }}</dd>
           <dt>Market</dt>
-          <dd class="code-font">
-            {{ detail.instance.spot ? 'spot' : 'on-demand'
-            }}{{ detail.instance.price_model ? ` (${detail.instance.price_model})` : '' }}
-          </dd>
+          <dd class="code-font">{{ marketLabel(detail.instance) }}</dd>
           <dt>Price/hour</dt>
           <dd class="code-font">
             {{

@@ -72,8 +72,12 @@ function dayLabel(s: string): string {
   padding-top: 8px;
 }
 
+/* Grows to share the row, but capped: a month with one day of data
+   would otherwise render that single day as a block the full width of
+   the card, which reads as a filled area rather than as one bar. */
 .bar-col {
-  flex: 1;
+  flex: 1 1 0;
+  max-width: 44px;
   min-width: 0;
   display: flex;
   flex-direction: column;

@@ -151,6 +151,42 @@ describe('query-string builders', () => {
   })
 })
 
+// The scope selector is only useful if EVERY scoped call carries it.
+// These pin the wiring per endpoint, since a namespace that silently
+// drops project_id looks identical to one that has no rows.
+describe('project scope parameter', () => {
+  it('jobs.list() sends project_id and omits it when unscoped', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { entries: [], total: 0 }))
+    await jobs.list({ projectID: 'p1', status: 'running' })
+    expect(fetchMock.mock.calls[0][0]).toContain('project_id=p1')
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { entries: [], total: 0 }))
+    await jobs.list({ status: 'running' })
+    expect(fetchMock.mock.calls[1][0]).not.toContain('project_id')
+  })
+
+  it('all three stats calls send project_id', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, {}))
+    await stats.rollup({ projectID: 'p1', groupBy: 'repo' })
+    await stats.timeseries({ projectID: 'p1' })
+    await stats.topUsers({ projectID: 'p1', limit: 5 })
+
+    const urls = fetchMock.mock.calls.map((c) => c[0] as string)
+    expect(urls[0]).toContain('project_id=p1')
+    expect(urls[0]).toContain('group_by=repo')
+    expect(urls[1]).toMatch(/^\/api\/stats\/timeseries\?/)
+    expect(urls[1]).toContain('project_id=p1')
+    expect(urls[2]).toContain('project_id=p1')
+    expect(urls[2]).toContain('limit=5')
+  })
+
+  it('stats calls omit project_id when unscoped', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, {}))
+    await stats.timeseries({ from: '2026-01-01' })
+    expect(fetchMock.mock.calls[0][0]).not.toContain('project_id')
+  })
+})
+
 describe('request bodies + methods', () => {
   it('projects.create sends POST with JSON body + Content-Type header', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(201, { id: 'p1' }))

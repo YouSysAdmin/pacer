@@ -8,6 +8,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { repos, projects } from '@/api'
 import { useNotificationStore } from '@/stores/notification'
+import { useScopeStore } from '@/stores/scope'
 import { useConfirm } from '@/composables/useConfirm'
 import { useFieldErrors } from '@/composables/fieldErrors'
 import { isRepoFullName, isReservedTagKey } from '@/lib/validators'
@@ -42,6 +43,7 @@ interface RepoForm {
 }
 
 const notify = useNotificationStore()
+const scope = useScopeStore()
 const { confirm } = useConfirm()
 const { errors: serverErrors, capture, clear: clearServerError } = useFieldErrors()
 
@@ -63,6 +65,13 @@ const form = ref<RepoForm>(emptyForm())
 // operators can't pick one and hit a 400 on submit.
 const bindableProjects = computed(() =>
   projectList.value.filter((p) => (p.scope || 'repo') !== 'org'),
+)
+
+// The rows the scope selector leaves visible. Client-side because the
+// list is unpaginated and every row carries project_id -- there is no
+// total to keep consistent with the server.
+const visible = computed(() =>
+  scope.currentId ? list.value.filter((r) => r.project_id === scope.currentId) : list.value,
 )
 
 async function refresh() {
@@ -239,6 +248,15 @@ onMounted(refresh)
     </template>
   </EmptyState>
 
+  <!-- Bindings exist, just none in the selected project. Says which
+       project rather than reading as "you have no repos at all". -->
+  <EmptyState v-else-if="visible.length === 0" title="No bindings in this project">
+    <p>
+      Nothing bound to <strong>{{ scope.label }}</strong
+      >. Switch the project filter in the sidebar to see the rest.
+    </p>
+  </EmptyState>
+
   <div v-else class="card">
     <div class="table-wrapper">
       <table>
@@ -252,7 +270,7 @@ onMounted(refresh)
           </tr>
         </thead>
         <tbody>
-          <tr v-for="r in list" :key="r.full_name">
+          <tr v-for="r in visible" :key="r.full_name">
             <td class="code-font">{{ r.full_name }}</td>
             <td>{{ projectName(r.project_id) }}</td>
             <td>{{ r.max_concurrent_runners ?? '-' }}</td>

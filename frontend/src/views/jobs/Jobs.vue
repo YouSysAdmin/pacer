@@ -9,6 +9,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { jobs, systemHealth } from '@/api'
 import { useNotificationStore } from '@/stores/notification'
+import { useScopeStore } from '@/stores/scope'
 import { formatDate } from '@/composables/formatDate'
 import type { Pageable } from '@/composables/usePagination'
 import { age, cost } from './jobFormat'
@@ -45,6 +46,7 @@ interface JobRow {
 }
 
 const notify = useNotificationStore()
+const scope = useScopeStore()
 
 const list = ref<JobRow[]>([])
 // Pagination envelope from GET /api/jobs. total drives the pager copy;
@@ -78,6 +80,7 @@ async function refresh() {
       status: filter.value || undefined,
       limit: limit.value,
       offset: offset.value,
+      projectID: scope.projectParam,
     })) as { entries?: JobRow[]; total?: number } | null
     if (myGen !== refreshGen) return // newer refresh in flight -- abandon
     list.value = r?.entries || []
@@ -154,11 +157,13 @@ onMounted(() => {
 
 onUnmounted(() => clearInterval(timer))
 
-// Re-fetch when filter or page size changes. Reset to page 1 so a
-// narrower filter doesn't leave the pager pointing past the new
-// (smaller) total. Explicit watch on the two inputs only -- offset
-// writes are owned by the pager.
-watch([filter, limit], () => {
+// Re-fetch when a filter, the page size, or the project scope
+// changes. Reset to page 1 each time: a narrower filter would
+// otherwise leave the pager pointing past the new (smaller) total.
+// Explicit watch on the inputs only -- offset writes are owned by
+// the pager, and watching refresh()'s own reads would make paging
+// re-trigger this and rewind itself.
+watch([filter, limit, () => scope.currentId], () => {
   offset.value = 0
   void refresh()
 })

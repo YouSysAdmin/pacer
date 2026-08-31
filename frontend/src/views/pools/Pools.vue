@@ -10,6 +10,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { pools as poolsAPI, projects as projectsAPI } from '@/api'
 import { useNotificationStore } from '@/stores/notification'
+import { useScopeStore } from '@/stores/scope'
 import { useConfirm } from '@/composables/useConfirm'
 import { emptyForm, formFrom, runsOnFor, type Pool, type PoolForm } from './poolForm'
 import PageHeader from '@/components/PageHeader.vue'
@@ -24,12 +25,12 @@ interface Project {
 
 const route = useRoute()
 const notify = useNotificationStore()
+const scope = useScopeStore()
 const { confirm } = useConfirm()
 
 const list = ref<Pool[]>([])
 const projectList = ref<Project[]>([])
 const loading = ref(true)
-const projectFilter = ref('')
 
 // Modal state: a seeded draft plus what the save should do with it.
 const formOpen = ref(false)
@@ -56,7 +57,7 @@ function projectName(id: string): string {
 }
 
 const visible = computed(() =>
-  projectFilter.value ? list.value.filter((p) => p.project_id === projectFilter.value) : list.value,
+  scope.currentId ? list.value.filter((p) => p.project_id === scope.currentId) : list.value,
 )
 
 function openCreate() {
@@ -64,7 +65,9 @@ function openCreate() {
   editing.value = null
   copyingFrom.value = ''
   const f = emptyForm()
-  f.project_id = projectFilter.value || projectList.value[0].id
+  // Pre-select the scoped project, so creating a pool while filtered
+  // does not silently land it somewhere else.
+  f.project_id = scope.currentId || projectList.value[0].id
   formInitial.value = f
   formOpen.value = true
 }
@@ -123,19 +126,21 @@ async function remove(p: Pool) {
 }
 
 onMounted(() => {
-  // ?project=<id> from a /projects link scopes the list.
+  // ?project=<id> from a /projects link sets the console-wide scope
+  // rather than a filter local to this page: the operator followed a
+  // link about one project, and the rail should agree with the table
+  // they land on.
   const q = route.query.project
-  if (typeof q === 'string' && q) projectFilter.value = q
+  if (typeof q === 'string' && q) scope.set(q)
   void refresh()
 })
 </script>
 
 <template>
+  <!-- No project picker here: the rail's scope selector owns that
+       choice for every page, and a second control would let the two
+       disagree about what the table is showing. -->
   <PageHeader title="Pools">
-    <select v-model="projectFilter" class="form-select w-filter">
-      <option value="">all projects</option>
-      <option v-for="p in projectList" :key="p.id" :value="p.id">{{ p.name }}</option>
-    </select>
     <button class="btn btn-primary" :disabled="projectList.length === 0" @click="openCreate">
       + New pool
     </button>
@@ -165,13 +170,13 @@ onMounted(() => {
     </template>
   </EmptyState>
 
-  <EmptyState v-else-if="visible.length === 0" title="No pools match this project">
+  <EmptyState v-else-if="visible.length === 0" title="No pools in this project">
     <p>
-      Nothing in <strong>{{ projectName(projectFilter) }}</strong
-      >. Clear the filter to see every pool.
+      Nothing in <strong>{{ scope.label }}</strong
+      >. Clear the project filter to see every pool.
     </p>
     <p class="mt-2 flex gap-2 justify-center">
-      <button class="btn btn-secondary" @click="projectFilter = ''">Clear filter</button>
+      <button class="btn btn-secondary" @click="scope.set(null)">Show all projects</button>
       <button class="btn btn-primary" @click="openCreate">+ New pool</button>
     </p>
   </EmptyState>

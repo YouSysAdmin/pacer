@@ -45,17 +45,21 @@ export interface JobsListParams {
   status?: string
   limit?: number
   offset?: number
+  // The console's scope selector. Filtered server-side, and Count
+  // shares the same WHERE, so the pager total matches the page.
+  projectID?: string
 }
 
 export const jobs = {
   // Returns the envelope {entries, total, limit, offset}. The Jobs
   // page paginates against `total`. Older callers that just want a
   // bare array can read `.entries` from the result.
-  list: ({ status, limit = 50, offset = 0 }: JobsListParams = {}) => {
+  list: ({ status, limit = 50, offset = 0, projectID }: JobsListParams = {}) => {
     const qs = new URLSearchParams()
     if (status) qs.set('status', status)
     if (limit) qs.set('limit', String(limit))
     if (offset) qs.set('offset', String(offset))
+    if (projectID) qs.set('project_id', projectID)
     const q = qs.toString()
     return call(`/api/jobs${q ? '?' + q : ''}`)
   },
@@ -75,32 +79,39 @@ export const auth = {
 export interface StatsWindowParams {
   from?: string
   to?: string
+  // The console's scope selector. Narrows the TOTALS as well as the
+  // buckets, so a scoped page never shows a global number.
+  projectID?: string
+}
+
+// Every stats call shares from / to / project_id, so they are built
+// once. A per-call copy is how one of the three ends up ignoring the
+// scope.
+function statsWindow({ from, to, projectID }: StatsWindowParams): URLSearchParams {
+  const qs = new URLSearchParams()
+  if (from) qs.set('from', from)
+  if (to) qs.set('to', to)
+  if (projectID) qs.set('project_id', projectID)
+  return qs
 }
 
 export const stats = {
-  rollup: ({ from, to, groupBy }: StatsWindowParams & { groupBy?: string } = {}) => {
-    const qs = new URLSearchParams()
-    if (from) qs.set('from', from)
-    if (to) qs.set('to', to)
+  rollup: ({ groupBy, ...window }: StatsWindowParams & { groupBy?: string } = {}) => {
+    const qs = statsWindow(window)
     if (groupBy) qs.set('group_by', groupBy)
     const q = qs.toString()
     return call(`/api/stats${q ? '?' + q : ''}`)
   },
   // Daily success/failed counts for the Overview chart. Same window
   // semantics as rollup() - omit params for the last-30-days default.
-  timeseries: ({ from, to }: StatsWindowParams = {}) => {
-    const qs = new URLSearchParams()
-    if (from) qs.set('from', from)
-    if (to) qs.set('to', to)
-    const q = qs.toString()
+  timeseries: (window: StatsWindowParams = {}) => {
+    const q = statsWindow(window).toString()
     return call(`/api/stats/timeseries${q ? '?' + q : ''}`)
   },
   // Top-N senders by job count over a window. Powers the "who runs
   // the most CI" panel on the stats page.
-  topUsers: ({ from, to, limit }: StatsWindowParams & { limit?: number } = {}) => {
-    const qs = new URLSearchParams()
-    if (from) qs.set('from', from)
-    if (to) qs.set('to', to)
+  topUsers: ({ limit, ...window }: StatsWindowParams & { limit?: number } = {}) => {
+    const qs = statsWindow(window)
     if (limit != null) qs.set('limit', String(limit))
     const q = qs.toString()
     return call(`/api/stats/top-users${q ? '?' + q : ''}`)

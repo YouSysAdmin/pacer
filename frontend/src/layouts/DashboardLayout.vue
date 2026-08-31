@@ -5,6 +5,7 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { systemHealth } from '@/api'
 import { useAuthStore } from '@/stores/auth'
+import { useScopeStore } from '@/stores/scope'
 import AppSidebar from './AppSidebar.vue'
 
 interface HealthIssue {
@@ -13,6 +14,7 @@ interface HealthIssue {
 }
 
 const authStore = useAuthStore()
+const scopeStore = useScopeStore()
 
 // Background-worker issues from GET /api/health. Polled every 30s so
 // a failure (missing IAM perm, panicked reaper) becomes visible
@@ -34,6 +36,10 @@ async function pollHealth() {
 
 onMounted(() => {
   void authStore.loadMe()
+  // The project list feeds the scope switcher's labels; the scope
+  // itself is already restored from storage, so pages can filter
+  // before this resolves.
+  void scopeStore.load()
   void pollHealth()
   healthTimer = setInterval(pollHealth, 30000)
 })
