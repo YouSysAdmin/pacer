@@ -4,7 +4,7 @@ description: "A page-by-page walk through the Pacer operator console: what each 
 weight: 20
 ---
 
-The Pacer console is a Svelte SPA served by the same Go binary that runs the orchestrator. Two top-level groups in the sidebar:
+The Pacer console is a Vue 3 SPA served by the same Go binary that runs the orchestrator. Two top-level groups in the sidebar:
 
 - **Control** — read-only observation. `Overview`, `Jobs`, `Stats`, `Audit`.
 - **Config** — state-changing edits. `Projects`, `Repos`, `Pools`, `Backup`, `Settings`.

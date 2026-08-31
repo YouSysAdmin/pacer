@@ -15,7 +15,7 @@ Minimal AWS surface — only EC2, IAM, and the Pricing API. The agent owns its q
 - **On-demand or spot, per pool.** Cost-optimized (`lowest-price` / `price-capacity-optimized`) or priority-based allocation.
 - **Capacity-aware retries.** Transient EC2 capacity errors are backed off and retried; permanent errors fail fast.
 - **Best-effort cost stamping.** At-launch USD/hour quote via the AWS Pricing API, rolled up into per-job cost on completion.
-- **Built-in web UI** (Svelte SPA) for project / pool / repo / job CRUD.
+- **Built-in web UI** (Vue 3 SPA) for project / pool / repo / job CRUD.
 - **Optional console auth.** Local (email + password) or OIDC (Authorization Code + PKCE) with domain / email / group allowlists.
 - **TLS modes.** Plain HTTP, operator-supplied PEM, in-memory self-signed, or Let's Encrypt via ACME.
 

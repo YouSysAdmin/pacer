@@ -12,7 +12,7 @@ through the web UI.
 The repo ships a `Makefile`. From the repo root:
 
 ```bash
-# frontend (Svelte SPA, embedded into the binary) + Go binary
+# frontend (Vue 3 SPA, embedded into the binary) + Go binary
 make all
 
 # binary lands at:
