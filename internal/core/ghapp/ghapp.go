@@ -169,7 +169,7 @@ func (c *Client) fetchInstallationToken(ctx context.Context, installationID int6
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("installation token: %s %s", resp.Status, string(body))
+		return "", newAPIError("installation token", resp.StatusCode, resp.Status, body)
 	}
 	var out struct {
 		Token     string    `json:"token"`
@@ -266,7 +266,7 @@ func (c *Client) deleteRunner(ctx context.Context, installationID int64, url str
 		return nil
 	default:
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("delete runner: %s %s", resp.Status, string(body))
+		return newAPIError("delete runner", resp.StatusCode, resp.Status, body)
 	}
 }
 
@@ -305,7 +305,7 @@ func (c *Client) WorkflowJob(ctx context.Context, installationID int64, repoOwne
 		return nil, fmt.Errorf("read workflow job: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("workflow job: %s %s", resp.Status, string(body))
+		return nil, newAPIError("workflow job", resp.StatusCode, resp.Status, body)
 	}
 	return body, nil
 }
@@ -348,7 +348,7 @@ func (c *Client) mintJITConfig(ctx context.Context, installationID int64, url, r
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
 		b, _ := io.ReadAll(resp.Body)
-		return "", 0, fmt.Errorf("jitconfig: %s %s", resp.Status, string(b))
+		return "", 0, newAPIError("jitconfig", resp.StatusCode, resp.Status, b)
 	}
 	var out struct {
 		EncodedJITConfig string `json:"encoded_jit_config"`

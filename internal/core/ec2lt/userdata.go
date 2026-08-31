@@ -70,7 +70,12 @@ report_error() {
             --arg stage "$STAGE" --argjson exit "$exit_code" --argjson line "$line" \
             '{job_id:$job_id, callback_token:$tok, stage:$stage, exit_code:$exit, line:$line, log:.}' \
             < "$LOG" || echo "{}")
-        curl -fsS -X POST "$SERVER_URL/api/runner/error" \
+        # Not -f: if pacer refuses the report (a job already
+        # finalized, a token past its window) the reason belongs in
+        # the console output, which outlives the instance via
+        # "aws ec2 get-console-output". This is the last thing that
+        # runs, so a lost explanation here is a dead end.
+        curl -sS -o - -w '\n' -X POST "$SERVER_URL/api/runner/error" \
             -H "Content-Type: application/json" \
             -d "$payload" || true
     fi
@@ -78,6 +83,46 @@ report_error() {
     sudo shutdown -h now "runner bootstrap failed" 2>/dev/null || shutdown -h now "runner bootstrap failed" || true
 }
 trap 'report_error $? $LINENO' ERR
+
+# api_post POSTs to pacer and prints the response body on stdout.
+#
+# It exists because "curl -f" -- which every one of these calls used
+# to use -- exits 22 and THROWS THE BODY AWAY. The operator reading a
+# failed job then sees "error: 424" and nothing else, while the
+# sentence that explains it ("jitconfig: 403 Forbidden: Resource not
+# accessible by integration") is discarded a few milliseconds before
+# the log is shipped. Here the body is captured either way, and
+# printed to the log when the request fails.
+#
+# --retry covers curl's transient set (connection failures, 408, 429,
+# 5xx) and nothing else, which is why the server answers a permanent
+# GitHub refusal with 424 rather than 500: retrying that would burn
+# the whole budget re-asking a settled question.
+#
+# Args: <path> <json-body> [extra curl args...]
+# Prints: response body. Returns: 0 on 2xx, 1 otherwise.
+api_post() {
+    local path="$1" data="$2"
+    shift 2
+    local raw code body
+    # A single trailing line holds the status, so one request yields
+    # both halves without a second round trip.
+    raw=$(curl -sS -o - -w '\n%{http_code}' --retry 12 --retry-delay 6 --retry-connrefused \
+        -X POST "$SERVER_URL$path" \
+        -H "Content-Type: application/json" \
+        "$@" -d "$data") || {
+        echo "$path: curl failed (exit $?)"
+        return 1
+    }
+    code=${raw##*$'\n'}
+    body=${raw%$'\n'*}
+    if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+        # The body is the whole reason this helper exists.
+        echo "$path: HTTP $code: $body"
+        return 1
+    fi
+    printf '%s' "$body"
+}
 
 # ---------------------------------------------------------------- imdsv2
 STAGE="imdsv2"
@@ -110,11 +155,9 @@ echo "instance_id=$INSTANCE_ID type=$INSTANCE_TYPE az=$AZ"
 # those are permanent.
 STAGE="bootstrap"
 echo "POST /api/runner/bootstrap"
-RESP=$(curl -fsS --retry 12 --retry-delay 6 --retry-connrefused \
-    -X POST "$SERVER_URL/api/runner/bootstrap" \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $BOOTSTRAP_API_TOKEN" \
-    -d "{\"instance_id\":\"$INSTANCE_ID\",\"instance_type\":\"$INSTANCE_TYPE\",\"az\":\"$AZ\"}")
+RESP=$(api_post /api/runner/bootstrap \
+    "{\"instance_id\":\"$INSTANCE_ID\",\"instance_type\":\"$INSTANCE_TYPE\",\"az\":\"$AZ\"}" \
+    -H "Authorization: Bearer $BOOTSTRAP_API_TOKEN")
 
 CALLBACK_TOKEN=$(echo "$RESP" | jq -r .callback_token)
 JOB_ID=$(echo "$RESP" | jq -r .job_id)
@@ -174,10 +217,8 @@ fi
 # + 408 + 429.
 STAGE="register"
 echo "POST /api/runner/register"
-RESP=$(curl -fsS --retry 12 --retry-delay 6 --retry-connrefused \
-    -X POST "$SERVER_URL/api/runner/register" \
-    -H "Content-Type: application/json" \
-    -d "{\"job_id\":\"$JOB_ID\",\"instance_id\":\"$INSTANCE_ID\",\"instance_type\":\"$INSTANCE_TYPE\",\"az\":\"$AZ\",\"callback_token\":\"$CALLBACK_TOKEN\"}")
+RESP=$(api_post /api/runner/register \
+    "{\"job_id\":\"$JOB_ID\",\"instance_id\":\"$INSTANCE_ID\",\"instance_type\":\"$INSTANCE_TYPE\",\"az\":\"$AZ\",\"callback_token\":\"$CALLBACK_TOKEN\"}")
 
 JIT_CONFIG=$(echo "$RESP" | jq -r .jit_config)
 if [ -z "$JIT_CONFIG" ] || [ "$JIT_CONFIG" = "null" ]; then
@@ -209,9 +250,33 @@ echo "run.sh exited with $RUNNER_EXIT"
 # trap so a curl failure doesn't trigger a duplicate error report.
 trap - ERR
 
+# A runner that exits non-zero never reached the ERR trap: the
+# "|| RUNNER_EXIT=$?" above catches the failure by design, so the
+# script walks on to "complete" and the log dies with the instance a
+# minute later. That hid the single most common class of failure --
+# GitHub refusing the registration at connect time (a runner version
+# it no longer accepts, a JIT config already consumed, a runner group
+# that went away) -- because all of that is printed by run.sh, not by
+# anything the server ever sees.
+#
+# So report it the same way a bootstrap failure is reported. This is
+# NOT the trap: the job is genuinely finished, and "complete" below
+# still runs to stamp termination and finalize cost.
+if [ "$RUNNER_EXIT" -ne 0 ]; then
+    STAGE="run"
+    echo "RUNNER FAIL stage=run exit=$RUNNER_EXIT"
+    payload=$(jq -Rsa --arg job_id "$JOB_ID" --arg tok "$CALLBACK_TOKEN" \
+        --arg stage "run" --argjson exit "$RUNNER_EXIT" --argjson line 0 \
+        '{job_id:$job_id, callback_token:$tok, stage:$stage, exit_code:$exit, line:$line, log:.}' \
+        < "$LOG" || echo "{}")
+    curl -sS -o /dev/null -X POST "$SERVER_URL/api/runner/error" \
+        -H "Content-Type: application/json" \
+        -d "$payload" || true
+fi
+
 # ---------------------------------------------------------------- complete
 STAGE="complete"
-curl -fs -X POST "$SERVER_URL/api/runner/complete" \
+curl -sS -o /dev/null -X POST "$SERVER_URL/api/runner/complete" \
     -H "Content-Type: application/json" \
     -d "{\"job_id\":\"$JOB_ID\",\"callback_token\":\"$CALLBACK_TOKEN\",\"exit_code\":$RUNNER_EXIT}" || true
 

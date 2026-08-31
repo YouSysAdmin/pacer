@@ -6,6 +6,7 @@ package runner
 
 import (
 	"cmp"
+	"context"
 	"crypto/subtle"
 	"errors"
 	"fmt"
@@ -29,9 +30,27 @@ import (
 	projectmodel "github.com/yousysadmin/pacer/internal/models/project"
 )
 
+// JITMinter is the slice of the GitHub App client this handler uses:
+// two calls, both minting a single-use runner registration.
+//
+// An interface rather than *ghapp.Client so the refusal path can be
+// tested. That path is the one an operator meets on their worst day
+// -- a revoked installation, an App that lost access to a repo -- and
+// it decides both what the runner does next (retry or stop) and
+// whether the reason survives anywhere. Untestable, it was wrong:
+// every GitHub error came back as a bare 500 that curl then retried
+// twelve times.
+type JITMinter interface {
+	JITConfig(ctx context.Context, installationID int64, repoOwner, repoName, runnerName string, labels []string, runnerGroupID int) (string, int64, error)
+	JITConfigOrg(ctx context.Context, installationID int64, orgName, runnerName string, labels []string, runnerGroupID int) (string, int64, error)
+}
+
+// Compile-time proof the real client still fits.
+var _ JITMinter = (*ghapp.Client)(nil)
+
 type Handler struct {
 	Runtime *env.Runtime
-	GHApp   *ghapp.Client
+	GHApp   JITMinter
 	HMACKey []byte
 }
 
@@ -99,6 +118,15 @@ type errorInput struct {
 const (
 	failureLogMaxBytes   = 64 * 1024
 	errorRequestMaxBytes = 256 * 1024
+)
+
+// Stages the user-data script reports. Only these two are named in
+// Go: "run" reads differently from the rest (the runner failed, not
+// our script), and "bootstrap" is the fallback when a caller sends
+// no stage at all. The script owns the full list.
+const (
+	stageRun       = "run"
+	stageBootstrap = "bootstrap"
 )
 
 // Bootstrap is POST /api/runner/bootstrap.
@@ -249,7 +277,7 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 		jitConfig, ghRunnerID, err = h.GHApp.JITConfig(c.UserContext(), j.InstallationID, owner, name, runnerName, labels, 1)
 	}
 	if err != nil {
-		return response.Internal(c, fmt.Errorf("jit config: %w", err))
+		return h.jitConfigFailed(c, j, runnerName, err)
 	}
 
 	now := time.Now().UTC()
@@ -285,6 +313,75 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 	slog.Info("runner registered", "job_id", j.ID, "instance_id", in.InstanceID,
 		"type", in.InstanceType, "pool", pl.Name)
 	return response.Success(c, fiber.Map{"jit_config": jitConfig})
+}
+
+// failureMessage is the one-line summary shown beside the stage in
+// the jobs UI, above the captured log.
+//
+// It used to say "bootstrap exit=N line=N" for everything, which read
+// as "register -- bootstrap exit=22 line=142" on a registration
+// failure: two different words for the phase, one of them wrong. The
+// stage is already displayed on its own, so this says what the number
+// means instead of repeating where it happened.
+//
+// A "run" failure is the runner process exiting, not a line of our
+// script blowing up, so it carries no line number.
+func failureMessage(stage string, exitCode, line int) string {
+	if stage == stageRun {
+		return fmt.Sprintf("actions-runner exited %d", exitCode)
+	}
+	if line > 0 {
+		return fmt.Sprintf("script exit=%d at line %d", exitCode, line)
+	}
+	return fmt.Sprintf("script exit=%d", exitCode)
+}
+
+// jitConfigFailed answers a runner whose JIT config GitHub refused.
+//
+// Three things have to happen here, and each was missing before: the
+// runner needs a status code that tells it whether retrying is worth
+// the billed seconds, the operator needs GitHub's own words rather
+// than a bare 500, and the reason has to survive somewhere other than
+// the server's stderr -- the instance shuts itself down a few seconds
+// later, taking its log with it.
+func (h *Handler) jitConfigFailed(c *fiber.Ctx, j *job.Job, runnerName string, err error) error {
+	reason := err.Error()
+	temporary := false
+	if apiErr, ok := errors.AsType[*ghapp.APIError](err); ok {
+		reason = apiErr.Error()
+		temporary = apiErr.Temporary()
+	}
+
+	slog.Error("runner.register: jit config failed",
+		"job_id", j.ID, "runner", runnerName, "temporary", temporary, "err", err)
+
+	// Audited even though the runner is about to report its own
+	// failure: it reports what it SAW (a status code), and only the
+	// server knows why. A revoked installation shows up here as one
+	// row per attempt, which is the signal an operator needs when
+	// every job in a project starts failing at once.
+	if putErr := h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
+		ID:         uuid.New().String(),
+		Action:     audit.ActionRunnerRegisterFailed,
+		TargetType: "job",
+		TargetID:   j.ID,
+		Detail: audit.Detail(map[string]any{
+			"reason":    reason,
+			"temporary": temporary,
+			"runner":    runnerName,
+		}),
+		ClientIP:   c.IP(),
+		OccurredAt: time.Now().UTC(),
+	}); putErr != nil {
+		slog.Warn("runner.register: audit put failed", "job_id", j.ID, "err", putErr)
+	}
+
+	if temporary {
+		// 503 is in curl's transient set, so the bootstrap's --retry
+		// budget rides out a GitHub blip without us saying anything.
+		return response.ServiceUnavailable(c, reason)
+	}
+	return response.FailedDependency(c, reason)
 }
 
 // Complete is POST /api/runner/complete.
@@ -399,14 +496,14 @@ func (h *Handler) Error(c *fiber.Ctx) error {
 	}
 
 	stage := strings.TrimSpace(in.Stage)
-	stage = cmp.Or(stage, "bootstrap")
+	stage = cmp.Or(stage, stageBootstrap)
 	logBody := in.Log
 	if len(logBody) > failureLogMaxBytes {
 		// Keep the tail -- the failure is almost always at the end
 		// of the captured output.
 		logBody = "...[truncated]...\n" + logBody[len(logBody)-failureLogMaxBytes:]
 	}
-	msg := fmt.Sprintf("bootstrap exit=%d line=%d", in.ExitCode, in.Line)
+	msg := failureMessage(stage, in.ExitCode, in.Line)
 
 	now := time.Now().UTC()
 	if err := h.Runtime.Store.Job.MarkFailedWithLog(c.UserContext(), j.ID, stage, msg, logBody, now); err != nil {

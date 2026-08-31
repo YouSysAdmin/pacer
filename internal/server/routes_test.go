@@ -33,7 +33,7 @@ func routerSource(t *testing.T) string {
 }
 
 // routePathRE matches the `path: '/jobs'` literals in router/index.ts.
-// Only absolute paths count -- the root child (`path: ''`) is the
+// Only absolute paths count -- the root child (`path: ”`) is the
 // overview page at "/", which spaAllowlist admits unconditionally.
 var routePathRE = regexp.MustCompile(`path:\s*'(/[a-z0-9/_-]*)'`)
 

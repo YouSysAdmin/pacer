@@ -80,6 +80,27 @@ func Gone(c *fiber.Ctx, msg string) error {
 	return c.Status(fiber.StatusGone).JSON(fiber.Map{"error": msg})
 }
 
+// FailedDependency is for a request we could not satisfy because an
+// upstream we depend on (GitHub) refused, permanently: a revoked App
+// installation, a repo the App can no longer see, a rejected runner
+// registration. The operator has to change something at GitHub; no
+// amount of retrying helps.
+//
+// Unlike Internal, the message IS echoed to the caller, and that is
+// the point. The only caller is the runner bootstrap script, holding
+// a per-job HMAC token, and the message it gets is the one that ends
+// up in the job's failure_log where an operator reads it. A bare 500
+// there means "go grep the server logs"; "Resource not accessible by
+// integration" means "your App lost access to that repo". Pass only
+// upstream-supplied text, never our own internal error strings.
+//
+// 424 rather than 502/503 on purpose: curl's --retry treats 5xx as
+// transient and would spend the bootstrap's whole retry budget
+// re-asking a question GitHub has already answered for good.
+func FailedDependency(c *fiber.Ctx, msg string) error {
+	return c.Status(fiber.StatusFailedDependency).JSON(fiber.Map{"error": msg})
+}
+
 // Internal logs the underlying error server-side and returns a generic
 // 500 to the caller. The raw err is intentionally NOT echoed back - it
 // commonly contains stack-revealing detail (file paths, SQL state,
