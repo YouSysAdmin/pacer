@@ -2,6 +2,13 @@
 bin/
 build/
 
+# Node deps. The SPA lives in frontend/ and has its own ignore file,
+# but running a bun/vitest command from the repo root drops a cache
+# here -- which is how node_modules/.vite/vitest/results.json once got
+# committed. Unanchored so it matches at any depth.
+node_modules/
+.vite/
+
 # SQLite (dev DB + WAL/SHM sidecars)
 *.db
 *.db-shm
