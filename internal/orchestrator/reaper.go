@@ -65,8 +65,8 @@ func NewReaper(rt *env.Runtime) *Reaper {
 //
 //  1. EC2-side health check: ask AWS for the live state of every
 //     instance the DB still considers alive. Any instance AWS reports
-//     as terminated/stopping/stopped/shutting-down -- or no longer
-//     recognizes at all -- gets marked lost: instance row to
+//     as terminated/stopping/stopped/shutting-down - or no longer
+//     recognizes at all - gets marked lost: instance row to
 //     "terminated", job to "failed" with stage="ec2". This catches
 //     spot reclaims, host failures, and console-side terminations
 //     where the runner died too abruptly to fire /api/runner/complete.
@@ -80,7 +80,7 @@ func NewReaper(rt *env.Runtime) *Reaper {
 //     stuck-but-alive case (runner hung, workflow looping forever).
 //
 // Crashed-runner / orphan handling (instance up but never registered)
-// is covered by the same age check -- starting-state rows with no
+// is covered by the same age check - starting-state rows with no
 // registered_at hit the timeout and get terminated.
 func (r *Reaper) Run(ctx context.Context) {
 	t := time.NewTicker(ReapInterval)
@@ -101,7 +101,7 @@ func (r *Reaper) Run(ctx context.Context) {
 // Tick runs one sweep under panic recovery. A recovered panic flips
 // Runtime.Health to "panic: ..." and is returned as an error so the
 // HTTP reconcile path can surface it synchronously. The goroutine
-// driving Run survives -- the next ticker fire calls Tick again.
+// driving Run survives - the next ticker fire calls Tick again.
 //
 // Returns (checked, err) where checked is the number of alive rows
 // inspected this sweep (zero on panic or ListAlive failure).
@@ -155,7 +155,7 @@ func (r *Reaper) doTick(ctx context.Context) (int, error) {
 
 	// Stamp the per-row heartbeat for every instance AWS just
 	// confirmed alive. This is the signal the UI uses to flag a
-	// stale row -- "running for 20m but last_seen_at = 20m ago"
+	// stale row - "running for 20m but last_seen_at = 20m ago"
 	// means the reaper isn't visiting this row, regardless of
 	// whether the global health banner shows green. Best-effort:
 	// a Touch failure logs + we still run the maybeReap loop.
@@ -192,7 +192,7 @@ type deadState struct {
 // Dead is the subset AWS considers gone (terminated/stopping/...).
 // SeenAlive is every ID AWS confirmed in any non-dead state. The
 // reaper bumps last_seen_at on SeenAlive so the UI can show a
-// per-row heartbeat -- the signal the operator needs to spot
+// per-row heartbeat - the signal the operator needs to spot
 // "instance X hasn't been reconciled in 30 minutes" without
 // trusting the absence of a global error banner.
 //
@@ -209,8 +209,8 @@ type sweepView struct {
 //
 // Strategy: one batched call covers the common case (every ID known
 // to AWS, mix of healthy + dead states). On an InvalidInstanceID.
-// NotFound error -- which fails the entire batch even if only one ID
-// is bad -- we parse the missing IDs out of the error message, mark
+// NotFound error - which fails the entire batch even if only one ID
+// is bad - we parse the missing IDs out of the error message, mark
 // them lost, and re-batch the survivors. On any other error we log
 // and skip the health pass. The max-runtime check below still runs,
 // so a flaky describe call doesn't strand a dead row.
@@ -226,7 +226,7 @@ type sweepView struct {
 // purged a row we used to know about) and does NOT toggle Health.
 //
 // Returns a sweepView with both AWS's "dead" verdicts AND the IDs
-// AWS confirmed are still alive -- the caller stamps last_seen_at
+// AWS confirmed are still alive - the caller stamps last_seen_at
 // on the alive set so the UI gets a per-row heartbeat.
 func checkEC2HealthVia(ctx context.Context, c ec2API, h *health.Health, insts []*instance.Instance) sweepView {
 	view := sweepView{Dead: map[string]deadState{}}
@@ -260,7 +260,7 @@ func checkEC2HealthVia(ctx context.Context, c ec2API, h *health.Health, insts []
 
 	missing := parseNotFoundIDs(ae.ErrorMessage())
 	for _, id := range missing {
-		view.Dead[id] = deadState{} // empty StateName -- vanished from AWS
+		view.Dead[id] = deadState{} // empty StateName - vanished from AWS
 	}
 	remaining := excludeIDs(ids, missing)
 	if len(remaining) == 0 {
@@ -367,15 +367,15 @@ func excludeIDs(all, drop []string) []string {
 // the slot frees up and the workflow stops blocking on a runner that
 // is never coming back. The eventual workflow_job=completed webhook
 // from GitHub (heartbeat-timeout path) will overwrite the failure
-// message with its own conclusion -- harmless, both signals agree the
+// message with its own conclusion - harmless, both signals agree the
 // job failed.
 func (r *Reaper) markLost(ctx context.Context, i *instance.Instance, d deadState) {
 	now := time.Now().UTC()
 
 	// markLost removes the row from ListAlive, so this is the last
 	// time pacer will ever look at this instance. A stopping/stopped
-	// host is NOT terminal in EC2 -- it still exists and bills for its
-	// EBS volumes -- so terminate it for real before we forget it.
+	// host is NOT terminal in EC2 - it still exists and bills for its
+	// EBS volumes - so terminate it for real before we forget it.
 	if r.Runtime.EC2 != nil {
 		terminateLostVia(ctx, r.Runtime.EC2, i.ID, d)
 	}
@@ -409,7 +409,7 @@ func (r *Reaper) markLost(ctx context.Context, i *instance.Instance, d deadState
 	}
 
 	// Best-effort: deregister the runner from GitHub. With an active
-	// workflow_job, GitHub aborts it immediately on delete -- the user
+	// workflow_job, GitHub aborts it immediately on delete - the user
 	// sees the workflow fail in seconds rather than waiting on the
 	// ~10-min heartbeat timeout.
 	r.deleteGitHubRunner(ctx, i, j)
@@ -452,7 +452,7 @@ func (r *Reaper) markLost(ctx context.Context, i *instance.Instance, d deadState
 // for EBS) until someone terminates it, and once markLost runs the
 // reaper never revisits the row. terminated / shutting-down / vanished
 // instances need no call. Returns whether a terminate was attempted so
-// tests can pin the decision table. Failures are logged only -- the
+// tests can pin the decision table. Failures are logged only - the
 // DB-side cleanup must proceed regardless.
 func terminateLostVia(ctx context.Context, c ec2API, id string, d deadState) bool {
 	switch d.StateName {
@@ -574,12 +574,12 @@ func (r *Reaper) maybeReap(ctx context.Context, i *instance.Instance) error {
 
 // deleteGitHubRunner asks GitHub to deregister the runner backed by
 // this instance. With an active workflow_job assigned to that runner,
-// GitHub aborts the job immediately on delete -- the user-visible
+// GitHub aborts the job immediately on delete - the user-visible
 // "lost communication" hang shrinks from ~10 min to seconds.
 //
 // Best-effort end to end: missing GHRunnerID (runner never came online),
 // missing job/project rows (deleted out from under us), or a 4xx/5xx
-// from GitHub all log + return without surfacing -- the local cleanup
+// from GitHub all log + return without surfacing - the local cleanup
 // the caller already did is the authoritative pacer-side state.
 //
 // j may be nil when the caller couldn't fetch the job row. We'll skip

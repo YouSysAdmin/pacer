@@ -35,7 +35,7 @@ import (
 //
 // An interface rather than *ghapp.Client so the refusal path can be
 // tested. That path is the one an operator meets on their worst day
-// -- a revoked installation, an App that lost access to a repo -- and
+// - a revoked installation, an App that lost access to a repo - and
 // it decides both what the runner does next (retry or stop) and
 // whether the reason survives anywhere. Untestable, it was wrong:
 // every GitHub error came back as a bare 500 that curl then retried
@@ -66,7 +66,7 @@ const bootstrapTTL = 15 * time.Minute
 // from IMDS. Pacer matches it against jobs.instance_id (status=claimed,
 // claimed_at within TTL, bootstrap_token still set).
 //
-// instance_type and az are informational -- we record them on the
+// instance_type and az are informational - we record them on the
 // instance row at register time (with the same data via the
 // /api/runner/register input), so accepting them here is for parity
 // only.
@@ -79,7 +79,7 @@ type bootstrapInput struct {
 // registerInput is the runner self-registration body.
 //
 // Only the three fields the auth layer needs (job_id, instance_id,
-// callback_token) are required -- this preserves the prior behavior
+// callback_token) are required - this preserves the prior behavior
 // where auth runs before shape validation, so a caller without a
 // valid token gets 401 rather than a 400 that would leak the full
 // expected shape. instance_type and az are validated for length
@@ -151,7 +151,7 @@ const (
 //   - Missing / wrong bearer  -> 401
 //   - Body validation failure -> 400
 //   - No matching job row     -> 410 (already consumed, stale, or
-//     never existed -- runner has no
+//     never existed - runner has no
 //     viable recovery, just shut down)
 func (h *Handler) Bootstrap(c *fiber.Ctx) error {
 	if !h.checkBootstrapToken(c) {
@@ -185,7 +185,7 @@ func (h *Handler) Bootstrap(c *fiber.Ctx) error {
 func (h *Handler) checkBootstrapToken(c *fiber.Ctx) bool {
 	want, _ := h.Runtime.BootstrapAPIToken.Load().(string)
 	if want == "" {
-		// Server misconfigured -- no token loaded. Reject loudly
+		// Server misconfigured - no token loaded. Reject loudly
 		// rather than letting unauthenticated requests through.
 		slog.Error("runner.bootstrap: server has no bootstrap_api_token loaded")
 		_ = response.Unauthorized(c, "bootstrap not configured")
@@ -226,7 +226,7 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 	// Bind the caller to the instance the orchestrator actually
 	// launched for this job (stamped by StampSpawn). Without this, a
 	// caller holding a valid token could register under another
-	// in-flight job's instance_id -- repointing jobs.instance_id and
+	// in-flight job's instance_id - repointing jobs.instance_id and
 	// the instance row at a machine that belongs to a different job,
 	// which later makes the reaper deregister the wrong runner while
 	// the original instance waits forever.
@@ -304,7 +304,7 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 		ClientIP:   c.IP(),
 		OccurredAt: now,
 	}); err != nil {
-		// Audit is best-effort here -- the registration itself
+		// Audit is best-effort here - the registration itself
 		// succeeded and we don't want to fail the runner over a
 		// missing log row. Surface the error so it isn't invisible.
 		slog.Warn("runner.register: audit put failed", "job_id", j.ID, "err", err)
@@ -319,7 +319,7 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 // the jobs UI, above the captured log.
 //
 // It used to say "bootstrap exit=N line=N" for everything, which read
-// as "register -- bootstrap exit=22 line=142" on a registration
+// as "register - bootstrap exit=22 line=142" on a registration
 // failure: two different words for the phase, one of them wrong. The
 // stage is already displayed on its own, so this says what the number
 // means instead of repeating where it happened.
@@ -342,7 +342,7 @@ func failureMessage(stage string, exitCode, line int) string {
 // runner needs a status code that tells it whether retrying is worth
 // the billed seconds, the operator needs GitHub's own words rather
 // than a bare 500, and the reason has to survive somewhere other than
-// the server's stderr -- the instance shuts itself down a few seconds
+// the server's stderr - the instance shuts itself down a few seconds
 // later, taking its log with it.
 func (h *Handler) jitConfigFailed(c *fiber.Ctx, j *job.Job, runnerName string, err error) error {
 	reason := err.Error()
@@ -401,7 +401,7 @@ func (h *Handler) Complete(c *fiber.Ctx) error {
 	}
 	// Lifecycle gate (layer 3 of the callback contract). The webhook
 	// often lands first, so completed/failed/cancelled are normal here
-	// -- the instance really did run and its termination + final cost
+	// - the instance really did run and its termination + final cost
 	// still need recording. queued/claimed means the runner never
 	// registered, and reaped means the reaper already terminated the
 	// instance and stamped terminated_at. Accepting either would stamp
@@ -451,7 +451,7 @@ func (h *Handler) Complete(c *fiber.Ctx) error {
 // Error is POST /api/runner/error.
 // The user-data ERR-trap fires here when bootstrap blows up
 // (IMDSv2 failure, runner download failure, ./run.sh exits non-zero, etc.).
-// Same callback-token auth as Register / Complete -- the token's hash was stamped on
+// Same callback-token auth as Register / Complete - the token's hash was stamped on
 // the job row at spawn time, so we can verify even when the runner
 // never registered.
 // Marks the job failed with the captured log attached.
@@ -499,7 +499,7 @@ func (h *Handler) Error(c *fiber.Ctx) error {
 	stage = cmp.Or(stage, stageBootstrap)
 	logBody := in.Log
 	if len(logBody) > failureLogMaxBytes {
-		// Keep the tail -- the failure is almost always at the end
+		// Keep the tail - the failure is almost always at the end
 		// of the captured output.
 		logBody = "...[truncated]...\n" + logBody[len(logBody)-failureLogMaxBytes:]
 	}
@@ -548,7 +548,7 @@ func (h *Handler) Error(c *fiber.Ctx) error {
 // It implements the three-layer contract documented in
 // internal/core/callback/callback.go:
 //
-//  1. callback.Verify -- HMAC-SHA256 over <job_id>.<exp> proves the
+//  1. callback.Verify - HMAC-SHA256 over <job_id>.<exp> proves the
 //     token was minted by this server and is not yet expired. Constant
 //     time inside hmac.Equal.
 //  2. Hash(token) constant-time-compared (subtle.ConstantTimeCompare)

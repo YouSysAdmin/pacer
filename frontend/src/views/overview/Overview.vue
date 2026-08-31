@@ -4,7 +4,7 @@
 // Pacer, Copyright (c) 2026 YouSysAdmin
 
 // The dashboard: live count tiles (5 s), month-to-date spend + daily
-// chart (60 s). Two cadences because /api/stats is daily-grain -- it
+// chart (60 s). Two cadences because /api/stats is daily-grain - it
 // doesn't change between 5 s ticks.
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { projects, repos, jobs, stats } from '@/api'
@@ -52,7 +52,7 @@ function firstOfMonthUTC(): string {
 // Sub-cent runs are common (a 14-second job on a $0.50/hr spot
 // instance costs $0.0019). Standard 2-decimal formatting rounds those
 // to "$0.00", which reads as "free" when it really means "below
-// display precision" -- fall through to 4 decimals instead.
+// display precision" - fall through to 4 decimals instead.
 function fmtUSD(n?: number | null): string {
   if (n == null || isNaN(Number(n))) return '$0.00'
   const v = Number(n)
@@ -115,7 +115,7 @@ async function refreshRollup() {
       total: proj?.totals?.est_cost_usd || 0,
       byProject: proj?.buckets || [],
       byRepo: (byRepo as { buckets?: Bucket[] })?.buckets || [],
-      // Jobs whose pricing fetch failed at spawn time -- they
+      // Jobs whose pricing fetch failed at spawn time - they
       // contribute zero to the total even though they really cost
       // something. Surfacing the count tells the operator the
       // headline is a floor, not a final answer.

@@ -14,7 +14,7 @@ import (
 // Store owns the webhook_deliveries table. The webhook handler writes
 // rows directly via persistDelivery (see endpoint.go) because the hot
 // path needs RowsAffected from the same statement. This store exists
-// for the other side of the lifecycle -- pruning -- so the table
+// for the other side of the lifecycle - pruning - so the table
 // doesn't grow forever on a busy install.
 type Store struct {
 	db *sql.DB
@@ -36,7 +36,7 @@ func (s *Store) DeleteOlderThan(ctx context.Context, cutoff time.Time) (int, err
 	// DEFAULT CURRENT_TIMESTAMP (rows written before persistDelivery
 	// supplied the column) and the driver's
 	// 'YYYY-MM-DD HH:MM:SS.fffffffff +0000 UTC'. Prefix ordering makes
-	// text comparison chronologically correct across both -- but only
+	// text comparison chronologically correct across both - but only
 	// while the bound cutoff is UTC too, so normalize here rather than
 	// trusting every caller.
 	res, err := s.db.ExecContext(ctx, `DELETE FROM webhook_deliveries WHERE received_at < ?`, cutoff.UTC())

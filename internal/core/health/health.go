@@ -4,8 +4,8 @@
 
 // Package health holds the in-memory health bus that background
 // workers (reaper, preflight) write to and the /api/health endpoint
-// reads from. It exists so a silent failure -- a panicked goroutine,
-// a missing IAM permission, a DescribeInstances call that 401s --
+// reads from. It exists so a silent failure - a panicked goroutine,
+// a missing IAM permission, a DescribeInstances call that 401s -
 // surfaces as a banner in the UI instead of buried in server logs.
 package health
 

@@ -19,7 +19,7 @@ func TestAPIError_Temporary(t *testing.T) {
 		code int
 		want bool
 	}{
-		{http.StatusUnauthorized, false},        // token revoked -- a human must fix it
+		{http.StatusUnauthorized, false},        // token revoked - a human must fix it
 		{http.StatusForbidden, false},           // App lost access to the repo
 		{http.StatusNotFound, false},            // repo or org gone
 		{http.StatusUnprocessableEntity, false}, // bad runner group / labels

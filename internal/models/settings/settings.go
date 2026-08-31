@@ -24,6 +24,10 @@ const KeyBootstrapAPIToken = "bootstrap_api_token"
 const (
 	KeyAuditRetentionDays   = "audit_retention_days"
 	KeyWebhookRetentionDays = "webhook_retention_days"
+	// KeyJobLogRetentionDays bounds how long a failed job's captured
+	// bootstrap log is kept. Clearing the log leaves the job row
+	// intact, so stats keep their history.
+	KeyJobLogRetentionDays = "job_log_retention_days"
 )
 
 // Setting is one row in the settings table. Value is opaque to the

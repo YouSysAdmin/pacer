@@ -50,7 +50,7 @@ func (w *dbWrapper) DB() *sql.DB    { return w.db }
 // NewRuntime builds a minimal *env.Runtime backed by a freshly-migrated
 // SQLite, with all per-domain stores wired up. Caller passes in a config
 // (typically with WebhookSecret set for webhook tests). EC2, IAM, GHApp,
-// Pricing, OIDC are nil -- tests for paths that need them must
+// Pricing, OIDC are nil - tests for paths that need them must
 // construct fakes themselves.
 func NewRuntime(t *testing.T, cfg *env.Config) *env.Runtime {
 	t.Helper()

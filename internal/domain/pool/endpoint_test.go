@@ -30,7 +30,7 @@ type harness struct {
 
 // newHarness wires the pool handler the way routes.go does. The
 // Runtime is assembled by hand (testutil/runtimeutil builds the full
-// store aggregate, which imports this package -- test import cycle).
+// store aggregate, which imports this package - test import cycle).
 // EC2 stays nil (aws.disabled posture), so materializeLT stamps the
 // lt-dev placeholder and never talks to AWS.
 func newHarness(t *testing.T) *harness {
@@ -100,7 +100,7 @@ func TestPool_Delete_BlockedByQueuedJobs(t *testing.T) {
 		SubnetIDs: []string{"subnet-1"}, SecurityGroupIDs: []string{"sg-1"},
 		MaxRuntimeMinutes: 60, MaxConcurrentRunners: 5,
 	})
-	// A queued job -- no instance yet, so the old in-flight-only gate
+	// A queued job - no instance yet, so the old in-flight-only gate
 	// missed it and Delete would NULL its pool_id, making it invisible
 	// to Job.Claim forever.
 	insertJob(t, db, "job-q", "p-1", "po-1", "queued")

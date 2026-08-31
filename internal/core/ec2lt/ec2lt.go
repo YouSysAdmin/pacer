@@ -62,13 +62,13 @@ const (
 // Inputs:
 //   - serverURL: Runtime.Config.Server.PublicURL.
 //   - runnerVersion: resolved actions/runner tag at materialize time
-//     (empty allowed -- the script falls back to the AMI's baked binary).
+//     (empty allowed - the script falls back to the AMI's baked binary).
 //   - bootstrapAPIToken: the global secret the runner presents as
 //     `Authorization: Bearer <token>` to /api/runner/bootstrap. Rotation
 //     requires re-saving each pool (or hitting the Settings UI's
 //     "Rotate" which auto-rematerializes).
 //
-// iamc is optional -- when nil (e.g. running without iam:GetInstanceProfile
+// iamc is optional - when nil (e.g. running without iam:GetInstanceProfile
 // in the role) the instance-profile check is skipped and a malformed
 // or missing profile only surfaces at orchestrator spawn time.
 func CreateOrUpdate(ctx context.Context, c *ec2.Client, iamc *iam.Client, p *pool.Pool, projectName string, projectTags map[string]string, serverURL, runnerVersion, bootstrapAPIToken string) error {
@@ -123,7 +123,7 @@ func CreateOrUpdate(ctx context.Context, c *ec2.Client, iamc *iam.Client, p *poo
 	return nil
 }
 
-// MergeTags layers tag maps left-to-right -- later layers override
+// MergeTags layers tag maps left-to-right - later layers override
 // earlier ones on key conflict.
 // Cascade order in this codebase is project -> pool -> repo (project tags broadest, repo tags most-specific).
 // Used both at LT-materialize time (no repo layer
@@ -149,7 +149,7 @@ func validateAMI(ctx context.Context, c *ec2.Client, p *pool.Pool) (*ec2types.Im
 }
 
 // validateRootVolume rejects a configured root volume size smaller
-// than the AMI's own snapshot size -- EC2 won't launch in that case.
+// than the AMI's own snapshot size - EC2 won't launch in that case.
 // A zero RootVolumeGB means "use the AMI's native size", which we
 // pass through unchanged (buildLTData skips the BlockDeviceMappings
 // override when size is zero).
@@ -190,11 +190,11 @@ func validateNetworking(ctx context.Context, c *ec2.Client, p *pool.Pool) error 
 // names a real instance profile.
 // Two failure modes are distinguished:
 //
-//   - NoSuchEntity      -- profile doesn't exist. Fail fast with a
+//   - NoSuchEntity      - profile doesn't exist. Fail fast with a
 //     readable error so the operator fixes the
 //     form rather than seeing the cryptic EC2
 //     "Invalid IAM Instance Profile name" later.
-//   - AccessDenied      -- the orchestrator role lacks
+//   - AccessDenied      - the orchestrator role lacks
 //     iam:GetInstanceProfile.
 //
 // Treat as soft-pass:
@@ -256,7 +256,7 @@ func buildLTData(p *pool.Pool, ami *ec2types.Image, projectName string, projectT
 		TagSpecifications: instanceTagSpecs(p, projectName, projectTags),
 	}
 
-	// IAM instance profile is optional -- when blank, instances launch
+	// IAM instance profile is optional - when blank, instances launch
 	// without one and workflows lose AWS-API access from the runner
 	// host (still fine for self-contained jobs).
 	// Setting the field later requires a pool re-save to bump the LT version.
@@ -364,7 +364,7 @@ func ltNameFor(p *pool.Pool, projectName string) string {
 
 // sanitizeLTName collapses runs of disallowed runes to a single dash
 // and trims trailing dashes.
-// The accepted charset is a strict subset of what AWS allows -- we drop `()` and `/` because they're
+// The accepted charset is a strict subset of what AWS allows - we drop `()` and `/` because they're
 // unusual in identifiers and have special meaning to URL parsers.
 func sanitizeLTName(s string) string {
 	var b strings.Builder

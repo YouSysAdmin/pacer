@@ -20,7 +20,7 @@ func TestRenderUserData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
-	// Per-job state must NOT be templated into the script -- the
+	// Per-job state must NOT be templated into the script - the
 	// runner fetches it via /api/runner/bootstrap at boot.
 	// Regressions here would reintroduce per-spawn LT-version churn.
 	for _, forbidden := range []string{

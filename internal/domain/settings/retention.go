@@ -22,12 +22,17 @@ const (
 	AuditMaxDays   = 3650
 	WebhookMinDays = 1
 	WebhookMaxDays = 365
+	// A job log is only read while somebody is debugging that job,
+	// and the job row it hangs off is kept regardless - so the
+	// ceiling is lower than audit's decade.
+	JobLogMinDays = 1
+	JobLogMaxDays = 365
 )
 
 // EffectiveAuditDays returns the audit retention period the pruner +
 // any consumer should honor: a valid DB override if present, else
 // the YAML default. A malformed or out-of-range DB value is treated
-// as "not set" -- we log a warning and fall back to the YAML
+// as "not set" - we log a warning and fall back to the YAML
 // default so a typo in the settings table can't take the pruner
 // offline.
 func EffectiveAuditDays(ctx context.Context, rt *env.Runtime) int {
@@ -44,6 +49,15 @@ func EffectiveWebhookDays(ctx context.Context, rt *env.Runtime) int {
 		settingsmodel.KeyWebhookRetentionDays,
 		rt.Config.Retention.WebhookDays,
 		WebhookMinDays, WebhookMaxDays)
+}
+
+// EffectiveJobLogDays mirrors EffectiveAuditDays for the captured
+// bootstrap log on failed jobs.
+func EffectiveJobLogDays(ctx context.Context, rt *env.Runtime) int {
+	return effective(ctx, rt,
+		settingsmodel.KeyJobLogRetentionDays,
+		rt.Config.Retention.JobLogDays,
+		JobLogMinDays, JobLogMaxDays)
 }
 
 func effective(ctx context.Context, rt *env.Runtime, key string, fallback, min, max int) int {

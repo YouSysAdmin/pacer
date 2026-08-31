@@ -128,7 +128,7 @@ function numericLt0(v: unknown): boolean {
 }
 
 // Live derived hints. These mirror the backend rules at
-// project/endpoint.go::input -- name length, org_name shape, and the
+// project/endpoint.go::input - name length, org_name shape, and the
 // "required_if scope=org" conditional. Keyed by the json field name so
 // server-side err.fields overlays cleanly in hintFor().
 const liveHints = computed(() => {
@@ -184,7 +184,7 @@ function buildBody() {
 async function submit() {
   formError.value = null
   clearServerError()
-  // Surface the live hints synchronously on submit -- faster feedback
+  // Surface the live hints synchronously on submit - faster feedback
   // than waiting for the server round-trip (which still validates).
   if (Object.keys(liveHints.value).length > 0) {
     formError.value = 'Please fix the highlighted fields'

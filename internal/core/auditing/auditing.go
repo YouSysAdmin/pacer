@@ -12,7 +12,7 @@
 //	                "project", p.ID, detail)
 //
 // Errors are logged at warn level rather than returned. The audit log
-// is structurally important but not load-bearing for any caller --
+// is structurally important but not load-bearing for any caller -
 // every handler that calls Put has already finished its real work,
 // and a 500 over a missing log row would be worse than the row gap.
 package auditing
@@ -36,7 +36,7 @@ type Store interface {
 }
 
 // Put writes a single entry to the audit store. Errors are logged
-// (warn level) but never returned -- see package doc.
+// (warn level) but never returned - see package doc.
 func Put(ctx context.Context, s Store, clientIP, action, targetType, targetID, detail string) {
 	err := s.Put(ctx, &audit.Entry{
 		ID:         uuid.New().String(),

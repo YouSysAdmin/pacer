@@ -176,7 +176,7 @@ func hstsHeader(c *fiber.Ctx) error {
 // behavior promotes any 4xx to WARN, which floods the log on every
 // unauthenticated visit to the login page. Drop just that exact
 // (path, status) pair so login 401s and 401s on protected endpoints
-// (projects/pools/...) still log -- those signal credential stuffing
+// (projects/pools/...) still log - those signal credential stuffing
 // or someone probing the API.
 func accessLogFilters() []slogfiber.Filter {
 	return []slogfiber.Filter{

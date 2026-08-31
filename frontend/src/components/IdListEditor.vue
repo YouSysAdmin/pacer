@@ -5,7 +5,7 @@
 
 // List editor for prefixed AWS IDs (subnet-..., sg-..., etc.). Parent
 // binds a string array plus a prefix. One input per entry with a
-// remove button and a "+ add" at the bottom. Validation is soft --
+// remove button and a "+ add" at the bottom. Validation is soft -
 // the regex feeds the browser's HTML5 `pattern` check (skipped on
 // empty inputs) and a visual warning. Empty rows are filtered when we
 // serialize back to the parent, so the user can transiently leave a

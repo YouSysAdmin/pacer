@@ -110,7 +110,7 @@ func defaultMessage(fe validator.FieldError) string {
 	case "repo_full_name":
 		return field + ` must be in "owner/name" form (e.g. octocat/hello-world)`
 	case "not_self_hosted":
-		return field + ` must not be "self-hosted" -- that label is added automatically`
+		return field + ` must not be "self-hosted" - that label is added automatically`
 	case "runner_label_strict":
 		return field + " must use only lowercase letters, digits, underscore, or dash, and not start or end with a dash"
 	default:
@@ -153,7 +153,7 @@ var friendlyLabels = map[string]string{
 //
 // The structured FieldError envelope keeps the original json tag in
 // FieldError.Field so the SPA can still route the error to the
-// matching input -- only the Message is humanized.
+// matching input - only the Message is humanized.
 func friendlyField(jsonField string) string {
 	if jsonField == "" {
 		return "This field"

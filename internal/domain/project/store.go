@@ -42,7 +42,7 @@ func (s *Store) GetByName(ctx context.Context, name string) (*projectmodel.Proje
 
 // GetByOrgName returns the org-scoped project bound to the given GitHub
 // org login (case-insensitive). Returns (nil, nil) when no such project
-// exists -- callers fall back to repo-binding lookup.
+// exists - callers fall back to repo-binding lookup.
 func (s *Store) GetByOrgName(ctx context.Context, orgName string) (*projectmodel.Project, error) {
 	return s.scanOne(ctx,
 		"WHERE scope = 'org' AND lower(org_name) = lower(?)", orgName)

@@ -76,7 +76,7 @@ func TestPruner_DBOverrideShortensRetention(t *testing.T) {
 		})
 	}
 
-	// 5d override -- the 6d-old + 8d-old rows are toast, 0d/2d/4d
+	// 5d override - the 6d-old + 8d-old rows are toast, 0d/2d/4d
 	// survive. So 3 left.
 	if err := rt.Store.Settings.Put(ctx, settingsmodel.KeyAuditRetentionDays, "5"); err != nil {
 		t.Fatalf("Put settings: %v", err)

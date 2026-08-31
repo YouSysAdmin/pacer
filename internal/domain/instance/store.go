@@ -66,7 +66,7 @@ func (s *Store) Put(ctx context.Context, i *instancemodel.Instance) error {
 
 // nullFloat maps *float64 to sql.NullFloat64 for INSERTs.  We can't
 // hoist this into dbutil yet because dbutil currently has no
-// nullable-float helper -- if a second caller needs it, lift then.
+// nullable-float helper - if a second caller needs it, lift then.
 func nullFloat(p *float64) sql.NullFloat64 {
 	if p == nil {
 		return sql.NullFloat64{}
@@ -86,10 +86,10 @@ func (s *Store) Get(ctx context.Context, id string) (*instancemodel.Instance, er
 // Touch bumps last_seen_at on the given instance rows. The reaper
 // calls this on every alive instance AWS confirmed in its DescribeInstances
 // response so the UI can distinguish "row is current" from "row hasn't
-// been reconciled in N minutes -- something is wrong with the reaper."
+// been reconciled in N minutes - something is wrong with the reaper."
 //
 // Empty ids list is a no-op (saves a needless transaction on idle
-// sweeps). State is intentionally not touched -- this is purely a
+// sweeps). State is intentionally not touched - this is purely a
 // heartbeat. Rows whose state would actually change ride through
 // UpdateState or markLost, both of which already stamp last_seen_at.
 func (s *Store) Touch(ctx context.Context, ids []string, now time.Time) error {
@@ -100,7 +100,7 @@ func (s *Store) Touch(ctx context.Context, ids []string, now time.Time) error {
 	// Batch UPDATE via a single statement with an IN clause. sqlite
 	// caps placeholders at 999. The reaper only sweeps alive
 	// instances, which are bounded by total concurrent runners
-	// across all pools -- effectively under a few hundred for any
+	// across all pools - effectively under a few hundred for any
 	// realistic install. If that ever grows, chunk here.
 	q := `UPDATE instances SET last_seen_at = ? WHERE id IN (?` +
 		strings.Repeat(",?", len(ids)-1) + `)`

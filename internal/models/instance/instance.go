@@ -28,7 +28,7 @@ type Instance struct {
 	State        State  `json:"state"`
 	Spot         bool   `json:"spot"`
 	// PricePerHour + PriceModel are the launch-time snapshot.
-	// Nil PricePerHour means the pricing fetch failed -- cost rollups
+	// Nil PricePerHour means the pricing fetch failed - cost rollups
 	// then leave estimated_cost_usd NULL for jobs that ran on this
 	// instance.
 	// PriceModel is one of pricing.ModelOnDemand /ModelSpot, or "" when no quote was stamped.

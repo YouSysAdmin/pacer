@@ -73,7 +73,7 @@ type input struct {
 // defaults via the existing "<=0 means default" semantics
 // (operator-friendly: omit the field OR pass 0 -> default kicks
 // in). The sanitize+dedupe pass runs AFTER validation in the
-// handler -- doing it here would mask the gha_safe / runner_label /
+// handler - doing it here would mask the gha_safe / runner_label /
 // not_self_hosted rules, which compute SanitizeLabel internally and
 // expect to see the raw operator input.
 func (in *input) Normalize() {
@@ -278,7 +278,7 @@ func (h *Handler) Delete(c *fiber.Ctx) error {
 	}
 	// Gate on every non-terminal job, queued included: Delete NULLs
 	// jobs.pool_id, and a queued job without a pool can never be
-	// claimed, failed, or expired -- it would sit invisible forever.
+	// claimed, failed, or expired - it would sit invisible forever.
 	// The count error is a hard failure. Treating it as zero would let
 	// a transient DB error wave the delete through with jobs in flight.
 	active, err := h.Runtime.Store.Pool.ActiveJobCount(c.UserContext(), id)
@@ -309,7 +309,7 @@ func (h *Handler) Delete(c *fiber.Ctx) error {
 
 // deleteLaunchTemplate best-effort deletes the pool's EC2 launch
 // template after the DB row is gone. Failures are logged but never
-// surfaced -- the row is already deleted, so a transient EC2 hiccup
+// surfaced - the row is already deleted, so a transient EC2 hiccup
 // or a manually-pre-deleted LT shouldn't make pool delete look failed.
 // Returns whether the AWS call succeeded so the audit row records it.
 func (h *Handler) deleteLaunchTemplate(ctx context.Context, p *poolmodel.Pool) bool {
@@ -335,7 +335,7 @@ func (h *Handler) deleteLaunchTemplate(ctx context.Context, p *poolmodel.Pool) b
 // In aws.disabled dev mode (Runtime.EC2 == nil) the AWS path is skipped
 // and a placeholder LT id + version 1 is stamped so the row is internally
 // consistent and the UI / orchestrator code paths still see
-// "an LT exists" -- spawn would obviously fail
+// "an LT exists" - spawn would obviously fail
 // against AWS, but the orchestrator isn't running in dev anyway.
 func (h *Handler) materializeLT(ctx context.Context, p *poolmodel.Pool, projectName string, projectTags map[string]string) error {
 	if h.Runtime.EC2 == nil {

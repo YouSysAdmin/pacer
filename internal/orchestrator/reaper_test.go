@@ -103,7 +103,7 @@ func TestSafeTick_NilRuntime_NoCrash(t *testing.T) {
 	// Defensive: a Reaper constructed without a Runtime would crash
 	// inside the panic-recovery path itself if we didn't guard for
 	// nil. The whole point of safeTick is keeping the goroutine
-	// alive -- it must not become its own failure mode.
+	// alive - it must not become its own failure mode.
 	err := safeTick(nil, healthComponent, func() error { panic("boom") })
 	if err == nil {
 		t.Fatal("expected non-nil err even with nil runtime")
@@ -148,7 +148,7 @@ func TestCheckEC2HealthVia_DescribeError_SetsHealth(t *testing.T) {
 func TestCheckEC2HealthVia_SuccessClearsHealth(t *testing.T) {
 	h := health.New()
 	// Pre-seed a stale health entry from a prior failed tick. The
-	// next successful tick must clear it -- this is what makes the
+	// next successful tick must clear it - this is what makes the
 	// UI banner self-heal.
 	h.Set(healthComponent, "old failure")
 
@@ -241,7 +241,7 @@ func TestCheckEC2HealthVia_AliveInstance_GoesToSeenAlive(t *testing.T) {
 }
 
 func TestCheckEC2HealthVia_NotFoundDoesNotSetHealth(t *testing.T) {
-	// AWS purged the row -- this is a normal outcome (>1h after
+	// AWS purged the row - this is a normal outcome (>1h after
 	// termination). Must NOT toggle Health.
 	h := health.New()
 	stub := &stubEC2{
@@ -364,7 +364,7 @@ func TestTerminateLostVia_TerminateFailureStillReported(t *testing.T) {
 			return nil, errors.New("boom")
 		},
 	}
-	// The attempt is reported even when AWS errors -- the caller's
+	// The attempt is reported even when AWS errors - the caller's
 	// DB-side cleanup proceeds either way, the error is log-only.
 	if !terminateLostVia(t.Context(), stub, "i-lost", deadState{
 		StateName: string(ec2types.InstanceStateNameStopped),

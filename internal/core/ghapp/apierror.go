@@ -27,7 +27,7 @@ const bodyExcerptMax = 512
 // fail immediately and say so, rather than burning 72 seconds of
 // billed instance time re-asking a question already answered.
 type APIError struct {
-	// Op is the call that failed, e.g. "jitconfig" -- what an
+	// Op is the call that failed, e.g. "jitconfig" - what an
 	// operator needs to know before the status code means anything.
 	Op         string
 	StatusCode int
@@ -49,7 +49,7 @@ func (e *APIError) Error() string {
 // succeed without anybody changing anything.
 //
 // 5xx is GitHub failing, 429 is us going too fast, and 408 is a
-// timeout -- all worth another attempt. Everything else (401, 403,
+// timeout - all worth another attempt. Everything else (401, 403,
 // 404, 422) describes a configuration or permission state that will
 // answer identically until a human fixes it.
 func (e *APIError) Temporary() bool {
@@ -73,7 +73,7 @@ func newAPIError(op string, statusCode int, status string, body []byte) *APIErro
 // GitHub's error schema is {"message": ..., "documentation_url": ...,
 // "errors": [...]} on every endpoint, and it is the "message" that
 // says what went wrong. Dumping the raw JSON instead means the
-// operator reads their own envelope's escaping -- the useful sentence
+// operator reads their own envelope's escaping - the useful sentence
 // arrives as \"Resource not accessible by integration\" wrapped in a
 // documentation_url nobody needs mid-incident.
 //

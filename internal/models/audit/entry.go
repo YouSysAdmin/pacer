@@ -13,8 +13,8 @@ import (
 
 // Detail builds the audit Entry's Detail string from a key/value
 // map, using encoding/json so exotic Unicode round-trips cleanly
-// (the older fmt.Sprintf %q approach produces Go-quoted -- not
-// JSON-quoted -- strings, which differ for some control / Unicode
+// (the older fmt.Sprintf %q approach produces Go-quoted - not
+// JSON-quoted - strings, which differ for some control / Unicode
 // codepoints).
 //
 // Best-effort: a Marshal failure is silently swallowed and the empty
@@ -98,7 +98,7 @@ type ListFilter struct {
 	TargetID   string
 	// Q is a substring search applied across the columns operators
 	// actually need to look up: target_id (job_id, instance_id,
-	// pool/project UUID), detail (the JSON blob -- instance_id,
+	// pool/project UUID), detail (the JSON blob - instance_id,
 	// pool name, AWS state, etc. all live here), client_ip,
 	// actor_email, request_id, and action. SQLite LIKE is
 	// case-insensitive for ASCII, which is what every searchable

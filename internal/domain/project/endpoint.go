@@ -176,7 +176,7 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 
 // rematerializePools bumps every pool's LT version to pick up the
 // project's new tag shape. Returns the count of successful bumps.
-// Per-pool failures are logged but never propagated -- the project
+// Per-pool failures are logged but never propagated - the project
 // row is already persisted. We don't want a transient EC2 hiccup to
 // look like the whole update failed.
 func (h *Handler) rematerializePools(ctx context.Context, p *projectmodel.Project) int {

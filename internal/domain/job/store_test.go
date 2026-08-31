@@ -111,7 +111,7 @@ func TestJob_Claim_SkipsRowsBeyondPoolCap(t *testing.T) {
 func TestJob_Claim_RespectsProjectCeiling(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
-	// Tighten the project ceiling to 2 (pool cap stays 5 -- project wins).
+	// Tighten the project ceiling to 2 (pool cap stays 5 - project wins).
 	if _, err := f.db.ExecContext(ctx,
 		`UPDATE projects SET max_concurrent_runners=2 WHERE id=?`, f.projectID); err != nil {
 		t.Fatalf("tighten project: %v", err)
@@ -148,7 +148,7 @@ func TestJob_Claim_RespectsRepoCap(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
 	// Bind the repo every test job uses, with a per-repo cap of 1.
-	// Pool cap stays 5 and no project ceiling -- the repo must be the
+	// Pool cap stays 5 and no project ceiling - the repo must be the
 	// binding constraint.
 	if _, err := f.db.ExecContext(ctx, `
 		INSERT INTO repos (full_name, project_id, max_concurrent_runners, tags)
@@ -324,7 +324,7 @@ func TestJob_Claim_NextRetryAtGatesClaim(t *testing.T) {
 	mustPut(t, f, "rescheduled", jobmodel.StatusQueued, now.Add(-time.Hour), &future, 1)
 	mustPut(t, f, "ready", jobmodel.StatusQueued, now, nil, 0)
 
-	// Now is before NextRetryAt -- only `ready` is claimable, despite being newer.
+	// Now is before NextRetryAt - only `ready` is claimable, despite being newer.
 	got, err := f.store.Claim(ctx, now)
 	if err != nil {
 		t.Fatalf("Claim: %v", err)
@@ -391,7 +391,7 @@ func TestJob_UpdatePayloadIfRunning_OnlyUpdatesRunningRows(t *testing.T) {
 		t.Fatalf("UpdatePayloadIfRunning(running): %v", err)
 	}
 	if err := f.store.UpdatePayloadIfRunning(ctx, "j-done", fresh); err != nil {
-		// Zero rows affected isn't an error -- the WHERE just skipped.
+		// Zero rows affected isn't an error - the WHERE just skipped.
 		t.Fatalf("UpdatePayloadIfRunning(completed): %v", err)
 	}
 
@@ -440,7 +440,7 @@ func TestJob_ListCountPaginate_Consistent(t *testing.T) {
 		t.Fatalf("Count: want 6, got %d", n)
 	}
 
-	// Two pages of size 4 -- pages must concat to Count, no overlap.
+	// Two pages of size 4 - pages must concat to Count, no overlap.
 	page1, err := f.store.List(ctx, jobmodel.ListFilter{Status: filt.Status, Limit: 4, Offset: 0})
 	if err != nil {
 		t.Fatalf("List page 1: %v", err)

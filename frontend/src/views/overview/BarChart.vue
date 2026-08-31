@@ -4,7 +4,7 @@
 // Pacer, Copyright (c) 2026 YouSysAdmin
 
 // The "jobs per day" bar column chart on the overview. Plain divs
-// scaled by percentage -- at 31 columns max there is nothing an SVG
+// scaled by percentage - at 31 columns max there is nothing an SVG
 // or a chart library would add but weight.
 import { computed } from 'vue'
 

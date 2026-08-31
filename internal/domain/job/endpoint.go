@@ -34,7 +34,7 @@ type Handler struct {
 	Runtime *env.Runtime
 
 	// lastRefreshAt[jobID] = time.Time of last successful or attempted
-	// upstream fetch. In-memory only -- on restart we just pay the cost
+	// upstream fetch. In-memory only - on restart we just pay the cost
 	// of one fresh round of GitHub calls bounded by client poll rate.
 	lastRefreshAt sync.Map
 }
@@ -45,7 +45,7 @@ type Handler struct {
 // so the modal can render everything in one round trip.
 //
 // Payload is json.RawMessage so the original GitHub object passes
-// through untouched -- the client decides which fields to surface
+// through untouched - the client decides which fields to surface
 // (head_branch, head_sha, html_url, steps[], etc.) without us
 // committing to a specific schema in Go.
 type detail struct {
@@ -191,14 +191,14 @@ func (h *Handler) Get(c *fiber.Ctx) error {
 //
 // All failure modes (GHApp not configured, ctx-cancelled mid-flight,
 // GitHub 404 / 5xx, malformed repo full_name, DB write error) log warn
-// and return false -- the detail endpoint must never fail because
+// and return false - the detail endpoint must never fail because
 // the optional refresh did.
 func (h *Handler) refreshStepsIfRunning(ctx context.Context, j *jobmodel.Job) ([]byte, bool) {
 	if h.Runtime.GHApp == nil {
 		return nil, false
 	}
 	if j.Status != jobmodel.StatusRunning || j.GHJobID == 0 {
-		// Drop the throttle entry once the job leaves running -- the
+		// Drop the throttle entry once the job leaves running - the
 		// map is keyed per viewed job and would otherwise grow for the
 		// life of the process.
 		h.lastRefreshAt.Delete(j.ID)
@@ -212,7 +212,7 @@ func (h *Handler) refreshStepsIfRunning(ctx context.Context, j *jobmodel.Job) ([
 	// Stamp the timestamp before the upstream call so concurrent
 	// requests that race past the load above still get coalesced
 	// to one round-trip per cycle. Errors below leave it stamped
-	// too -- that's intentional, it backs off persistent failures.
+	// too - that's intentional, it backs off persistent failures.
 	h.lastRefreshAt.Store(j.ID, time.Now())
 
 	owner, name, err := splitRepoFullName(j.RepoFullName)

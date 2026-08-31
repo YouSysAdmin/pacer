@@ -65,7 +65,7 @@ export const EXTRA_LABEL_MAX = 64
 export const USER_DATA_MAX = 32768
 export const IAM_PROFILE_MAX = 128
 export const INSTANCE_TYPE_MAX = 64
-// Slice caps -- entries, not characters. Backend rule is
+// Slice caps - entries, not characters. Backend rule is
 // `min=1,max=32` on instance_types / subnet_ids / security_group_ids.
 export const SLICE_MAX = 32
 
@@ -150,7 +150,7 @@ export function emptyForm(): PoolForm {
 }
 
 // formFrom seeds a draft from an existing pool. `mode: 'copy'` clears
-// identity bits (name) and the default flag -- clearing default avoids
+// identity bits (name) and the default flag - clearing default avoids
 // the partial-unique-index conflict when an operator hits "save"
 // without reading the form.
 export function formFrom(p: Pool, mode: 'edit' | 'copy'): PoolForm {
@@ -199,7 +199,7 @@ function numericLt0(v: unknown): boolean {
 
 // buildHints mirrors domain/pool/endpoint.go::input rules. The map is
 // keyed by json field name so server-side err.fields overlays cleanly.
-// Messages are written for the operator -- they reference the field's
+// Messages are written for the operator - they reference the field's
 // label as it appears in the form, not the json tag.
 export function buildHints(form: PoolForm): Record<string, string> {
   const h: Record<string, string> = {}
@@ -270,11 +270,11 @@ export function buildHints(form: PoolForm): Record<string, string> {
       break
     }
     if (!notSelfHosted(l)) {
-      h.extra_labels = 'Remove "self-hosted" from extra runner labels -- it\'s added automatically'
+      h.extra_labels = 'Remove "self-hosted" from extra runner labels - it\'s added automatically'
       break
     }
     if (sanitizeLabel(l) === '') {
-      h.extra_labels = `"${l}" has no letters, digits, or underscores -- pick a label with at least one`
+      h.extra_labels = `"${l}" has no letters, digits, or underscores - pick a label with at least one`
       break
     }
     if (l.length > EXTRA_LABEL_MAX) {
@@ -368,7 +368,7 @@ export function validate(body: PoolBody): string | null {
 
 // runsOnFor builds the YAML flow-style array a workflow can paste
 // under `runs-on:`. The repo-specific `<owner>-<repo>` label is
-// omitted intentionally -- it's stamped per-spawn and would tie the
+// omitted intentionally - it's stamped per-spawn and would tie the
 // workflow to a single repo, defeating cross-repo reuse.
 export function runsOnFor(p: Pool, projectName: string): string {
   const labels = ['self-hosted']

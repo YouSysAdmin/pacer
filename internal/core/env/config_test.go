@@ -20,7 +20,7 @@ func validBase() *Config {
 			JWTSecret: strings.Repeat("x", 32),
 			Local:     AuthLocalConfig{Enabled: true, Email: "Ops@Example.com"},
 		},
-		Retention: RetentionConfig{AuditDays: 90, WebhookDays: 7},
+		Retention: RetentionConfig{AuditDays: 90, WebhookDays: 7, JobLogDays: 31},
 	}
 }
 
@@ -48,6 +48,7 @@ func TestValidate_Rejections(t *testing.T) {
 		{"bad log format", func(c *Config) { c.Logging.Format = "yaml" }, "logging.format"},
 		{"missing db path", func(c *Config) { c.Database.Path = "" }, "database.path"},
 		{"zero audit days", func(c *Config) { c.Retention.AuditDays = 0 }, "retention.audit_days"},
+		{"zero job log days", func(c *Config) { c.Retention.JobLogDays = 0 }, "retention.job_log_days"},
 		{"bad tls mode", func(c *Config) { c.Server.TLS.Mode = "magic" }, "server.tls.mode"},
 		{"short jwt secret", func(c *Config) { c.Auth.JWTSecret = "short" }, "at least 32"},
 		{"bad session ttl", func(c *Config) { c.Auth.SessionTTL = "soon" }, "auth.session_ttl"},

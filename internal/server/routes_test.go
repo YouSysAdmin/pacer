@@ -21,7 +21,7 @@ import (
 
 // routerSource reads the Vue router definition, the source of truth
 // for which top-level paths the SPA owns. The Vite build emits a
-// single index.html, so the dist tree carries no per-route trace --
+// single index.html, so the dist tree carries no per-route trace -
 // the router source is the only place the route list exists.
 func routerSource(t *testing.T) string {
 	t.Helper()
@@ -33,14 +33,14 @@ func routerSource(t *testing.T) string {
 }
 
 // routePathRE matches the `path: '/jobs'` literals in router/index.ts.
-// Only absolute paths count -- the root child (`path: ”`) is the
+// Only absolute paths count - the root child (`path: ”`) is the
 // overview page at "/", which spaAllowlist admits unconditionally.
 var routePathRE = regexp.MustCompile(`path:\s*'(/[a-z0-9/_-]*)'`)
 
 // TestSPARoutePrefixes_CoversAllRoutes asserts that every top-level
 // route registered in the Vue router has a matching entry in
 // spaRoutePrefixes. Without this, adding a new page in
-// frontend/src/router/index.ts silently 404s in production -- exactly
+// frontend/src/router/index.ts silently 404s in production - exactly
 // the regression we shipped once with the Svelte build (/settings was
 // in the bundle but spaAllowlist rejected the deep link because the
 // prefix wasn't listed).
@@ -82,7 +82,7 @@ func TestSPARoutePrefixes_CoversAllRoutes(t *testing.T) {
 	}
 
 	// And the reverse: a prefix with no backing route is either a typo
-	// or a leftover from a deleted page -- both worth flagging.
+	// or a leftover from a deleted page - both worth flagging.
 	var stale []string
 	for _, p := range spaRoutePrefixes {
 		if !found[p] {
@@ -109,8 +109,8 @@ func TestSPARoutePrefixes_WellFormed(t *testing.T) {
 }
 
 // newSPATestApp wires the same middleware chain registerRoutes uses
-// for the SPA -- allowlist, cache-control, filesystem with the
-// index.html fallback -- against the real embedded build. Skips when
+// for the SPA - allowlist, cache-control, filesystem with the
+// index.html fallback - against the real embedded build. Skips when
 // the frontend hasn't been built (fresh clone before make frontend).
 func newSPATestApp(t *testing.T) (*fiber.App, fs.FS) {
 	t.Helper()
@@ -159,7 +159,7 @@ func TestSPAServing_DeepLinkGetsShellNoCache(t *testing.T) {
 // TestSPAServing_MissingChunkIs404 pins the sharp edge of the
 // NotFoundFile fallback: a request for a hashed bundle that no longer
 // exists (stale shell after a deploy) must get a real 404, NOT the
-// HTML shell at 200 -- the browser reports the latter as the opaque
+// HTML shell at 200 - the browser reports the latter as the opaque
 // "Importing a module script failed".
 func TestSPAServing_MissingChunkIs404(t *testing.T) {
 	app, _ := newSPATestApp(t)

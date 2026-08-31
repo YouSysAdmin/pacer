@@ -160,7 +160,7 @@ func (s *Store) ConcurrentRunnerCount(ctx context.Context, poolID string) (int, 
 }
 
 // ActiveJobCount counts every non-terminal job referencing the pool,
-// including queued ones. Drives the delete gate -- Delete NULLs
+// including queued ones. Drives the delete gate - Delete NULLs
 // jobs.pool_id, and a queued job without a pool_id is invisible to
 // Job.Claim forever.
 func (s *Store) ActiveJobCount(ctx context.Context, poolID string) (int, error) {

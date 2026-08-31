@@ -38,7 +38,7 @@ type Pool struct {
 	//   "run_instances"  - serial RunInstances loop, one type at a
 	//                      time, only first subnet. Kept as opt-down.
 	//
-	// Market (spot vs on-demand) is governed by Spot, NOT SpawnMethod --
+	// Market (spot vs on-demand) is governed by Spot, NOT SpawnMethod -
 	// both methods inherit MarketType from the LT (which is set from
 	// Spot at materialize time). The two axes are orthogonal.
 	SpawnMethod string `json:"spawn_method,omitempty"`
@@ -49,13 +49,13 @@ type Pool struct {
 	//                     cheapest + capacity-safe. The
 	//                     instance_types list order doesn't matter.
 	//   "lowest_price"  - lowest-price for both markets. PURE cheapest
-	//                     -- ignores capacity signals, so spot
+	//                     - ignores capacity signals, so spot
 	//                     instances may land in shallow pools that
 	//                     interrupt soon after launch. Pick this when
 	//                     cost trumps reliability (short throwaway
 	//                     jobs). Avoid for long-running workloads.
 	//   "capacity"      - lowest-price (on-demand) / capacity-optimized
-	//                     (spot). Deepest spot pool, ignore price --
+	//                     (spot). Deepest spot pool, ignore price -
 	//                     production-reliability default. On-demand
 	//                     has no capacity concept so falls through to
 	//                     lowest-price.
@@ -63,7 +63,7 @@ type Pool struct {
 	//                     prioritized (spot). Honors the
 	//                     instance_types list order: first item is
 	//                     preferred, second is fallback, etc. For
-	//                     spot, capacity is still the first concern --
+	//                     spot, capacity is still the first concern -
 	//                     priority is a tiebreaker.
 	AllocationStrategy string `json:"allocation_strategy,omitempty"`
 	// ExtraLabels are operator-supplied runner labels appended to the

@@ -5,7 +5,7 @@
 // Every top-level path registered here must have a matching entry in
 // spaRoutePrefixes (internal/server/routes.go) or the Go server 404s
 // the deep link in production. routes_test.go parses this file to
-// enforce that -- keep route `path` literals on their own lines.
+// enforce that - keep route `path` literals on their own lines.
 
 import { createRouter, createWebHistory } from 'vue-router'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'

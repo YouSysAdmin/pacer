@@ -34,7 +34,7 @@ func TestRefreshSteps_DropsThrottleEntryForFinishedJob(t *testing.T) {
 	}
 }
 
-// Running jobs keep their throttle entry -- that's what coalesces the
+// Running jobs keep their throttle entry - that's what coalesces the
 // modal's 5s polls into one upstream fetch per cycle.
 func TestRefreshSteps_ThrottleSkipsFreshEntry(t *testing.T) {
 	h := &Handler{Runtime: &env.Runtime{GHApp: &ghapp.Client{}}}

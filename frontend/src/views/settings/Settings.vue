@@ -5,7 +5,7 @@
 
 // Two cards: the bootstrap API token (show + rotate) and the log
 // retention periods (audit + webhook deliveries).
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { settings } from '@/api'
 import { useNotificationStore } from '@/stores/notification'
 import { formatDate } from '@/composables/formatDate'
@@ -28,7 +28,50 @@ interface Retention {
   webhook_days: number
   webhook_default: number
   webhook_overridden: boolean
+  job_log_days: number
+  job_log_default: number
+  job_log_overridden: boolean
 }
+
+// The three periods, described once. Each was a hand-written block of
+// field + hint + "use default" button, and the third copy is where a
+// wrong key or a mismatched bound hides. Bounds mirror
+// domain/settings/retention.go - the server rejects out-of-range
+// values, this only stops the input offering them.
+interface RetentionField {
+  key: 'audit_days' | 'webhook_days' | 'job_log_days'
+  label: string
+  hint: string
+  min: number
+  max: number
+}
+
+const RETENTION_FIELDS: RetentionField[] = [
+  {
+    key: 'audit_days',
+    label: 'Audit log',
+    hint: 'State-change records on the Audit page. Rows are deleted past this age.',
+    min: 1,
+    max: 3650,
+  },
+  {
+    key: 'webhook_days',
+    label: 'Webhook deliveries',
+    hint: 'Debug trail of incoming GitHub webhooks. Rows are deleted past this age.',
+    min: 1,
+    max: 365,
+  },
+  {
+    key: 'job_log_days',
+    label: 'Job logs',
+    hint:
+      'Captured bootstrap output on failed jobs - up to 64 KiB each, and the only ' +
+      'table that grows without bound. Past this age the LOG is cleared; the job ' +
+      'itself stays, so cost and runtime history are unaffected.',
+    min: 1,
+    max: 365,
+  },
+]
 
 interface RotateResult {
   pools_rematerialized: number
@@ -48,9 +91,34 @@ const confirmOpen = ref(false)
 // /api/settings/retention. The inputs are decoupled from it so the
 // operator can edit without round-tripping the server.
 const retention = ref<Retention | null>(null)
-const auditInput = ref('')
-const webhookInput = ref('')
+const inputs = ref<Record<string, string>>({})
 const savingRetention = ref(false)
+
+// Field metadata joined to the current server state, so the template
+// reads one list instead of three near-identical blocks.
+const retentionRows = computed(() =>
+  RETENTION_FIELDS.map((f) => {
+    const r = retention.value
+    const prefix = f.key.replace(/_days$/, '')
+    return {
+      ...f,
+      current: r ? (r[f.key] as number) : 0,
+      // The API names the sibling fields <prefix>_default /
+      // <prefix>_overridden, e.g. job_log_days -> job_log_default.
+      fallback: r ? ((r as unknown as Record<string, number>)[prefix + '_default'] ?? 0) : 0,
+      overridden: r
+        ? Boolean((r as unknown as Record<string, boolean>)[prefix + '_overridden'])
+        : false,
+    }
+  }),
+)
+
+function seedInputs(r: Retention) {
+  // Seed with the current EFFECTIVE values - showing the number
+  // unconditionally beats hiding it behind an empty field; the
+  // "default: N" hint + "use default" button carry the cleared state.
+  inputs.value = Object.fromEntries(RETENTION_FIELDS.map((f) => [f.key, String(r[f.key])]))
+}
 
 async function refresh() {
   loading.value = true
@@ -58,12 +126,7 @@ async function refresh() {
     const [s, r] = await Promise.all([settings.getBootstrapToken(), settings.getRetention()])
     status.value = s as TokenStatus
     retention.value = r as Retention
-    // Seed the editable inputs with the current EFFECTIVE values --
-    // showing the number unconditionally beats hiding it behind an
-    // empty field; the "default: N" hint + "use default" button carry
-    // the cleared state.
-    auditInput.value = String((r as Retention).audit_days)
-    webhookInput.value = String((r as Retention).webhook_days)
+    seedInputs(r as Retention)
   } catch (e) {
     notify.error((e as Error).message)
   } finally {
@@ -72,27 +135,20 @@ async function refresh() {
 }
 
 // Build a PUT body that only includes the fields the operator
-// actually changed -- avoids overwriting one field while editing
+// actually changed - avoids overwriting one field while editing
 // the other.
 function buildRetentionBody(): Record<string, number> | null {
-  const body: Record<string, number> = {}
   const cur = retention.value
   if (!cur) return null
-  const a = parseInt(auditInput.value, 10)
-  const w = parseInt(webhookInput.value, 10)
-  if (a !== cur.audit_days) {
-    if (Number.isNaN(a)) {
-      notify.error('Audit days: not a number')
+  const body: Record<string, number> = {}
+  for (const f of RETENTION_FIELDS) {
+    const typed = parseInt(inputs.value[f.key] ?? '', 10)
+    if (typed === cur[f.key]) continue
+    if (Number.isNaN(typed)) {
+      notify.error(`${f.label}: not a number`)
       return null
     }
-    body.audit_days = a
-  }
-  if (w !== cur.webhook_days) {
-    if (Number.isNaN(w)) {
-      notify.error('Webhook days: not a number')
-      return null
-    }
-    body.webhook_days = w
+    body[f.key] = typed
   }
   if (Object.keys(body).length === 0) {
     notify.info('Nothing changed')
@@ -106,8 +162,7 @@ async function applyRetention(body: Record<string, number>, doneMsg: string) {
   try {
     const r = (await settings.putRetention(body)) as Retention
     retention.value = r
-    auditInput.value = String(r.audit_days)
-    webhookInput.value = String(r.webhook_days)
+    seedInputs(r)
     notify.success(doneMsg)
   } catch (e) {
     notify.error((e as Error).message)
@@ -124,8 +179,8 @@ async function saveRetention() {
 
 // Per-field "use default": sends 0 (the explicit clear-override
 // sentinel) for that field only.
-async function resetField(field: 'audit_days' | 'webhook_days') {
-  await applyRetention({ [field]: 0 }, `Reverted ${field.replace('_', ' ')} to the YAML default.`)
+async function resetField(f: RetentionField) {
+  await applyRetention({ [f.key]: 0 }, `Reverted ${f.label} to the YAML default.`)
 }
 
 async function doRotate() {
@@ -180,7 +235,7 @@ onMounted(refresh)
           Token rotated. {{ rotateResult.pools_rematerialized }}
           {{ rotateResult.pools_rematerialized === 1 ? 'pool' : 'pools' }} re-materialized.
           <template v-if="rotateResult.pools_failed && rotateResult.pools_failed.length > 0">
-            Failed: <span class="code-font">{{ rotateResult.pools_failed.join(', ') }}</span> --
+            Failed: <span class="code-font">{{ rotateResult.pools_failed.join(', ') }}</span> -
             re-save manually.
           </template>
         </Notice>
@@ -201,63 +256,44 @@ onMounted(refresh)
       <div class="card-header"><h2>Log retention</h2></div>
       <div class="card-body">
         <p class="auth-note">
-          How long the audit log and webhook delivery records are kept before the daily pruner
-          deletes them. The server starts with the YAML defaults below. Values entered here override
-          those at runtime and persist in the settings table. Changes take effect at the next daily
-          prune sweep -- use the manual prune button on the
-          <RouterLink to="/audit">audit page</RouterLink> if you need to clean up immediately.
+          How long each kind of record is kept before the daily pruner sweeps it. The server starts
+          with the YAML defaults below; values entered here override those at runtime and persist in
+          the settings table. Changes take effect at the next daily sweep - use the manual prune
+          button on the <RouterLink to="/audit">audit page</RouterLink> if you need to clean the
+          audit log immediately.
         </p>
 
         <template v-if="retention">
-          <div class="retention-row">
-            <FormField label="Audit log (days)">
+          <FormField v-for="f in retentionRows" :key="f.key" :label="`${f.label} (days)`">
+            <!-- The reset button sits on the input's own line rather
+                 than at the far edge of the card: it acts on this
+                 field, and a hint two lines long would otherwise
+                 leave it floating opposite nothing. -->
+            <div class="retention-row">
               <input
-                v-model="auditInput"
+                v-model="inputs[f.key]"
                 class="form-input w-filter"
                 type="number"
-                min="1"
-                max="3650"
+                :min="f.min"
+                :max="f.max"
                 :disabled="savingRetention"
               />
-              <template #hint>
-                default: {{ retention.audit_default }} days
-                <span v-if="retention.audit_overridden" class="badge badge-info">overridden</span>
-              </template>
-            </FormField>
-            <button
-              class="btn btn-secondary btn-sm"
-              :disabled="savingRetention || !retention.audit_overridden"
-              title="Revert to the YAML default"
-              @click="resetField('audit_days')"
-            >
-              Use default
-            </button>
-          </div>
-
-          <div class="retention-row">
-            <FormField label="Webhook deliveries (days)">
-              <input
-                v-model="webhookInput"
-                class="form-input w-filter"
-                type="number"
-                min="1"
-                max="365"
-                :disabled="savingRetention"
-              />
-              <template #hint>
-                default: {{ retention.webhook_default }} days
-                <span v-if="retention.webhook_overridden" class="badge badge-info">overridden</span>
-              </template>
-            </FormField>
-            <button
-              class="btn btn-secondary btn-sm"
-              :disabled="savingRetention || !retention.webhook_overridden"
-              title="Revert to the YAML default"
-              @click="resetField('webhook_days')"
-            >
-              Use default
-            </button>
-          </div>
+              <button
+                class="btn btn-secondary btn-sm"
+                :disabled="savingRetention || !f.overridden"
+                title="Revert to the YAML default"
+                @click="resetField(f)"
+              >
+                Use default
+              </button>
+            </div>
+            <template #hint>
+              {{ f.hint }}
+              <br />
+              default: {{ f.fallback }} days
+              <span v-if="f.overridden" class="badge badge-info">overridden</span>
+            </template>
+          </FormField>
 
           <div class="mt-2">
             <button class="btn btn-primary" :disabled="savingRetention" @click="saveRetention">
@@ -296,15 +332,10 @@ onMounted(refresh)
 </template>
 
 <style scoped>
-/* One row per setting: the field (with its default/overridden hint)
-   beside its use-default action, aligned to the input line. */
+/* The input and its reset action share a line. */
 .retention-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
-}
-
-.retention-row .btn {
-  margin-top: 26px;
 }
 </style>

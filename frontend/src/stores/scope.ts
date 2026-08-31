@@ -4,7 +4,7 @@
 
 // Which project the console is looking at.
 //
-// A FILTER, not a tenancy boundary -- which is the difference from the
+// A FILTER, not a tenancy boundary - which is the difference from the
 // mailyard console this borrows its shape from. There, a project scopes
 // every request and "all projects" is not a state the app can be in;
 // here a project is a logical grouping, the API is global, and an

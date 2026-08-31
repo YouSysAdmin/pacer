@@ -9,7 +9,7 @@
 // not navigation: it does not link anywhere, it changes what the
 // pages already open are SHOWING.
 //
-// The LOOK is the mailyard console's project picker -- a tile carrying
+// The LOOK is the mailyard console's project picker - a tile carrying
 // the initial, the name, a caret, and a menu of the same tiles. The
 // BEHAVIOUR is not: there, a project is a tenancy boundary, so picking
 // one navigates home and "all projects" is not a state the app can be
@@ -72,7 +72,7 @@ onUnmounted(() => {
       :title="
         appliesHere
           ? 'Filter every list to one project'
-          : 'This page is global -- the project filter does not apply here'
+          : 'This page is global - the project filter does not apply here'
       "
       @click="open = !open"
     >
@@ -211,7 +211,7 @@ onUnmounted(() => {
 }
 
 /* "All projects" is not a project, so it does not get a project's
-   solid tile -- an outline with the grid glyph instead. */
+   solid tile - an outline with the grid glyph instead. */
 .tile-all {
   background: transparent;
   border: 1px solid var(--border-strong);

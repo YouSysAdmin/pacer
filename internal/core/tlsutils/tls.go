@@ -78,7 +78,7 @@ func AutoTLS(ac ACME) *tls.Config {
 		}
 		slog.Info("ACME HTTP challenge listener", "addr", addr, "hosts", ac.Hosts)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			// Don't kill the whole process -- the operator notices the
+			// Don't kill the whole process - the operator notices the
 			// missing challenge handler when cert issuance fails, and
 			// the orchestrator + reaper stay up in the meantime.
 			slog.Error("ACME HTTP server failed; cert issuance will not work", "err", err, "addr", addr)

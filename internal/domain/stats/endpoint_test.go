@@ -77,7 +77,7 @@ func seedScopedJobs(t *testing.T, rt *env.Runtime) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		// Put deliberately does not write estimated_cost_usd -- the
+		// Put deliberately does not write estimated_cost_usd - the
 		// column is owned by Mark{Completed,Failed,Reaped} and
 		// FinalizeCost. Stamp it directly so the rollup has a cost to
 		// sum without dragging the pricing arithmetic into this test.

@@ -4,7 +4,7 @@
 
 // Package pricing fetches the at-launch USD/hour for an EC2 instance
 // from the AWS Pricing API (on-demand) or DescribeSpotPriceHistory (spot).
-// Best-effort -- pricing fetch errors are logged and the
+// Best-effort - pricing fetch errors are logged and the
 // caller stamps a NULL price. Nothing fails-closed.
 // Spot fluctuates during a run, so the stamped value is a launch-time snapshot,
 // not an authoritative bill.
@@ -36,7 +36,7 @@ const (
 
 // Fetcher wraps the two AWS APIs we need plus a small in-process
 // on-demand cache (keyed by region+type).
-// Spot is not cached -- a stale spot price is meaningless.
+// Spot is not cached - a stale spot price is meaningless.
 type Fetcher struct {
 	EC2     *ec2.Client
 	Pricing *pricing.Client

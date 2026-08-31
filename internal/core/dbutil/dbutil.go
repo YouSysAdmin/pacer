@@ -57,7 +57,7 @@ func BoolInt(b bool) int {
 
 // MustJSON marshals v as JSON and panics on error. Stores serialize
 // Go-native maps and slices (string-keyed maps, []string, etc.) which
-// json.Marshal cannot fail on -- a panic here means a programmer bug
+// json.Marshal cannot fail on - a panic here means a programmer bug
 // (e.g. someone slipped a chan or func into a model field) and we'd
 // rather crash loudly than write a corrupt empty-string column.
 //

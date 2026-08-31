@@ -100,7 +100,7 @@ func TestList_WithIssues(t *testing.T) {
 
 func TestList_NilHealth_EmptyResponse(t *testing.T) {
 	// A Runtime constructed before Health is wired must not crash
-	// the endpoint -- the SPA polls at boot and a 500 on the first
+	// the endpoint - the SPA polls at boot and a 500 on the first
 	// poll would cycle through the 401 redirect path.
 	rt := &env.Runtime{}
 	app := newApp(rt)
@@ -139,7 +139,7 @@ func TestReconcile_InvokesReaper(t *testing.T) {
 
 func TestReconcile_SurfacesReaperIssue(t *testing.T) {
 	// Reaper.Tick returned err == nil but earlier in the sweep
-	// checkEC2HealthVia wrote Health -- the reconcile body must
+	// checkEC2HealthVia wrote Health - the reconcile body must
 	// surface that issue so the operator sees what's wrong without
 	// a follow-up /api/health call.
 	rt := &env.Runtime{
@@ -179,7 +179,7 @@ func TestReconcile_PanicRecoveredTick_StillReturns200(t *testing.T) {
 	// A reaper that returned an error (because it panicked and
 	// safeTick re-raised it as err) must still produce a 200 from
 	// the endpoint: the goroutine is alive, the verdict is the
-	// Health issue, and the operator wants to see it -- not a 500
+	// Health issue, and the operator wants to see it - not a 500
 	// they have to debug separately.
 	rt := &env.Runtime{
 		Health: health.New(),

@@ -6,7 +6,7 @@
 // internal/core/validation/custom.go rules. The point is to give the
 // operator immediate feedback as they type, instead of waiting for a
 // 400 from the server. Keep these in sync with the Go validators when
-// either side changes -- the backend is still the source of truth, but
+// either side changes - the backend is still the source of truth, but
 // drifting client-side regexes show up as misleading green ticks.
 //
 // Each helper returns a boolean (true = valid) so call sites can use
@@ -14,7 +14,7 @@
 // blocks. The two patterns exported with `*_PATTERN` suffix are raw
 // strings (no leading `^`, no trailing `$`) suitable for the HTML5
 // `pattern` attribute. The matching `*_RE` constants are anchored
-// RegExp objects for JS-level checks -- having both lets the browser
+// RegExp objects for JS-level checks - having both lets the browser
 // handle the form-submit-time barrier AND the live oninput feedback
 // without duplicating the source pattern.
 
@@ -39,7 +39,7 @@ export const POOL_NAME_RE = new RegExp('^' + POOL_NAME_PATTERN + '$')
 // --- POSIX user (posix_user) ------------------------------------------
 
 // Validator allows max=32 in the Go DTO. The pattern caps at 32 to
-// match. Empty value passes -- the field is optional and `required`
+// match. Empty value passes - the field is optional and `required`
 // handles its own presence check separately.
 export const POSIX_USER_PATTERN = '[a-z_][a-z0-9_\\-]{0,31}'
 export const POSIX_USER_RE = new RegExp('^' + POSIX_USER_PATTERN + '$')
@@ -65,7 +65,7 @@ export function isPoolName(s?: string | null): boolean {
   return POOL_NAME_RE.test(s)
 }
 
-// no_slash_or_space mirrors validation.registerCustom -- used on
+// no_slash_or_space mirrors validation.registerCustom - used on
 // project.org_name. Rejects '/', ' ', and '\t'.
 export function noSlashOrSpace(s?: string | null): boolean {
   return !/[/ \t]/.test(s || '')

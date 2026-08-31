@@ -199,7 +199,7 @@ func (s *Store) StampSpawn(ctx context.Context, id, instanceID, callbackTokenHas
 //   - the job is no longer in status 'claimed' (already registered,
 //     failed, or reaped), OR
 //   - claimed_at is older than ttl (stale spawn), OR
-//   - bootstrap_token is NULL (already consumed -- single-use).
+//   - bootstrap_token is NULL (already consumed - single-use).
 //
 // Single-use is enforced by the UPDATE clearing bootstrap_token. A
 // concurrent second call will find NULL and return ErrBootstrapUnavailable.
@@ -272,7 +272,7 @@ func (s *Store) UpdatePayload(ctx context.Context, id string, payload []byte) er
 // UpdatePayloadIfRunning is the conditional variant used by the
 // detail-endpoint inline refresh path. The WHERE clause closes the
 // race where a `completed` webhook lands between the handler's status
-// check and our UPDATE -- without it, an in-flight refresh could
+// check and our UPDATE - without it, an in-flight refresh could
 // regress an authoritative final payload back to a partial running
 // snapshot. Zero rows affected is silent success: it just means the
 // job moved out of running state and our stale view should be
@@ -285,7 +285,7 @@ func (s *Store) UpdatePayloadIfRunning(ctx context.Context, id string, payload [
 }
 
 // costSubquery is the SQL fragment that derives a job's estimated
-// USD cost at terminal-state time -- price_per_hour * elapsed-hours
+// USD cost at terminal-state time - price_per_hour * elapsed-hours
 // since the instance launched, looked up via the job's instance_id.
 // julianday() returns days. * 24 converts to hours.
 // NULL-safe: a missing instance row, or a NULL price, leaves the result NULL.
@@ -295,7 +295,7 @@ func (s *Store) UpdatePayloadIfRunning(ctx context.Context, id string, payload [
 // as RFC3339Nano (9-digit fractional seconds plus trailing Z), and
 // some sqlite builds return NULL from julianday() when the
 // fractional precision is wider than the .SSS shape they accept.
-// Truncating loses up to one second of precision -- negligible for
+// Truncating loses up to one second of precision - negligible for
 // hour-billed compute.
 const costSubquery = `(
     SELECT i.price_per_hour * (julianday(substr(?, 1, 19)) - julianday(substr(i.launched_at, 1, 19))) * 24
@@ -329,7 +329,7 @@ func (s *Store) MarkFailed(ctx context.Context, id, stage, message string, now t
 // MarkCancelled is the user-initiated-cancellation variant: GitHub
 // reports workflow_job.completed with conclusion=cancelled when the
 // user aborts a run from the UI / API. Lifecycle-wise identical to
-// MarkFailed (terminal state, cost rollup runs) -- the separate
+// MarkFailed (terminal state, cost rollup runs) - the separate
 // status lets the UI distinguish "the job blew up" from "the user
 // cancelled it" without parsing failure_message.
 func (s *Store) MarkCancelled(ctx context.Context, id, stage, message string, now time.Time) error {
@@ -394,7 +394,7 @@ func (s *Store) ReclaimStale(ctx context.Context, cutoff time.Time) (int, error)
 // Reschedule flips a claimed job back to 'queued', bumps its
 // attempts counter, and gates it from being re-claimed until
 // nextRetryAt. Used by the orchestrator when a capacity-class
-// failure exhausts every (instance_type, subnet) combo -- the job
+// failure exhausts every (instance_type, subnet) combo - the job
 // stays in flight rather than failing, and the next tick after
 // nextRetryAt picks it up.
 func (s *Store) Reschedule(ctx context.Context, id string, attempts int, nextRetryAt time.Time) error {
@@ -449,6 +449,40 @@ func (s *Store) List(ctx context.Context, f jobmodel.ListFilter) ([]*jobmodel.Jo
 // Count returns the number of rows matching f, ignoring Limit + Offset.
 // Sharing buildJobWhere with List guarantees pagination math (showing
 // X-Y of total) reflects what's actually on the page.
+// ClearLogsOlderThan drops the captured bootstrap log from finished
+// jobs older than cutoff, returning how many rows it cleared.
+//
+// The log is cleared, NOT the job. A failure_log runs to 64 KiB while
+// the row that owns it is a few hundred bytes, so this is where the
+// unbounded growth lives - and deleting the rows instead would tear
+// holes in the cost and runtime rollups, which read the jobs table
+// directly. An operator debugging a month-old failure has lost the
+// log by then anyway; an operator asking what last quarter cost has
+// not lost the answer.
+//
+// Gated on completed_at so an in-flight job cannot have its log
+// cleared out from under it, and on failure_log != ” so repeat
+// sweeps over an already-clean window report zero instead of
+// rewriting rows they have nothing to change.
+func (s *Store) ClearLogsOlderThan(ctx context.Context, cutoff time.Time) (int, error) {
+	cutoff = dbutil.UTC(cutoff)
+	res, err := s.db.ExecContext(ctx, `
+        UPDATE jobs
+           SET failure_log = ''
+         WHERE completed_at IS NOT NULL
+           AND completed_at < ?
+           AND failure_log IS NOT NULL
+           AND failure_log != ''`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return int(n), nil
+}
+
 func (s *Store) Count(ctx context.Context, f jobmodel.ListFilter) (int, error) {
 	where, args := buildJobWhere(f)
 	var n int
@@ -559,7 +593,7 @@ func scanJobRow(r interface{ Scan(...any) error }) (*jobmodel.Job, error) {
 //
 // No-op when the instance row is missing, its terminated_at is NULL
 // (instance not yet marked terminated), or its price is NULL (the
-// pricing fetch failed at spawn time -- nothing to multiply by).
+// pricing fetch failed at spawn time - nothing to multiply by).
 // The EXISTS guard in the outer WHERE is what makes those cases true
 // no-ops: without it the no-row subquery would overwrite a cost
 // already stamped by MarkCompleted/MarkFailed/MarkReaped with NULL.
@@ -597,7 +631,7 @@ func (s *Store) FinalizeCost(ctx context.Context, instanceID string) error {
 // agnostic and works regardless of fractional precision because
 // every RFC3339 string starts with YYYY-MM-DD.
 //
-// Empty response when no jobs completed in the window -- the chart
+// Empty response when no jobs completed in the window - the chart
 // renderer pads zero-bars for the missing days if it wants a
 // continuous axis.
 // projectID narrows the chart to one project (the console's scope

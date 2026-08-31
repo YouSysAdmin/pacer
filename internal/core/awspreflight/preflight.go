@@ -6,7 +6,7 @@
 // depends on via EC2 DryRun=true at server startup. Missing perms
 // land on Runtime.Health so the UI banner shows the problem before
 // any orphan instances accumulate. We do NOT fail-fast on a missing
-// perm -- an operator running with intentionally trimmed permissions
+// perm - an operator running with intentionally trimmed permissions
 // (e.g. read-only console mode) should still get the server up. The
 // banner makes the cost explicit.
 package awspreflight
@@ -36,7 +36,7 @@ const healthComponent = "preflight"
 //
 // We intentionally only exercise DescribeInstances, not Terminate.
 // The IAM template gates Terminate on aws:ResourceTag/gha:managed-by,
-// which doesn't resolve against a fake instance ID -- so DryRun
+// which doesn't resolve against a fake instance ID - so DryRun
 // would false-positive UnauthorizedOperation even on a healthy role.
 // A genuinely missing terminate perm still surfaces visibly the
 // moment a real reap is attempted (reaper logs an Error and the row
@@ -59,7 +59,7 @@ type Result struct {
 // banner reads "preflight: missing ec2:DescribeInstances".
 //
 // Returns the per-action results so callers (cli/serve.go) can log
-// them individually -- the banner gets a one-line summary, the log
+// them individually - the banner gets a one-line summary, the log
 // gets the detail.
 func Run(ctx context.Context, c API, h *health.Health) []Result {
 	checks := []func(context.Context, API) Result{
@@ -94,7 +94,7 @@ func describeInstancesCheck(ctx context.Context, c API) Result {
 // The success signal for DryRun is the API error code
 // "DryRunOperation": AWS confirms the call would have been
 // authorized and short-circuits. Anything else means we couldn't
-// verify the permission -- including "UnauthorizedOperation"
+// verify the permission - including "UnauthorizedOperation"
 // (clearly denied), a transport error, or no error at all (an
 // SDK-side stub that didn't reach AWS, unlikely in prod).
 func interpretDryRun(action string, err error) Result {
@@ -144,7 +144,7 @@ func joinComma(xs []string) string {
 
 // LogResults emits one log line per check so an operator can map a
 // banner summary back to the specific action that failed. Called by
-// the caller (cli/serve.go) after Run -- separated so callers
+// the caller (cli/serve.go) after Run - separated so callers
 // without a logger can still use Run.
 func LogResults(log *slog.Logger, results []Result) {
 	if log == nil {

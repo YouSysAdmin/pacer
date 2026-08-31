@@ -122,7 +122,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		// without a restart. Until then user-data uses its default.
 		runnerRes = ghrunner.New(context.Background())
 	} else {
-		log.Warn("GitHub integration disabled (github.disabled=true): webhook + runner endpoints inactive, orchestrator + reaper not started -- UI-only mode")
+		log.Warn("GitHub integration disabled (github.disabled=true): webhook + runner endpoints inactive, orchestrator + reaper not started - UI-only mode")
 	}
 
 	// OIDC discovery happens at startup so issuer-side typos / outages
@@ -168,7 +168,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// AWS preflight: exercise the reaper's IAM perms via EC2 DryRun
 	// so missing permissions surface as a UI banner BEFORE any
 	// orphan instance accumulates. Skipped in UI-only dev. Result
-	// failures land on rt.Health but do NOT abort startup -- an
+	// failures land on rt.Health but do NOT abort startup - an
 	// operator with intentionally trimmed perms keeps a usable
 	// console. The banner makes the cost explicit.
 	if !cfg.AWS.Disabled && ec2Client != nil {

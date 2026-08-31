@@ -109,7 +109,7 @@ func (h *Handler) Get(c *fiber.Ctx) error {
 
 // parseWindow accepts either RFC3339 timestamps or YYYY-MM-DD dates.
 // Dates are interpreted as UTC midnight.
-// Empty values fall back to "last 30 days" -- a sensible default for a UI that lands without
+// Empty values fall back to "last 30 days" - a sensible default for a UI that lands without
 // any query string.
 func parseWindow(fromS, toS string) (time.Time, time.Time, error) {
 	now := time.Now().UTC()

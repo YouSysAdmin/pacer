@@ -111,7 +111,7 @@ func TestPrune_DeletesOnlyOlderThanCutoff(t *testing.T) {
 		t.Fatalf("audit.pruned rows: want 1, got %d", len(pruneRows))
 	}
 	if pruneRows[0].Detail == "" {
-		t.Error("audit.pruned detail empty -- cutoff + count should be recorded")
+		t.Error("audit.pruned detail empty - cutoff + count should be recorded")
 	}
 }
 
@@ -169,7 +169,7 @@ func TestPrune_RejectsBadInput(t *testing.T) {
 }
 
 func TestPrune_EmptyTable_DeletedZero(t *testing.T) {
-	// No rows exist -- prune must succeed cleanly and report 0
+	// No rows exist - prune must succeed cleanly and report 0
 	// deleted. The prune-record row still lands (and that's the
 	// only row that exists afterward).
 	app, rt := newApp(t)

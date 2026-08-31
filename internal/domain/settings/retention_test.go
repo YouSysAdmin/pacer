@@ -34,7 +34,7 @@ func TestEffectiveAuditDays_HonorsValidOverride(t *testing.T) {
 
 func TestEffectiveAuditDays_FallsBackOnGarbage(t *testing.T) {
 	// A malformed value (typo, manual SQL mistake) must NOT take
-	// the pruner offline -- we log a warning and use the YAML
+	// the pruner offline - we log a warning and use the YAML
 	// default. Same for an out-of-range value.
 	cases := []string{"thirty", "0", "-1", "99999"}
 	for _, v := range cases {

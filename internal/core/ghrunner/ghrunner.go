@@ -12,7 +12,7 @@
 // synchronously to the orchestrator's user-data renderer.
 //
 // Public auth-free GitHub API.
-// No App / installation token needed here -- this is reading a
+// No App / installation token needed here - this is reading a
 // public release listing on a public repo.
 package ghrunner
 
@@ -59,7 +59,7 @@ func New(ctx context.Context) *Resolver {
 
 // Start launches the background refresh loop.
 // Cancel ctx to stop. Errors during refresh are logged and the
-// previous cached value is preserved -- a transient GitHub outage shouldn't break spawns.
+// previous cached value is preserved - a transient GitHub outage shouldn't break spawns.
 func (r *Resolver) Start(ctx context.Context) {
 	go func() {
 		// Poll fast while the cache is empty, then settle into the
@@ -96,7 +96,7 @@ func (r *Resolver) Latest() string {
 
 // Resolve picks the version to bake into user-data: the per-pool
 // pin if non-empty, otherwise the cached latest.
-// A nil receiver is treated as "no resolver available" -- the orchestrator passes nil
+// A nil receiver is treated as "no resolver available" - the orchestrator passes nil
 // when AWS is disabled (UI-only dev), and the user-data template
 // falls back to its own default constant in that case.
 func (r *Resolver) Resolve(poolPin string) string {

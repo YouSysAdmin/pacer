@@ -22,7 +22,7 @@ import (
 //  3. allowed_domains
 //  4. allowed_groups (operator-supplied claim name)
 //
-// All-empty allowlists pass automatically -- the IdP is the gate.
+// All-empty allowlists pass automatically - the IdP is the gate.
 func (p *Provider) Admit(c *Claims) error {
 	cfg := p.cfg
 	email := strings.ToLower(strings.TrimSpace(c.Email))

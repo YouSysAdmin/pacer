@@ -46,7 +46,7 @@ function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10)
 }
 
-// The backend's window is [since, until) -- exclusive on the right.
+// The backend's window is [since, until) - exclusive on the right.
 // The UI treats the picked end of the range as INCLUSIVE, so bump +1
 // day before dispatching.
 function nextDayUTC(yyyyMMdd: string): string {
@@ -66,7 +66,7 @@ const RANGES = [
 
 const range = ref('7')
 // q is the free-text search across target_id, detail JSON, client_ip,
-// actor_email, request_id, and action -- the primary search
+// actor_email, request_id, and action - the primary search
 // affordance. actionFilter is the exact-match power-user field.
 const q = ref('')
 const actionFilter = ref('')
@@ -89,7 +89,7 @@ const PRUNE_OPTIONS = [
 const pruneDays = ref(90)
 const pruning = ref(false)
 
-// One row open at a time -- toggling a different row closes the
+// One row open at a time - toggling a different row closes the
 // previous one.
 const openID = ref<string | null>(null)
 function toggleDetail(id: string) {
@@ -153,7 +153,7 @@ async function refresh() {
 }
 
 // Manual prune. Confirms first because audit deletes are irreversible
-// -- shows the cutoff date (operator-local time) so the user can
+// - shows the cutoff date (operator-local time) so the user can
 // sanity-check before the click.
 async function runPrune() {
   const days = Number(pruneDays.value)
@@ -203,7 +203,7 @@ const pageable = computed<Pageable>(() => {
 })
 
 // Reset paging + reload when a discrete filter changes. Offset writes
-// are owned by the pager -- explicit watch, not watchEffect (the
+// are owned by the pager - explicit watch, not watchEffect (the
 // Svelte page needed untrack() for exactly this).
 watch([range, actionFilter, limit], () => {
   offset.value = 0
@@ -310,7 +310,7 @@ function eventSubline(e: AuditEntry): string {
         if (parts.length >= 3) break
       }
     } catch {
-      // detail wasn't JSON -- fall through to the empty subline
+      // detail wasn't JSON - fall through to the empty subline
     }
   }
   return parts.join(' / ')
@@ -342,7 +342,7 @@ function buildEvtDetail(e: AuditEntry): string {
     try {
       parsed = JSON.parse(e.detail) as Record<string, unknown>
     } catch {
-      // detail wasn't JSON -- fall through to the raw rendering
+      // detail wasn't JSON - fall through to the raw rendering
     }
     if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
       lines.push('')
@@ -370,7 +370,7 @@ function buildEvtDetail(e: AuditEntry): string {
 
 // ----- KPI tiles --------------------------------------------------
 // `events` reflects the full window (data.total). The other three are
-// sample stats over the visible page -- a documented trade-off so we
+// sample stats over the visible page - a documented trade-off so we
 // don't fire a second 1000-row fetch just to feed the chips.
 const kpis = computed(() => {
   const ents = data.value?.entries
@@ -433,7 +433,7 @@ const kpis = computed(() => {
       class="form-input w-filter"
       type="text"
       placeholder="action (exact)"
-      title="Exact action match. For partial matches, use the search box -- it covers action too."
+      title="Exact action match. For partial matches, use the search box - it covers action too."
     />
     <select v-model="range" class="form-select w-filter">
       <option v-for="r in RANGES" :key="r.value" :value="r.value">{{ r.label }}</option>

@@ -30,7 +30,7 @@ func NewStore(db *sql.DB) *Store {
 //
 // projectID narrows the whole query to one project (the console's
 // scope selector); empty means every project. It applies to the
-// TOTALS as well as the buckets, which is the point -- a scoped page
+// TOTALS as well as the buckets, which is the point - a scoped page
 // showing a global total would read as that project's spend.
 //
 // Both timestamps are sliced to chars 1..19 (YYYY-MM-DDTHH:MM:SS)
@@ -106,7 +106,7 @@ func groupExpr(by statsmodel.GroupBy) (keyCol, nameJoin string, err error) {
 	case statsmodel.ByProject:
 		return "j.project_id", "LEFT JOIN projects p ON p.id = j.project_id", nil
 	case statsmodel.ByPool:
-		// Pool names aren't unique across projects -- qualify with the
+		// Pool names aren't unique across projects - qualify with the
 		// owning project so identically named pools don't collapse into
 		// one bucket in the UI.
 		return "j.pool_id",

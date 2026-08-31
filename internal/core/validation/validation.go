@@ -89,7 +89,7 @@ func V() *validator.Validate { return build() }
 // coercion, defaulting, anything the normalize:"..." tag vocabulary
 // doesn't cover) BEFORE struct-tag validation runs.
 //
-// Implement on a pointer receiver -- BindAndValidate calls
+// Implement on a pointer receiver - BindAndValidate calls
 // (&payload).Normalize(), so a value-receiver method won't fire.
 type Normalizer interface {
 	Normalize()
@@ -136,8 +136,8 @@ func BindAndValidate[T any](c fiberCtx) (T, error) {
 // struct so the normalize-tag pass can mutate string fields in place.
 //
 // Use this when validating rows that arrived through a different
-// channel than HTTP -- e.g. a row nested inside a backup snapshot
-// import body -- so the same rules apply consistently to both paths.
+// channel than HTTP - e.g. a row nested inside a backup snapshot
+// import body - so the same rules apply consistently to both paths.
 func NormalizeAndValidate(payload any) error {
 	applyNormalizeTags(reflect.ValueOf(payload))
 	if n, ok := payload.(Normalizer); ok {

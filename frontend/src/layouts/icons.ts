@@ -12,7 +12,7 @@
 //
 // Refitted rather than imported: Feather is drawn on a 24 viewBox at
 // stroke 2, and this set is 18 at stroke 1.5. Pasted rather than
-// depended on -- inline SVG for the glyphs actually used costs a few
+// depended on - inline SVG for the glyphs actually used costs a few
 // kilobytes where an icon font ships megabytes into the binary.
 //
 // Adding one means matching the grid - 18x18 viewBox, 1.5 stroke,

@@ -94,7 +94,7 @@ func TestTouch_BumpsLastSeenAt(t *testing.T) {
 	if dur := time.Since(*after.LastSeenAt); dur < 0 || dur > time.Minute {
 		t.Errorf("LastSeenAt drift: %v ago (round-trip should be < 1s)", dur)
 	}
-	// Critically: Touch must NOT change state or terminated_at -- it's
+	// Critically: Touch must NOT change state or terminated_at - it's
 	// a heartbeat, not a state transition.
 	if after.State != instancemodel.StateRunning {
 		t.Errorf("Touch changed state: was %q, now %q", instancemodel.StateRunning, after.State)
@@ -132,7 +132,7 @@ func TestTouch_EmptyIDs_NoOp(t *testing.T) {
 	_ = db
 	// Should not error and should not touch the DB. Reaper hits
 	// this path on every idle sweep (no alive instances), so it's
-	// the most common call -- it has to be cheap.
+	// the most common call - it has to be cheap.
 	if err := s.Touch(t.Context(), nil, time.Now()); err != nil {
 		t.Fatalf("Touch with empty ids: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestTouch_EmptyIDs_NoOp(t *testing.T) {
 }
 
 func TestTouch_UnknownID_NoError(t *testing.T) {
-	// An ID we don't have a row for must not error -- UPDATE on no
+	// An ID we don't have a row for must not error - UPDATE on no
 	// matching row is silently a 0-rows-affected no-op. We rely on
 	// this so the reaper can pass the AWS-returned ID set straight
 	// through without filtering against ListAlive twice.

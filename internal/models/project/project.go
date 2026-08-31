@@ -19,10 +19,10 @@ import "time"
 
 // Scope picks how runners register and how webhooks route to a project.
 //
-//   - "repo" (default) -- 1..N repos bind to the project. JIT config
+//   - "repo" (default) - 1..N repos bind to the project. JIT config
 //     hits /repos/{owner}/{name}/.... Runners carry an <owner>-<repo>
 //     narrowing label so they only claim jobs from the bound repo.
-//   - "org" -- routes by `repository.owner.login`. No per-repo
+//   - "org" - routes by `repository.owner.login`. No per-repo
 //     bindings. JIT config hits /orgs/{org}/... with a runner_group_id.
 //     The <owner>-<repo> label is dropped so runners are shared across
 //     every repo in the org (or every repo in the chosen runner group).

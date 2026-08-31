@@ -90,7 +90,7 @@ func TestPut_Upsert(t *testing.T) {
 // passed time.Time to modernc/sqlite's TEXT column, which serialized
 // via Go's default String() format (`2006-01-02 15:04:05 -0700 MST`).
 // Fresh installs use RFC3339Nano, but upgraded deployments still have
-// String-formatted rows -- those must keep parsing.
+// String-formatted rows - those must keep parsing.
 func TestParseTimestamp_LegacyFormats(t *testing.T) {
 	cases := []struct {
 		name string

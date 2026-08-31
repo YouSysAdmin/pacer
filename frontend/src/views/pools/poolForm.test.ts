@@ -181,7 +181,7 @@ describe('formFrom', () => {
     expect(copy.name).toBe('')
     expect(copy.is_default).toBe(false)
     expect(copy.tags).toEqual({ team: 'ci' })
-    // The copy owns its collections -- mutating them must not touch
+    // The copy owns its collections - mutating them must not touch
     // the source pool.
     copy.subnet_ids.push('subnet-1234567890abcdef')
     expect(p.subnet_ids).toEqual(['subnet-0abcdef012345678'])

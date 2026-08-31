@@ -138,7 +138,7 @@ type pruneInput struct {
 }
 
 // pruneResponse reports what happened. Cutoff is the absolute
-// timestamp DeleteOlderThan was called with -- echoed back so the
+// timestamp DeleteOlderThan was called with - echoed back so the
 // UI can render "deleted N events older than YYYY-MM-DD HH:MM" with
 // no client-side timezone math.
 type pruneResponse struct {
@@ -150,7 +150,7 @@ type pruneResponse struct {
 // Prune is POST /api/audit/prune. Manual operator-driven cleanup
 // of the audit log. The action itself is audited (with actor +
 // detail showing the cutoff + delete count), so the log retains a
-// self-documenting trace of who cleaned what -- the prune-record
+// self-documenting trace of who cleaned what - the prune-record
 // row is necessarily after the cutoff it describes, so it survives.
 func (h *Handler) Prune(c *fiber.Ctx) error {
 	in, err := validation.BindAndValidate[pruneInput](c)
@@ -166,7 +166,7 @@ func (h *Handler) Prune(c *fiber.Ctx) error {
 	}
 
 	// Audit the prune itself. Hand-written (not via auditing.PutCtx)
-	// because we want to attach actor info -- deleting audit rows
+	// because we want to attach actor info - deleting audit rows
 	// is the kind of action where "who did this" matters more than
 	// the average state change.
 	actorEmail, actorID := actorFromLocals(c)
@@ -192,7 +192,7 @@ func (h *Handler) Prune(c *fiber.Ctx) error {
 }
 
 // actorFromLocals reads the auth-middleware-populated user. Returns
-// empty strings when auth.disabled=true (no user attached) -- the
+// empty strings when auth.disabled=true (no user attached) - the
 // audit row still lands with action + ip, just without attribution.
 func actorFromLocals(c *fiber.Ctx) (email, userID string) {
 	if u, ok := c.Locals(authdomain.UserLocalKey).(*usermodel.User); ok && u != nil {

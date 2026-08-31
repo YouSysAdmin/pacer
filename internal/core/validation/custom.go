@@ -24,7 +24,7 @@ func registerCustom(v *validator.Validate) {
 		return !strings.HasPrefix(strings.ToLower(s), "gha:")
 	})
 
-	// posix_user matches ^[a-z_][a-z0-9_-]*$ -- belt-and-braces
+	// posix_user matches ^[a-z_][a-z0-9_-]*$ - belt-and-braces
 	// against shell metacharacters slipping through user-data into
 	// the sudo command line. Empty string passes (the field is
 	// optional in the pool DTO, required-ness is a separate tag).
@@ -65,7 +65,7 @@ func registerCustom(v *validator.Validate) {
 		})
 	})
 
-	// no_slash_or_space rejects '/', spaces, and tabs -- used on the
+	// no_slash_or_space rejects '/', spaces, and tabs - used on the
 	// project.org_name field where the input must be a bare GitHub
 	// org login, not "github.com/foo" or "  foo  ".
 	_ = v.RegisterValidation("no_slash_or_space", func(fl validator.FieldLevel) bool {
@@ -98,7 +98,7 @@ func registerCustom(v *validator.Validate) {
 	// would persist literally but register as "433", and the
 	// operator wouldn't notice until a workflow's runs-on missed.
 	//
-	// For ExtraLabels, the looser runner_label rule still applies --
+	// For ExtraLabels, the looser runner_label rule still applies -
 	// auxiliary tags can sanitize-mangle (e.g. "Production GPU"
 	// becomes "production-gpu") because they aren't the primary
 	// match key. Pool name is the primary key, so it gets the

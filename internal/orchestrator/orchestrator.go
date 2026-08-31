@@ -8,13 +8,13 @@
 // each claimed job: look up its pool (job.PoolID was stamped at
 // webhook time by the pool selector), mint a fresh HMAC-signed
 // callback token (the per-job secret), then call either CreateFleet
-// (default, "fleet" spawn method -- AWS picks an available type+AZ
+// (default, "fleet" spawn method - AWS picks an available type+AZ
 // from every override combo) or RunInstances (legacy serial
 // fallback, "run_instances" spawn method) referencing the pool's
 // LT at $Default. The callback token rides as the gha:callback-token
 // instance tag (stamped at-launch for RunInstances, post-launch for
 // Fleet). The LT's baked user-data reads it via IMDS at boot. The
-// LT itself is never mutated by the orchestrator -- it only changes
+// LT itself is never mutated by the orchestrator - it only changes
 // when the operator saves the pool. Capacity-class failures (no
 // capacity for any type+AZ combo) are RESCHEDULED rather than
 // failing the job: a backoff is applied and the next tick after
@@ -24,7 +24,7 @@
 // Reaper: every ReapInterval, sweep instances older than their
 // pool's max_runtime_minutes and TerminateInstances them.
 //
-// The orchestrator is a single goroutine -- sqlite's MaxOpenConns(1)
+// The orchestrator is a single goroutine - sqlite's MaxOpenConns(1)
 // serializes writes anyway. Bumping throughput means moving to
 // postgres + parallel claim workers. Not in scope for V1.
 package orchestrator
@@ -106,7 +106,7 @@ func New(rt *env.Runtime) *Orchestrator {
 }
 
 // Run blocks until ctx is cancelled, draining the queue every
-// PollInterval. Errors are logged, never returned -- the loop must
+// PollInterval. Errors are logged, never returned - the loop must
 // keep running.
 func (o *Orchestrator) Run(ctx context.Context) {
 	t := time.NewTicker(PollInterval)
@@ -247,7 +247,7 @@ func (o *Orchestrator) reschedule(ctx context.Context, j *job.Job, lastErr error
 }
 
 // retryBackoff returns the wait before the (attempt+1)th retry. The
-// schedule is 30s, 60s, 120s, 240s, then 5min capped -- ~50min
+// schedule is 30s, 60s, 120s, 240s, then 5min capped - ~50min
 // budget over 12 attempts. Capacity returns are usually zonal so the
 // later attempts catch the AZ rotation.
 func retryBackoff(attempt int) time.Duration {
@@ -269,7 +269,7 @@ func retryBackoff(attempt int) time.Duration {
 // callbackToken is the raw HMAC token (`<job_id>.<exp>.<sig>`). The
 // orchestrator stamps it on the instance as the gha:callback-token
 // tag so the in-instance bootstrap script can read it via IMDS. Per
-// CLAUDE.md, raw tokens never hit disk -- only the sha256 hash lives
+// CLAUDE.md, raw tokens never hit disk - only the sha256 hash lives
 // on the job row.
 type spawnContext struct {
 	job           *job.Job
@@ -318,7 +318,7 @@ func (o *Orchestrator) spawn(ctx context.Context, j *job.Job) (error, bool) {
 	if proj == nil {
 		return fmt.Errorf("project %s no longer exists", j.ProjectID), false
 	}
-	// Repo lookup is best-effort -- if it's gone, fall back to no
+	// Repo lookup is best-effort - if it's gone, fall back to no
 	// repo-level tags rather than failing the spawn.
 	rp, _ := o.Runtime.Store.Repo.Get(ctx, j.RepoFullName)
 	var repoTags map[string]string
@@ -385,7 +385,7 @@ func (o *Orchestrator) recordSpawn(ctx context.Context, sc *spawnContext, r *spa
 
 	// Best-effort pricing snapshot: stamp the launch-time USD/hour
 	// so cost rollups can multiply by elapsed time at completion.
-	// Failures here just leave the price NULL -- never abort spawn.
+	// Failures here just leave the price NULL - never abort spawn.
 	pricePerHour, priceModel := o.snapshotPrice(ctx, r.InstanceType, r.AZ, sc.pool.Spot)
 
 	if err := o.Runtime.Store.Instance.Put(ctx, &instance.Instance{
@@ -524,7 +524,7 @@ func (o *Orchestrator) resolveSubnetAZ(ctx context.Context, subnetID string) str
 
 // snapshotPrice returns the launch-time USD/hour quote for the
 // chosen (instanceType, az, spot) tuple. Errors are logged and the
-// returned pointer is nil -- callers stamp NULL price_per_hour /
+// returned pointer is nil - callers stamp NULL price_per_hour /
 // price_model and the cost rollup later skips this instance.
 func (o *Orchestrator) snapshotPrice(ctx context.Context, instanceType, az string, spot bool) (*float64, string) {
 	if o.Runtime.Pricing == nil {
@@ -557,7 +557,7 @@ func buildTagSpecs(sc *spawnContext) []ec2types.TagSpecification {
 }
 
 // buildAllTags returns the merged tag set as a flat []ec2types.Tag.
-// Used by buildTagSpecs (RunInstances) -- the full set is stamped
+// Used by buildTagSpecs (RunInstances) - the full set is stamped
 // atomically at RunInstances time. Per-job state (the HMAC callback
 // token) does NOT travel here: the in-instance bootstrap script
 // fetches it from /api/runner/bootstrap using the global bootstrap

@@ -122,7 +122,7 @@ func (c *Client) InstallationToken(ctx context.Context, installationID int64) (s
 			return t, nil
 		}
 		// The flight is shared by every concurrent caller, but this
-		// closure captures only the INITIATING caller's ctx -- if that
+		// closure captures only the INITIATING caller's ctx - if that
 		// request is aborted (browser poll disconnects), its
 		// cancellation would fail all waiters, including a runner's
 		// JIT-config mint. Detach from the initiator's cancellation
@@ -224,7 +224,7 @@ func (c *Client) JITConfigOrg(ctx context.Context, installationID int64, orgName
 
 // DeleteRunnerRepo removes a self-hosted runner from a repository.
 // When the runner has an active job, GitHub aborts that workflow_job
-// immediately -- the reaper uses this on instance.lost / reap so the
+// immediately - the reaper uses this on instance.lost / reap so the
 // workflow_job fails fast rather than hanging on the ~10-min
 // heartbeat timeout.
 //
@@ -279,7 +279,7 @@ func (c *Client) deleteRunner(ctx context.Context, installationID int64, url str
 // Returns the raw 200 response body so the caller can wrap it back into
 // the webhook envelope shape without re-marshalling. On any non-2xx
 // status the error wraps the status code so the caller can distinguish
-// permanent (404 -- job removed) from transient (5xx, rate limit) and
+// permanent (404 - job removed) from transient (5xx, rate limit) and
 // log appropriately.
 func (c *Client) WorkflowJob(ctx context.Context, installationID int64, repoOwner, repoName string, jobID int64) ([]byte, error) {
 	instTok, err := c.InstallationToken(ctx, installationID)
@@ -315,7 +315,7 @@ func (c *Client) WorkflowJob(ctx context.Context, installationID int64, repoOwne
 // installation token, request shape, and response shape are identical.
 //
 // Returns (encoded_jit_config, runner_id, err). runner_id is the
-// integer identity GitHub assigns to the new ephemeral runner --
+// integer identity GitHub assigns to the new ephemeral runner -
 // stable for the runner's lifetime, used by DeleteRunner to abort
 // the workflow_job when the host is lost.
 func (c *Client) mintJITConfig(ctx context.Context, installationID int64, url, runnerName string, labels []string, runnerGroupID int) (string, int64, error) {

@@ -28,7 +28,7 @@ async function pollHealth() {
     const r = (await systemHealth.list()) as { issues?: HealthIssue[] } | null
     healthIssues.value = r?.issues || []
   } catch {
-    // Don't surface fetch errors as banners -- a flaky poll shouldn't
+    // Don't surface fetch errors as banners - a flaky poll shouldn't
     // look like a server-side problem. The api client already handles
     // the 401 redirect.
   }

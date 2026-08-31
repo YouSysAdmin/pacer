@@ -3,7 +3,7 @@
 // The validator answers with `{"error": "...", "fields": [{"field",
 // "rule", "message"}]}` and api/client.ts attaches that array to the
 // thrown ApiError. A form keyed by the same JSON names the request
-// sent needs no mapping table -- `field` IS that name.
+// sent needs no mapping table - `field` IS that name.
 
 import { ref } from 'vue'
 import type { FieldError } from '@/api/client'

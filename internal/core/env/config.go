@@ -44,6 +44,14 @@ type RetentionConfig struct {
 	// Default 7. GitHub redelivery windows are minutes, so this
 	// only matters for operator debugging.
 	WebhookDays int `mapstructure:"webhook_days"`
+	// JobLogDays is how long a failed job's captured bootstrap log
+	// is kept. Default 31.
+	//
+	// This clears the LOG, not the job: the row stays, so cost and
+	// runtime rollups keep their history. Only failure_log is
+	// dropped, and it is the only part that grows without bound -
+	// up to 64 KiB per failed job, where the row itself is bytes.
+	JobLogDays int `mapstructure:"job_log_days"`
 }
 
 // AuthConfig gates the operator-console auth surface. When enabled,
@@ -176,6 +184,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("logging.output", "stdout")
 	v.SetDefault("retention.audit_days", 90)
 	v.SetDefault("retention.webhook_days", 7)
+	v.SetDefault("retention.job_log_days", 31)
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := errors.AsType[viper.ConfigFileNotFoundError](err); !ok {
@@ -240,6 +249,9 @@ func (c *Config) Validate() error {
 	// minimum so a misconfigured override can't wipe today's rows.
 	if c.Retention.AuditDays < 1 {
 		return fmt.Errorf("retention.audit_days must be >= 1 (got %d)", c.Retention.AuditDays)
+	}
+	if c.Retention.JobLogDays < 1 {
+		return fmt.Errorf("retention.job_log_days must be >= 1 (got %d)", c.Retention.JobLogDays)
 	}
 	if c.Retention.WebhookDays < 1 {
 		return fmt.Errorf("retention.webhook_days must be >= 1 (got %d)", c.Retention.WebhookDays)
@@ -344,7 +356,7 @@ func (c *Config) Validate() error {
 // an operator drops a bare identifier (a Cognito pool ID, an Okta
 // org name, etc.) into a field that needs a full URL. Without this
 // the misconfiguration only surfaces deep inside go-oidc's
-// discovery dial: "unsupported protocol scheme """ -- which doesn't
+// discovery dial: "unsupported protocol scheme """ - which doesn't
 // point the operator at the offending YAML key.
 //
 // Accepts http for local dev (e.g. Keycloak on localhost during
@@ -355,7 +367,7 @@ func validateHTTPSURL(field, raw string) error {
 		return fmt.Errorf("%s %q is not a valid URL: %w", field, raw, err)
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return fmt.Errorf("%s %q must include a scheme (http:// or https://); got %q -- looks like you passed a bare identifier instead of an issuer URL", field, raw, u.Scheme)
+		return fmt.Errorf("%s %q must include a scheme (http:// or https://); got %q - looks like you passed a bare identifier instead of an issuer URL", field, raw, u.Scheme)
 	}
 	if u.Host == "" {
 		return fmt.Errorf("%s %q has no host part; expected something like https://accounts.example.com", field, raw)
@@ -380,7 +392,7 @@ func requireDistinctHosts(issuer, redirectURL string) error {
 		return nil
 	}
 	if strings.EqualFold(iu.Host, ru.Host) {
-		return fmt.Errorf("auth.oidc.issuer (%q) and auth.oidc.redirect_url (%q) share the same host -- issuer must be the IdP (Cognito / Auth0 / Okta / Google / Keycloak), redirect_url must be pacer's own URL + /api/auth/oidc/callback", issuer, redirectURL)
+		return fmt.Errorf("auth.oidc.issuer (%q) and auth.oidc.redirect_url (%q) share the same host - issuer must be the IdP (Cognito / Auth0 / Okta / Google / Keycloak), redirect_url must be pacer's own URL + /api/auth/oidc/callback", issuer, redirectURL)
 	}
 	return nil
 }

@@ -285,7 +285,7 @@ func TestImport_DefaultsScopeToRepo(t *testing.T) {
 
 func TestImport_PartialImportProceedsAfterRowError(t *testing.T) {
 	// One project is invalid (reserved tag) and one is valid. The
-	// valid project should still be persisted -- per-row failures
+	// valid project should still be persisted - per-row failures
 	// don't abort the whole import.
 	app, rt := newApp(t)
 	body := validBackup(

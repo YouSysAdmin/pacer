@@ -121,8 +121,8 @@ type JobStore interface {
 	// (already consumed, stale, missing, or not in claimed state).
 	ConsumeBootstrap(ctx context.Context, instanceID string, ttl time.Duration, now time.Time) (token, jobID string, err error)
 	// UpdatePayload overwrites jobs.payload with a newer webhook body.
-	// Used so the in_progress / completed workflow_job payloads -- which
-	// carry the populated steps[] array -- replace the queued-action
+	// Used so the in_progress / completed workflow_job payloads - which
+	// carry the populated steps[] array - replace the queued-action
 	// snapshot stamped at enqueue time. Best-effort. Callers log and
 	// continue on error rather than fail the lifecycle transition.
 	UpdatePayload(ctx context.Context, id string, payload []byte) error
@@ -135,7 +135,7 @@ type JobStore interface {
 	MarkRunning(ctx context.Context, id, instanceID string, now time.Time) error
 	MarkCompleted(ctx context.Context, id string, now time.Time) error
 	MarkFailed(ctx context.Context, id, stage, message string, now time.Time) error
-	// MarkFailedWithLog is the bootstrap-error variant -- attaches
+	// MarkFailedWithLog is the bootstrap-error variant - attaches
 	// the captured user-data log so operators can see what blew up
 	// before the runner ever registered.
 	MarkFailedWithLog(ctx context.Context, id, stage, message, log string, now time.Time) error
@@ -159,6 +159,10 @@ type JobStore interface {
 	// the Overview page's success-vs-failed chart.
 	// projectID narrows to one project; empty means every project.
 	StatusTimeseries(ctx context.Context, from, to time.Time, projectID string) ([]job.DayBucket, error)
+	// ClearLogsOlderThan blanks failure_log on finished jobs older
+	// than cutoff and reports how many rows changed. The rows stay,
+	// so stats keep their history - see the store method.
+	ClearLogsOlderThan(ctx context.Context, cutoff time.Time) (int, error)
 	// FinalizeCost recomputes a job's estimated_cost_usd after its
 	// instance has been marked terminated/reaped. The Mark{Completed,
 	// Failed,Reaped} stamps an early estimate using the webhook /
@@ -177,7 +181,7 @@ type InstanceStore interface {
 	// Touch is the reaper heartbeat: bumps last_seen_at on every
 	// instance the reaper just confirmed via DescribeInstances.
 	// Lets the UI distinguish "row is current" from "row hasn't been
-	// reconciled in N minutes -- something is wrong."
+	// reconciled in N minutes - something is wrong."
 	Touch(ctx context.Context, ids []string, now time.Time) error
 	ListAlive(ctx context.Context) ([]*instance.Instance, error)
 	ListStuck(ctx context.Context, cutoff time.Time) ([]*instance.Instance, error)
@@ -220,7 +224,7 @@ type WebhookStore interface {
 // SettingsStore is the generic key-value store for pacer-managed
 // config that needs to live outside YAML (auto-generated secrets,
 // UI-rotatable values). Today: just the bootstrap API token. The
-// store is intentionally minimal -- callers interpret the value.
+// store is intentionally minimal - callers interpret the value.
 type SettingsStore interface {
 	Get(ctx context.Context, key string) (*settingsmodel.Setting, error)
 	Put(ctx context.Context, key, value string) error

@@ -56,7 +56,7 @@ func TestUserData_NoBareFailFlag(t *testing.T) {
 		if !strings.Contains(line, "curl ") {
 			continue
 		}
-		// IMDS and the runner tarball are not pacer API calls -- they
+		// IMDS and the runner tarball are not pacer API calls - they
 		// have no error envelope to lose.
 		if strings.Contains(line, "169.254.169.254") || strings.Contains(line, "-fsSL") {
 			continue
@@ -146,7 +146,7 @@ fi
 	// The failure path is the reason this exists: GitHub's sentence
 	// has to reach the log.
 	if !strings.Contains(got, "Resource not accessible by integration") {
-		t.Errorf("error body was swallowed -- the operator would see only a status code:\n%s", got)
+		t.Errorf("error body was swallowed - the operator would see only a status code:\n%s", got)
 	}
 	if !strings.Contains(got, "HTTP 424") {
 		t.Errorf("status code missing from the log line:\n%s", got)

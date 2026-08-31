@@ -35,7 +35,7 @@ func BadRequest(c *fiber.Ctx, msg string) error {
 // array land in the body, so the SPA can incrementally adopt
 // field-level rendering without a synchronized backend cut-over.
 //
-// The summary string and the fields list are caller-supplied --
+// The summary string and the fields list are caller-supplied -
 // validation.Humanize + validation.Summary are the canonical
 // producers, but any handler that wants to surface multiple field
 // errors (e.g. cross-field business rules) can build them directly.

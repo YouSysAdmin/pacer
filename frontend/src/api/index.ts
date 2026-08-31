@@ -3,7 +3,7 @@
 // Pacer, Copyright (c) 2026 YouSysAdmin
 
 // Per-resource API namespaces over the fetch wrapper in client.ts.
-// Response payloads are typed as the views need them -- the backend
+// Response payloads are typed as the views need them - the backend
 // stays the source of truth; don't invent a full schema here.
 
 import { call } from './client'
@@ -33,7 +33,7 @@ export const pools = {
 
 export const repos = {
   list: () => call('/api/repos'),
-  // bind upserts -- POST /api/repos accepts {full_name, project_id,
+  // bind upserts - POST /api/repos accepts {full_name, project_id,
   // max_concurrent_runners, tags} and ON CONFLICT updates the row,
   // so the same call covers create + edit.
   bind: (body: unknown) => call('/api/repos', { method: 'POST', body: JSON.stringify(body) }),
@@ -120,7 +120,7 @@ export const stats = {
 
 export const backup = {
   // Export returns the raw Response so the caller can stream the
-  // attachment to disk via Blob -- the standard call() wrapper would
+  // attachment to disk via Blob - the standard call() wrapper would
   // JSON.parse the body and lose the Content-Disposition filename.
   exportRaw: () => fetch('/api/backup/export', { credentials: 'same-origin' }),
   import: (snapshot: unknown) =>
@@ -141,7 +141,7 @@ export interface AuditListParams {
 
 export const audit = {
   // q is a free-text search hitting target_id, detail (JSON blob),
-  // client_ip, actor_email, request_id, and action all at once --
+  // client_ip, actor_email, request_id, and action all at once -
   // the most common way operators look up an event when they have
   // a clue (instance id, IP, job id) but not the exact action name.
   list: ({

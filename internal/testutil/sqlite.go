@@ -8,7 +8,7 @@
 // same goose migrations the production binary uses, so store tests
 // run against the real schema.
 // The returned *sql.DB lives on a single connection (MaxOpenConns=1) so an in-memory database stays
-// coherent across queries -- matching the production posture.
+// coherent across queries - matching the production posture.
 package testutil
 
 import (

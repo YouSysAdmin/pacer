@@ -28,7 +28,7 @@ type Handler struct {
 // normalize:"normalize" tag (trim+lower) on Email runs before
 // validation so a "  Foo@Example.com " becomes "foo@example.com"
 // and matches the lower-cased rows in the users table. Password is
-// trimmed only -- never lower-cased -- and kept short of an
+// trimmed only - never lower-cased - and kept short of an
 // unreasonable upper bound so a runaway POST can't waste bcrypt's
 // CPU budget on a 1 MB attempt.
 type loginInput struct {
@@ -87,7 +87,7 @@ func (h *Handler) Login(c *fiber.Ctx) error {
 }
 
 // Logout clears the session cookie.
-// No server-side state to wipe -- the JWT is stateless, so an attacker
+// No server-side state to wipe - the JWT is stateless, so an attacker
 // who already exfiltrated a live cookie keeps that cookie valid until exp.
 // For an operator-console v1 that's an acceptable trade vs. running a
 // per-session deny-list.
@@ -119,7 +119,7 @@ const UserLocalKey = "auth.user"
 
 // Info returns the auth posture for the unauthenticated login page so
 // it can render the right control (local form vs OIDC button vs
-// nothing when auth.disabled). Open endpoint -- not gated.
+// nothing when auth.disabled). Open endpoint - not gated.
 func (h *Handler) Info(c *fiber.Ctx) error {
 	cfg := h.Runtime.Config.Auth
 	if cfg.Disabled {
@@ -137,7 +137,7 @@ func (h *Handler) Info(c *fiber.Ctx) error {
 
 // auditLoginFailed records a failed login attempt.
 // Records the email the caller offered (lowercased+trimmed) and a coarse reason
-// code -- never the password or stored hash.
+// code - never the password or stored hash.
 // Best-effort: a store error here must not block the 401 response.
 func (h *Handler) auditLoginFailed(c *fiber.Ctx, email, reason string) {
 	_ = h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{

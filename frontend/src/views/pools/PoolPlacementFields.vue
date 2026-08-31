@@ -15,7 +15,7 @@ import IdListEditor from '@/components/IdListEditor.vue'
 const { form, hintFor, clearError } = usePoolDraft()
 
 // Live validity flag for the AMI input. Empty reports valid so the
-// warning doesn't flash before the user types anything -- `required`
+// warning doesn't flash before the user types anything - `required`
 // still enforces non-empty at submit.
 const amiValid = computed(() => !form.ami_id || AMI_RE.test(form.ami_id.trim()))
 

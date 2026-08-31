@@ -10,7 +10,7 @@
 // single shared map would flatten distinctions the reader relies on.
 //
 // The values mirror internal/models/job/job.go and
-// internal/models/instance/instance.go -- the backend is the source of
+// internal/models/instance/instance.go - the backend is the source of
 // truth; an unknown status renders as a bare neutral pill rather than
 // guessing.
 
@@ -27,7 +27,7 @@ const JOB: Record<string, string> = {
   failed: 'badge-danger',
   // User-initiated stop: nothing went wrong, nothing is active.
   cancelled: 'badge-neutral',
-  // The sweeper had to kill it -- that is a failure of the run even
+  // The sweeper had to kill it - that is a failure of the run even
   // though the reap itself worked.
   reaped: 'badge-danger',
 }

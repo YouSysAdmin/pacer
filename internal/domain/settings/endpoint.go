@@ -33,7 +33,7 @@ type Handler struct {
 }
 
 // bootstrapTokenStatus is what GET /api/settings/bootstrap-token
-// returns. The raw token never leaves the server -- masked is the
+// returns. The raw token never leaves the server - masked is the
 // first 4 hex chars + ellipsis so the operator can confirm the
 // token is set without exposing it.
 type bootstrapTokenStatus struct {
@@ -111,7 +111,7 @@ func (h *Handler) RotateBootstrapToken(c *fiber.Ctx) error {
 }
 
 // rematerializeAllPools iterates every pool and calls ec2lt.CreateOrUpdate.
-// Failures are collected (pool names) and reported, not fatal -- a
+// Failures are collected (pool names) and reported, not fatal - a
 // single bad pool shouldn't block the others from picking up the new
 // token. Sequential rather than concurrent: SQLite's MaxOpenConns(1)
 // already serializes writes, and bursts of CreateLaunchTemplateVersion
@@ -123,7 +123,7 @@ func (h *Handler) rematerializeAllPools(ctx context.Context) (int, []string) {
 		return 0, nil
 	}
 	if h.Runtime.EC2 == nil {
-		// aws.disabled dev mode -- no LT to bump.
+		// aws.disabled dev mode - no LT to bump.
 		return 0, nil
 	}
 	var (
@@ -162,7 +162,7 @@ func (h *Handler) rematerializeAllPools(ctx context.Context) (int, []string) {
 }
 
 // EnsureBootstrapToken runs at server startup: if the settings row is
-// missing, generate one. Idempotent -- subsequent starts find the row
+// missing, generate one. Idempotent - subsequent starts find the row
 // and no-op. Loads the value into Runtime.BootstrapAPIToken either
 // way so the bootstrap endpoint has it ready.
 func EnsureBootstrapToken(ctx context.Context, rt *env.Runtime) error {
@@ -211,39 +211,74 @@ func maskToken(t string) string {
 // now. The audit_default / webhook_default fields echo the YAML floor so the
 // UI can render "(default: 90)" next to the input. The pruner
 // re-resolves on every tick, so PUT takes effect at the next daily
-// sweep -- documented in the UI.
+// sweep - documented in the UI.
 type retentionStatus struct {
 	AuditDays         int  `json:"audit_days"`
 	WebhookDays       int  `json:"webhook_days"`
+	JobLogDays        int  `json:"job_log_days"`
 	AuditDefault      int  `json:"audit_default"`
 	WebhookDefault    int  `json:"webhook_default"`
+	JobLogDefault     int  `json:"job_log_default"`
 	AuditOverridden   bool `json:"audit_overridden"`
 	WebhookOverridden bool `json:"webhook_overridden"`
+	JobLogOverridden  bool `json:"job_log_overridden"`
 }
 
 // retentionInput is the body of PUT /api/settings/retention. Either
 // field may be omitted. A nil pointer means "leave that setting
 // alone." Use 0 to explicitly clear an override (revert to YAML
-// default) -- the handler distinguishes nil from 0 via the pointer.
+// default) - the handler distinguishes nil from 0 via the pointer.
 type retentionInput struct {
 	AuditDays   *int `json:"audit_days,omitempty"`
 	WebhookDays *int `json:"webhook_days,omitempty"`
+	JobLogDays  *int `json:"job_log_days,omitempty"`
 }
 
 // GetRetention returns the current effective retention periods and
 // the YAML defaults so the UI can show "(default: N)" hints.
 func (h *Handler) GetRetention(c *fiber.Ctx) error {
-	ctx := c.UserContext()
+	return response.Success(c, h.retentionStatus(c.UserContext()))
+}
+
+// retentionStatus resolves every period once. Shared by GET and PUT
+// so the two cannot answer differently - the PUT response is what
+// the UI re-renders from, and a field added to one and not the other
+// shows up as a value that reverts on the next page load.
+func (h *Handler) retentionStatus(ctx context.Context) retentionStatus {
+	cfg := h.Runtime.Config.Retention
 	auditDays := EffectiveAuditDays(ctx, h.Runtime)
 	webhookDays := EffectiveWebhookDays(ctx, h.Runtime)
-	return response.Success(c, retentionStatus{
+	jobLogDays := EffectiveJobLogDays(ctx, h.Runtime)
+	return retentionStatus{
 		AuditDays:         auditDays,
 		WebhookDays:       webhookDays,
-		AuditDefault:      h.Runtime.Config.Retention.AuditDays,
-		WebhookDefault:    h.Runtime.Config.Retention.WebhookDays,
-		AuditOverridden:   auditDays != h.Runtime.Config.Retention.AuditDays,
-		WebhookOverridden: webhookDays != h.Runtime.Config.Retention.WebhookDays,
-	})
+		JobLogDays:        jobLogDays,
+		AuditDefault:      cfg.AuditDays,
+		WebhookDefault:    cfg.WebhookDays,
+		JobLogDefault:     cfg.JobLogDays,
+		AuditOverridden:   auditDays != cfg.AuditDays,
+		WebhookOverridden: webhookDays != cfg.WebhookDays,
+		JobLogOverridden:  jobLogDays != cfg.JobLogDays,
+	}
+}
+
+// putRetentionField validates one optional period and writes it.
+// nil leaves the setting alone; 0 clears the override so the YAML
+// default applies again. Written once rather than per field: the
+// three blocks were identical apart from their bounds, and the third
+// copy is where a wrong constant hides.
+func (h *Handler) putRetentionField(ctx context.Context, name, key string, v *int, min, max int) error {
+	if v == nil {
+		return nil
+	}
+	if *v != 0 && (*v < min || *v > max) {
+		return fmt.Errorf("%s must be 0 (use default) or %d..%d, got %d", name, min, max, *v)
+	}
+	val := ""
+	if *v != 0 {
+		val = strconv.Itoa(*v)
+	}
+	return h.Runtime.Store.Settings.Put(ctx, key, val)
 }
 
 // PutRetention writes operator overrides for one or both retention
@@ -258,55 +293,45 @@ func (h *Handler) PutRetention(c *fiber.Ctx) error {
 		fes := validation.Humanize(err)
 		return response.BadRequestFields(c, validation.Summary(fes), fes)
 	}
-	if in.AuditDays == nil && in.WebhookDays == nil {
-		return response.BadRequest(c, "at least one of audit_days / webhook_days required")
+	if in.AuditDays == nil && in.WebhookDays == nil && in.JobLogDays == nil {
+		return response.BadRequest(c, "at least one of audit_days / webhook_days / job_log_days required")
 	}
 
 	ctx := c.UserContext()
-	if in.AuditDays != nil {
-		v := *in.AuditDays
-		if v != 0 && (v < AuditMinDays || v > AuditMaxDays) {
+	fields := []struct {
+		name string
+		key  string
+		val  *int
+		min  int
+		max  int
+	}{
+		{"audit_days", settingsmodel.KeyAuditRetentionDays, in.AuditDays, AuditMinDays, AuditMaxDays},
+		{"webhook_days", settingsmodel.KeyWebhookRetentionDays, in.WebhookDays, WebhookMinDays, WebhookMaxDays},
+		{"job_log_days", settingsmodel.KeyJobLogRetentionDays, in.JobLogDays, JobLogMinDays, JobLogMaxDays},
+	}
+	// Validate the whole body before writing any of it, so a bad
+	// third field cannot leave the first two applied.
+	for _, f := range fields {
+		if f.val == nil {
+			continue
+		}
+		if *f.val != 0 && (*f.val < f.min || *f.val > f.max) {
 			return response.BadRequest(c, fmt.Sprintf(
-				"audit_days must be 0 (use default) or %d..%d, got %d",
-				AuditMinDays, AuditMaxDays, v))
-		}
-		val := ""
-		if v != 0 {
-			val = strconv.Itoa(v)
-		}
-		if err := h.Runtime.Store.Settings.Put(ctx, settingsmodel.KeyAuditRetentionDays, val); err != nil {
-			return response.Internal(c, err)
+				"%s must be 0 (use default) or %d..%d, got %d", f.name, f.min, f.max, *f.val))
 		}
 	}
-	if in.WebhookDays != nil {
-		v := *in.WebhookDays
-		if v != 0 && (v < WebhookMinDays || v > WebhookMaxDays) {
-			return response.BadRequest(c, fmt.Sprintf(
-				"webhook_days must be 0 (use default) or %d..%d, got %d",
-				WebhookMinDays, WebhookMaxDays, v))
-		}
-		val := ""
-		if v != 0 {
-			val = strconv.Itoa(v)
-		}
-		if err := h.Runtime.Store.Settings.Put(ctx, settingsmodel.KeyWebhookRetentionDays, val); err != nil {
+	for _, f := range fields {
+		if err := h.putRetentionField(ctx, f.name, f.key, f.val, f.min, f.max); err != nil {
 			return response.Internal(c, err)
 		}
 	}
 
-	auditDays := EffectiveAuditDays(ctx, h.Runtime)
-	webhookDays := EffectiveWebhookDays(ctx, h.Runtime)
+	st := h.retentionStatus(ctx)
 	auditing.PutCtx(c, h.Runtime.Store.Audit, audit.ActionRetentionUpdated, "settings", "retention",
 		audit.Detail(map[string]any{
-			"audit_days":   auditDays,
-			"webhook_days": webhookDays,
+			"audit_days":   st.AuditDays,
+			"webhook_days": st.WebhookDays,
+			"job_log_days": st.JobLogDays,
 		}))
-	return response.Success(c, retentionStatus{
-		AuditDays:         auditDays,
-		WebhookDays:       webhookDays,
-		AuditDefault:      h.Runtime.Config.Retention.AuditDays,
-		WebhookDefault:    h.Runtime.Config.Retention.WebhookDays,
-		AuditOverridden:   auditDays != h.Runtime.Config.Retention.AuditDays,
-		WebhookOverridden: webhookDays != h.Runtime.Config.Retention.WebhookDays,
-	})
+	return response.Success(c, st)
 }

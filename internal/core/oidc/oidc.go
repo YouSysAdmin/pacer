@@ -8,7 +8,7 @@
 // (allowed_domains / allowed_emails / allowed_groups + email_verified).
 //
 // State / nonce / PKCE verifier ride the round-trip in a short-lived
-// signed cookie -- no server-side state, no extra tables. Cookie is
+// signed cookie - no server-side state, no extra tables. Cookie is
 // HMAC-signed with auth.jwt_secret so we don't introduce a second
 // long-lived secret.
 package oidc
@@ -51,7 +51,7 @@ const StateCookieTTL = 10 * time.Minute
 
 // Provider bundles the IdP discovery result + an oauth2.Config and an
 // ID-token verifier. Build once at startup and reuse across requests
-// -- discovery is a non-trivial cold path.
+// - discovery is a non-trivial cold path.
 type Provider struct {
 	cfg      Config
 	oauth2   *oauth2.Config
@@ -60,7 +60,7 @@ type Provider struct {
 
 // New constructs a Provider against the issuer's discovery document.
 // Returns an error if the issuer is unreachable or returns a malformed
-// configuration -- the operator should see this at startup, not at
+// configuration - the operator should see this at startup, not at
 // the first SSO attempt.
 func New(ctx context.Context, cfg Config) (*Provider, error) {
 	prov, err := gooidc.NewProvider(ctx, cfg.Issuer)

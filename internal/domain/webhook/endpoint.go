@@ -51,7 +51,7 @@ func (h *Handler) Receive(c *fiber.Ctx) error {
 	if !hadDeliveryID {
 		// GitHub always sets this header. Missing means it isn't GitHub
 		// (e.g. an operator curl).
-		// Generate a synthetic id so the delivery row isn't all-NULL, but skip dedup -- random UUIDs
+		// Generate a synthetic id so the delivery row isn't all-NULL, but skip dedup - random UUIDs
 		// won't collide so the check would be a no-op anyway.
 		delivery = uuid.New().String()
 	}
@@ -66,7 +66,7 @@ func (h *Handler) Receive(c *fiber.Ctx) error {
 		// GitHub is retrying a delivery we already processed (or are
 		// processing concurrently).
 		// Reply 200 so it stops resending.
-		// We deliberately don't re-dispatch -- replaying workflow_job
+		// We deliberately don't re-dispatch - replaying workflow_job
 		// "queued" would double-enqueue, and replaying "completed"
 		// would re-audit a closed job.
 		slog.Info("webhook drop: duplicate delivery", "event", event, "delivery", delivery)
@@ -145,7 +145,7 @@ func (h *Handler) enqueue(ctx context.Context, c *fiber.Ctx, p *workflowJobPaylo
 
 	// Routing: try the per-repo binding first (most specific). When no
 	// binding exists, fall back to an org-scoped project keyed off
-	// repository.owner.login. This lets operators migrate gradually --
+	// repository.owner.login. This lets operators migrate gradually -
 	// repo-scoped projects coexist with an org project that catches
 	// every other repo in the same org.
 	proj, err := h.routeProject(ctx, p)
@@ -218,7 +218,7 @@ func (h *Handler) enqueue(ctx context.Context, c *fiber.Ctx, p *workflowJobPaylo
 
 	// Delivery-id dedup only covers GitHub's automatic retries (same
 	// GUID). A manual "Redeliver" from the App UI mints a fresh GUID,
-	// so catch the duplicate at the job level too -- otherwise Put hits
+	// so catch the duplicate at the job level too - otherwise Put hits
 	// the jobs.gh_job_id unique index and the operator sees a 500 for
 	// what is a logical drop.
 	if existing, err := h.Runtime.Store.Job.GetByGHJobID(ctx, p.WorkflowJob.ID); err != nil {
@@ -272,7 +272,7 @@ func (h *Handler) enqueue(ctx context.Context, c *fiber.Ctx, p *workflowJobPaylo
 // repo or its org, or (nil, err) on a store-level failure. Lookup
 // order:
 //
-//  1. Per-repo binding -- if a Repo row exists for the full_name, its
+//  1. Per-repo binding - if a Repo row exists for the full_name, its
 //     ProjectID wins (most specific, supports running repo-scoped and
 //     org-scoped projects in the same org).
 //  2. Org-scoped project for repository.owner.login.
@@ -304,7 +304,7 @@ func (h *Handler) markRunning(ctx context.Context, c *fiber.Ctx, p *workflowJobP
 	}
 	// The in_progress webhook arrives with steps[] partially populated
 	// (set-up, checkout, ...). Refresh the payload column so the job
-	// detail modal can render them. Best-effort -- a stale payload is
+	// detail modal can render them. Best-effort - a stale payload is
 	// preferable to a 500 here.
 	if err := h.Runtime.Store.Job.UpdatePayload(ctx, j.ID, raw); err != nil {
 		slog.Warn("webhook.in_progress: payload refresh failed", "job_id", j.ID, "err", err)

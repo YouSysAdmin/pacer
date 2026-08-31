@@ -60,7 +60,7 @@ function emptyForm(): RepoForm {
 
 const form = ref<RepoForm>(emptyForm())
 
-// Org-scoped projects don't accept repo bindings -- the webhook routes
+// Org-scoped projects don't accept repo bindings - the webhook routes
 // by repository.owner.login instead. Filter them out of the picker so
 // operators can't pick one and hit a 400 on submit.
 const bindableProjects = computed(() =>
@@ -68,7 +68,7 @@ const bindableProjects = computed(() =>
 )
 
 // The rows the scope selector leaves visible. Client-side because the
-// list is unpaginated and every row carries project_id -- there is no
+// list is unpaginated and every row carries project_id - there is no
 // total to keep consistent with the server.
 const visible = computed(() =>
   scope.currentId ? list.value.filter((r) => r.project_id === scope.currentId) : list.value,
@@ -342,7 +342,7 @@ onMounted(refresh)
       <TagsEditor v-model="form.tags" />
       <template #hint>
         Override pool + project tags on key conflict. Stamped on the spawned instance + EBS volumes
-        only -- not on the pool's launch template, which is shared. <code>gha:</code> prefix
+        only - not on the pool's launch template, which is shared. <code>gha:</code> prefix
         reserved.
       </template>
     </FormField>

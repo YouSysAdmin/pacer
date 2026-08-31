@@ -55,7 +55,7 @@ function isoDate(d: Date): string {
 
 // The picked `to` date is treated as INCLUSIVE in the UI (the user
 // picks "include through this day"). The backend's window is
-// [from, to) -- exclusive on the right -- so the API call shifts
+// [from, to) - exclusive on the right - so the API call shifts
 // the picked date forward by one UTC day. Without this shift,
 // picking today excluded all of today's data.
 function nextDayUTC(yyyyMMdd: string): string {
@@ -152,7 +152,7 @@ onMounted(refresh)
         </FormField>
         <FormField
           label="Group by"
-          hint="Estimates only. Launch-time price * elapsed time -- ignores spot drift, EBS, and data transfer."
+          hint="Estimates only. Launch-time price * elapsed time - ignores spot drift, EBS, and data transfer."
         >
           <select v-model="groupBy" class="form-select" @change="refresh">
             <option value="project">Project</option>

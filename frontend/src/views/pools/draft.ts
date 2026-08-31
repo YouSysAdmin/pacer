@@ -5,7 +5,7 @@
 // The pool draft, shared between the modal and its three field groups.
 //
 // provide/inject rather than props: the groups EDIT the draft, and a
-// prop is read-only by contract -- passing it down would have each
+// prop is read-only by contract - passing it down would have each
 // group either mutating something it does not own or re-emitting
 // twenty fields to a parent that would write them straight back. The
 // draft has exactly one owner (PoolFormModal) and three renderers, so

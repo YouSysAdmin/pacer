@@ -178,7 +178,7 @@ func TestAudit_LimitCap(t *testing.T) {
 // TestAudit_Q_SearchAcrossColumns is the regression for the
 // "search by instance id / IP / etc doesn't work" report. The Q
 // filter must hit target_id, detail, client_ip, actor_email,
-// request_id, and action all at once -- because that's where
+// request_id, and action all at once - because that's where
 // operators actually look up an event from a clue they have.
 func TestAudit_Q_SearchAcrossColumns(t *testing.T) {
 	s := NewStore(testutil.OpenTestDB(t))
@@ -268,7 +268,7 @@ func TestAudit_Q_SearchAcrossColumns(t *testing.T) {
 				}
 			}
 
-			// Count must agree with List on the same filter -- this
+			// Count must agree with List on the same filter - this
 			// is the invariant the pagination contract relies on.
 			n, err := s.Count(ctx, auditmodel.ListFilter{Q: c.q})
 			if err != nil {

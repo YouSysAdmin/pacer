@@ -27,14 +27,14 @@ import (
 //   - spot pools: AllocationStrategy=price-capacity-optimized
 //     (AWS-recommended, balances price with interruption probability)
 //
-// Spot price never exceeds on-demand -- AWS guarantees this since
+// Spot price never exceeds on-demand - AWS guarantees this since
 // 2017, so we don't pass an explicit MaxPrice.
 //
 // The LT carries static user-data baked at pool-save time. Per-job
 // state (the HMAC callback token) is stamped on the instance via
 // post-launch CreateTags and read by the bootstrap script from IMDS.
 // This is why we reference Version=$Default rather than minting a
-// transient version per spawn -- the LT only mutates when the
+// transient version per spawn - the LT only mutates when the
 // operator saves the pool.
 //
 // Returns:
@@ -117,7 +117,7 @@ func (o *Orchestrator) spawnFleet(ctx context.Context, sc *spawnContext) (*spawn
 		// Failure here is fatal: gha-callback-token is in this batch
 		// and the bootstrap script can't authenticate to
 		// /api/runner/register without it. Without the tag the
-		// instance polls IMDS for 2 min, exits, terminates -- and
+		// instance polls IMDS for 2 min, exits, terminates - and
 		// the job sits in claimed until the reaper fires. Better to
 		// terminate immediately and fail the spawn so the operator
 		// sees a real error.
@@ -137,10 +137,10 @@ func (o *Orchestrator) spawnFleet(ctx context.Context, sc *spawnContext) (*spawn
 		return &spawnResult{InstanceID: instID, InstanceType: instType, AZ: az}, false, nil
 	}
 
-	// No instances launched -- inspect Errors[]. If every entry is
+	// No instances launched - inspect Errors[]. If every entry is
 	// capacity-class, signal exhaustion so the caller reschedules.
 	if len(out.Errors) == 0 {
-		// Theoretically unreachable per the CreateFleet contract --
+		// Theoretically unreachable per the CreateFleet contract -
 		// log loudly so we notice if AWS ever changes the shape.
 		slog.Error("orchestrator: create fleet returned 0 instances and 0 errors (AWS contract changed?)")
 		return nil, false, fmt.Errorf("create fleet returned 0 instances and 0 errors (unexpected)")
@@ -200,7 +200,7 @@ func buildFleetOverrides(instanceTypes, subnetIDs []string, priorityMode bool) [
 //	"priority"     -> prioritized  (on-demand) + capacity-optimized-prioritized (spot)
 //
 // On-demand has no "capacity" concept (it's always available), so the
-// "capacity" preset still maps OD to lowest-price -- the strategy is
+// "capacity" preset still maps OD to lowest-price - the strategy is
 // only meaningful for spot pools.
 //
 // "lowest_price" for spot is the deprecated AWS strategy: it picks the
@@ -210,7 +210,7 @@ func buildFleetOverrides(instanceTypes, subnetIDs []string, priorityMode bool) [
 // for long-running workloads.
 //
 // For spot, capacity-optimized-prioritized respects the operator's
-// list order on a best-effort basis but optimizes capacity first --
+// list order on a best-effort basis but optimizes capacity first -
 // using plain "prioritized" for spot is an anti-pattern (it ignores
 // capacity signals and risks high-interruption pools).
 //
@@ -286,14 +286,14 @@ func postLaunchTags(sc *spawnContext) []ec2types.Tag {
 
 // spawnRunInstances is the legacy path: serial RunInstances over
 // pool.InstanceTypes against pool.SubnetIDs[0]. Kept for operators
-// who specifically want it. No multi-AZ -- if SubnetIDs[0]'s AZ is
+// who specifically want it. No multi-AZ - if SubnetIDs[0]'s AZ is
 // dry, we never try the rest. Same return contract as spawnFleet.
 //
 // User-data is baked into the LT at materialize time, not passed
 // per-call, so the LT version this references stays consecutive
 // across spawns (same invariant as the Fleet path). gha:callback-token
 // is included in the launch-time TagSpecifications, so RunInstances
-// spawns see the tag before cloud-init starts -- no polling race.
+// spawns see the tag before cloud-init starts - no polling race.
 func (o *Orchestrator) spawnRunInstances(ctx context.Context, sc *spawnContext) (*spawnResult, bool, error) {
 	if len(sc.pool.InstanceTypes) == 0 || len(sc.pool.SubnetIDs) == 0 {
 		return nil, false, fmt.Errorf("pool %s has no instance_types or subnets to launch into", sc.pool.Name)

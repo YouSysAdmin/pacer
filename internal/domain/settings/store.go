@@ -77,7 +77,7 @@ func parseTimestamp(s string) (time.Time, error) {
 //
 // We format the timestamp explicitly to RFC3339Nano rather than
 // passing time.Time and letting the driver pick. The settings
-// column is declared TEXT (not TIMESTAMP) -- with TEXT, modernc/sqlite
+// column is declared TEXT (not TIMESTAMP) - with TEXT, modernc/sqlite
 // serializes time.Time via Go's default String() shape
 // (`2006-01-02 15:04:05.000000000 -0700 MST`), which is unparseable
 // by stdlib's RFC3339 readers. Explicit RFC3339Nano keeps writes

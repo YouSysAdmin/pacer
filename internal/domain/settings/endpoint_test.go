@@ -27,7 +27,10 @@ func init() { validation.Init() }
 func newApp(t *testing.T, auditDays, webhookDays int) (*fiber.App, *env.Runtime) {
 	t.Helper()
 	rt := runtimeutil.NewRuntime(t, &env.Config{
-		Retention: env.RetentionConfig{AuditDays: auditDays, WebhookDays: webhookDays},
+		// Job-log retention is not parameterized: no existing caller
+		// varies it, and a fixed default keeps the new assertions
+		// readable.
+		Retention: env.RetentionConfig{AuditDays: auditDays, WebhookDays: webhookDays, JobLogDays: 31},
 	})
 	h := &settingsdomain.Handler{Runtime: rt}
 	app := fiber.New(fiber.Config{DisableStartupMessage: true})
@@ -206,5 +209,81 @@ func TestPutRetention_WritesAuditRow(t *testing.T) {
 	}
 	if !strings.Contains(entries[0].Detail, `"audit_days":30`) {
 		t.Fatalf("detail missing values: %s", entries[0].Detail)
+	}
+}
+
+// TestRetention_JobLogRoundTrip: the third period has to travel the
+// whole way - GET echoes the default, PUT stores an override, and
+// GET reflects it. A field wired into only one of the two shows up
+// as a value that reverts on the next page load.
+func TestRetention_JobLogRoundTrip(t *testing.T) {
+	app, _ := newApp(t, 90, 7)
+
+	var got struct {
+		JobLogDays       int  `json:"job_log_days"`
+		JobLogDefault    int  `json:"job_log_default"`
+		JobLogOverridden bool `json:"job_log_overridden"`
+	}
+	_, body := get(t, app, "/api/settings/retention")
+	_ = json.Unmarshal(body, &got)
+	if got.JobLogDays != 31 || got.JobLogDefault != 31 {
+		t.Fatalf("defaults: %+v", got)
+	}
+	if got.JobLogOverridden {
+		t.Fatalf("nothing overridden yet: %+v", got)
+	}
+
+	resp, body := putJSON(t, app, "/api/settings/retention", map[string]any{"job_log_days": 14})
+	if resp.StatusCode != 200 {
+		t.Fatalf("put: %d %s", resp.StatusCode, body)
+	}
+	_ = json.Unmarshal(body, &got)
+	if got.JobLogDays != 14 || !got.JobLogOverridden {
+		t.Fatalf("put response: %+v", got)
+	}
+
+	_, body = get(t, app, "/api/settings/retention")
+	_ = json.Unmarshal(body, &got)
+	if got.JobLogDays != 14 || !got.JobLogOverridden {
+		t.Fatalf("get after put: %+v", got)
+	}
+
+	// 0 is the documented "use the YAML default again" sentinel.
+	_, body = putJSON(t, app, "/api/settings/retention", map[string]any{"job_log_days": 0})
+	_ = json.Unmarshal(body, &got)
+	if got.JobLogDays != 31 || got.JobLogOverridden {
+		t.Fatalf("clearing the override: %+v", got)
+	}
+}
+
+func TestRetention_JobLogRejectsOutOfRange(t *testing.T) {
+	app, _ := newApp(t, 90, 7)
+	for _, v := range []int{-1, 400} {
+		resp, body := putJSON(t, app, "/api/settings/retention", map[string]any{"job_log_days": v})
+		if resp.StatusCode != 400 {
+			t.Errorf("job_log_days=%d: status %d, want 400 (%s)", v, resp.StatusCode, body)
+		}
+	}
+}
+
+// TestRetention_RejectsWholeBodyBeforeWriting: validation runs over
+// every field first, so a bad third value cannot leave the first two
+// applied.
+func TestRetention_RejectsWholeBodyBeforeWriting(t *testing.T) {
+	app, _ := newApp(t, 90, 7)
+	resp, _ := putJSON(t, app, "/api/settings/retention", map[string]any{
+		"audit_days": 10, "job_log_days": 9999,
+	})
+	if resp.StatusCode != 400 {
+		t.Fatalf("status: %d, want 400", resp.StatusCode)
+	}
+
+	var got struct {
+		AuditDays int `json:"audit_days"`
+	}
+	_, body := get(t, app, "/api/settings/retention")
+	_ = json.Unmarshal(body, &got)
+	if got.AuditDays != 90 {
+		t.Fatalf("audit_days was applied despite the rejected body: %d", got.AuditDays)
 	}
 }

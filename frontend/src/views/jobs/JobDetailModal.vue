@@ -6,7 +6,7 @@
 // The job detail bundle: job row + webhook payload + instance + audit
 // trail, from GET /api/jobs/:id. Refreshes itself silently every 5 s
 // while open so a queued -> running -> completed transition shows up
-// without closing the dialog (no spinner on the quiet path -- a flash
+// without closing the dialog (no spinner on the quiet path - a flash
 // per tick makes the modal unreadable).
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { jobs } from '@/api'
@@ -89,7 +89,7 @@ async function load(silent: boolean) {
     detail.value = (await jobs.get(props.jobId)) as DetailBundle
   } catch (e) {
     if (!silent) error.value = (e as Error).message
-    // Silent-path errors are swallowed -- the next tick retries.
+    // Silent-path errors are swallowed - the next tick retries.
   } finally {
     loading.value = false
   }
@@ -159,7 +159,7 @@ function commitURL(repoURL: string, sha: string): string {
 
 // GitHub workflow_job step shape: status is the lifecycle phase and
 // conclusion is the actual outcome. Coloring on status alone paints
-// every finished step green, including failures -- prefer conclusion
+// every finished step green, including failures - prefer conclusion
 // when present and fall back to status.
 function stepResult(step: Step): { text: string; cls: string } {
   const c = (step.conclusion || '').toLowerCase()
@@ -170,7 +170,7 @@ function stepResult(step: Step): { text: string; cls: string } {
   }
   if (c === 'skipped') return { text: 'skipped', cls: 'badge badge-info' }
   if (c) return { text: c, cls: 'badge' }
-  // No conclusion yet -- step is still in flight. Show the lifecycle.
+  // No conclusion yet - step is still in flight. Show the lifecycle.
   const s = (step.status || '').toLowerCase()
   if (s === 'in_progress') return { text: 'running', cls: 'badge badge-info' }
   if (s === 'queued') return { text: 'queued', cls: 'badge badge-warning' }
@@ -181,7 +181,7 @@ function stepResult(step: Step): { text: string; cls: string } {
 // every ~60s for every alive instance:
 //   < 90s   -> ok   ("the reaper just touched this")
 //   < 180s  -> warn ("one tick missed, could be transient")
-//   >= 180s -> crit ("multiple ticks missed -- something is wrong")
+//   >= 180s -> crit ("multiple ticks missed - something is wrong")
 // Only meaningful for in-flight states; terminated rows freeze
 // last_seen_at at termination time.
 function heartbeat(instance: Instance): { text: string; cls: string } {
@@ -397,7 +397,7 @@ function fmtAuditDetail(s?: string): string {
         <div class="failure-meta">
           <strong>{{ detail.job.failure_stage || 'bootstrap' }}</strong>
           <span v-if="detail.job.failure_message" class="text-muted">
-            -- {{ detail.job.failure_message }}
+            - {{ detail.job.failure_message }}
           </span>
         </div>
         <pre v-if="detail.job.failure_log" class="failure-log">{{ detail.job.failure_log }}</pre>

@@ -16,7 +16,7 @@ import (
 // userDataScript is the bash payload baked into every launch template
 // at materialize time and run by cloud-init on every spawned instance.
 //
-// Static across spawns -- per-job state (the HMAC-signed callback
+// Static across spawns - per-job state (the HMAC-signed callback
 // token) is fetched from pacer's /api/runner/bootstrap endpoint using
 // the global bootstrap API token baked in here as the bearer secret.
 // The orchestrator stashes the per-job HMAC token on jobs.bootstrap_token
@@ -62,7 +62,7 @@ report_error() {
     [ "$exit_code" = "0" ] && return 0
     echo "BOOTSTRAP FAIL stage=$STAGE exit=$exit_code line=$line"
     # Without a callback token (bootstrap never returned) we can't
-    # authenticate the error report -- log and skip the POST. The
+    # authenticate the error report - log and skip the POST. The
     # reaper sweep is the safety net.
     if [ -n "$CALLBACK_TOKEN" ]; then
         local payload
@@ -86,8 +86,8 @@ trap 'report_error $? $LINENO' ERR
 
 # api_post POSTs to pacer and prints the response body on stdout.
 #
-# It exists because "curl -f" -- which every one of these calls used
-# to use -- exits 22 and THROWS THE BODY AWAY. The operator reading a
+# It exists because "curl -f" - which every one of these calls used
+# to use - exits 22 and THROWS THE BODY AWAY. The operator reading a
 # failed job then sees "error: 424" and nothing else, while the
 # sentence that explains it ("jitconfig: 403 Forbidden: Resource not
 # accessible by integration") is discarded a few milliseconds before
@@ -151,7 +151,7 @@ echo "instance_id=$INSTANCE_ID type=$INSTANCE_TYPE az=$AZ"
 # returns 410.
 #
 # --retry 12 + --retry-delay 6 covers transient network blips during
-# pacer restarts. 4xx (including 401 / 403 / 410) do NOT retry --
+# pacer restarts. 4xx (including 401 / 403 / 410) do NOT retry -
 # those are permanent.
 STAGE="bootstrap"
 echo "POST /api/runner/bootstrap"
@@ -201,7 +201,7 @@ elif [ "$INSTALLED" != "$RUNNER_VERSION" ]; then
 fi
 
 # ---------------------------------------------------------------- register
-# This is the only request the runner CANNOT survive losing -- the JIT
+# This is the only request the runner CANNOT survive losing - the JIT
 # config is single-use and we have no graceful fallback if it doesn't
 # come back. --retry 12 + --retry-delay 6 = up to ~72s of retry,
 # covering a typical pacer redeploy window without bouncing the
@@ -253,10 +253,10 @@ trap - ERR
 # A runner that exits non-zero never reached the ERR trap: the
 # "|| RUNNER_EXIT=$?" above catches the failure by design, so the
 # script walks on to "complete" and the log dies with the instance a
-# minute later. That hid the single most common class of failure --
+# minute later. That hid the single most common class of failure -
 # GitHub refusing the registration at connect time (a runner version
 # it no longer accepts, a JIT config already consumed, a runner group
-# that went away) -- because all of that is printed by run.sh, not by
+# that went away) - because all of that is printed by run.sh, not by
 # anything the server ever sees.
 #
 # So report it the same way a bootstrap failure is reported. This is
@@ -315,10 +315,10 @@ var userDataTmpl = template.Must(template.New("userdata").
 // resolved actions/runner tag (pool pin or server-cached latest at
 // the moment the LT was materialized). The script skips the runner
 // download when empty and uses whatever the AMI baked.
-// bootstrapAPIToken authenticates POST /api/runner/bootstrap -- it's
+// bootstrapAPIToken authenticates POST /api/runner/bootstrap - it's
 // the operator-managed shared secret in the settings table.
 //
-// The per-job callback token + job id are NOT inputs here -- the
+// The per-job callback token + job id are NOT inputs here - the
 // script fetches them via the bootstrap endpoint after IMDSv2 brings
 // up its own instance_id.
 func renderUserData(p *pool.Pool, serverURL, runnerVersion, bootstrapAPIToken string) (string, error) {

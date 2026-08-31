@@ -5,7 +5,7 @@
 // Package repo binds a GitHub repository (by full_name) to a project.
 // Optional per-repo concurrency cap overrides the project default.
 // Optional per-repo tag map is the innermost layer of the
-// project / pool / repo tag cascade -- repo tags override pool
+// project / pool / repo tag cascade - repo tags override pool
 // tags which override project tags on key conflict.
 // Repo tags are stamped at orchestrator spawn time on the instance + volumes
 // only. They don't affect the pool's launch template (which is

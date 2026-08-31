@@ -73,7 +73,7 @@ func VerifyPassword(hash, plaintext string) bool {
 
 // GeneratePassword returns a URL-safe random password.
 // Used by the bootstrap flow to mint the operator's initial credential when the
-// users table is empty -- the plaintext is logged once at startup
+// users table is empty - the plaintext is logged once at startup
 // then never recoverable.
 func GeneratePassword() (string, error) {
 	raw := make([]byte, (generatedPasswordN*3+3)/4)

@@ -4,7 +4,7 @@
 // Pacer, Copyright (c) 2026 YouSysAdmin
 
 // Paginated job table with a status filter, a 5 s auto-refresh (page 1
-// only -- older pages stay put while the operator reads them), and a
+// only - older pages stay put while the operator reads them), and a
 // reconcile-now shortcut for the reaper.
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { jobs, systemHealth } from '@/api'
@@ -67,7 +67,7 @@ const fmt = (t?: string | null) => (t ? formatDate(t) : '')
 
 // refreshGen is a monotonic counter used to discard stale fetch
 // results. With auto-refresh + manual paging both calling refresh(),
-// responses can arrive out of order -- a slower page-1 reply landing
+// responses can arrive out of order - a slower page-1 reply landing
 // after a faster page-2 reply would rewind the table.
 let refreshGen = 0
 let pollFailed = false
@@ -82,7 +82,7 @@ async function refresh() {
       offset: offset.value,
       projectID: scope.projectParam,
     })) as { entries?: JobRow[]; total?: number } | null
-    if (myGen !== refreshGen) return // newer refresh in flight -- abandon
+    if (myGen !== refreshGen) return // newer refresh in flight - abandon
     list.value = r?.entries || []
     total.value = r?.total ?? list.value.length
     pollFailed = false
@@ -96,7 +96,7 @@ async function refresh() {
   }
 }
 
-// firstPage is the "show me the latest" shortcut -- with auto-refresh
+// firstPage is the "show me the latest" shortcut - with auto-refresh
 // paused past page 1, the operator needs a quick way back.
 function firstPage() {
   offset.value = 0
@@ -117,7 +117,7 @@ const pageable = computed<Pageable>(() => ({
 }))
 
 // Force an immediate reaper sweep server-side. Useful right after an
-// operator terminates an instance in the AWS console -- the next
+// operator terminates an instance in the AWS console - the next
 // scheduled tick is up to 60 s away, this collapses that to ~one
 // round trip.
 async function reconcile() {
@@ -141,7 +141,7 @@ async function reconcile() {
   }
 }
 
-// Auto-refresh: one interval created on mount -- NOT a watchEffect
+// Auto-refresh: one interval created on mount - NOT a watchEffect
 // that reads refresh()'s internals, which would recreate the interval
 // on every offset change and race the pager (the Svelte page needed
 // untrack() for exactly this). Gated on offset === 0: past page 1 the
@@ -160,7 +160,7 @@ onUnmounted(() => clearInterval(timer))
 // Re-fetch when a filter, the page size, or the project scope
 // changes. Reset to page 1 each time: a narrower filter would
 // otherwise leave the pager pointing past the new (smaller) total.
-// Explicit watch on the inputs only -- offset writes are owned by
+// Explicit watch on the inputs only - offset writes are owned by
 // the pager, and watching refresh()'s own reads would make paging
 // re-trigger this and rewind itself.
 watch([filter, limit, () => scope.currentId], () => {
@@ -261,7 +261,7 @@ watch([filter, limit, () => scope.currentId], () => {
     <p class="text-muted text-sm mt-3">
       <template v-if="offset === 0">Auto-refreshes every 5 s.</template>
       <template v-else>
-        Auto-refresh paused while paging -- go back to page 1 (or hit <strong>Refresh</strong>) to
+        Auto-refresh paused while paging - go back to page 1 (or hit <strong>Refresh</strong>) to
         resume.
       </template>
     </p>

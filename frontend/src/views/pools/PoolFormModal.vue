@@ -5,7 +5,7 @@
 
 // The create / edit / fork dialog. It owns ONE draft object, passes it
 // down to the three field groups, and is the only place that talks to
-// the API -- so "what the form holds" and "what gets sent" cannot
+// the API - so "what the form holds" and "what gets sent" cannot
 // drift between the groups.
 import { computed, reactive, ref, watch } from 'vue'
 import { pools as poolsAPI } from '@/api'
@@ -58,7 +58,7 @@ function hintFor(name: string): string {
 }
 
 // The field groups read the draft from here rather than through
-// props -- see draft.ts for why.
+// props - see draft.ts for why.
 providePoolDraft({ form, hintFor, clearError: clearServerError })
 
 const title = computed(() => {

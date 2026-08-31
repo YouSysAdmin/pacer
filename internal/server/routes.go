@@ -92,7 +92,7 @@ func registerRoutes(app *fiber.App, rt *env.Runtime) {
 		// /runner/bootstrap is authenticated by the global bootstrap
 		// API token (Authorization: Bearer ...) rather than per-job
 		// HMAC, since the in-instance script doesn't yet have its
-		// per-job callback token at this point -- that's what
+		// per-job callback token at this point - that's what
 		// bootstrap returns.
 		api.Post("/runner/bootstrap", rnH.Bootstrap)
 		api.Post("/runner/register", rnH.Register)
@@ -207,7 +207,7 @@ func registerRoutes(app *fiber.App, rt *env.Runtime) {
 // spaRoutePrefixes is the set of top-level paths the Vue router owns.
 // Each one matches itself exactly AND any subpath (for dynamic routes
 // like /jobs/123). Add an entry here when a new top-level route lands
-// in frontend/src/router/index.ts -- routes_test.go parses that file
+// in frontend/src/router/index.ts - routes_test.go parses that file
 // and fails when the two lists drift.
 //
 // Anything outside these prefixes that isn't a real embedded asset
@@ -313,7 +313,7 @@ func spaCacheControl(c *fiber.Ctx) error {
 	return nil
 }
 
-// isSPARoute reports whether path is owned by the Vue router -- an
+// isSPARoute reports whether path is owned by the Vue router - an
 // exact spaRoutePrefixes entry or a subpath of one. Those responses
 // carry the index.html shell, never a static file.
 func isSPARoute(path string) bool {

@@ -16,7 +16,7 @@ import (
 const (
 	// PruneInterval is the cadence at which the prune sweep runs. The
 	// tables are small per row but insert on every webhook delivery
-	// and every state change, so daily is plenty -- slower would
+	// and every state change, so daily is plenty - slower would
 	// still be correct, faster just burns a write.
 	PruneInterval = 24 * time.Hour
 )
@@ -80,5 +80,20 @@ func (p *Pruner) Tick(ctx context.Context) {
 	} else if n > 0 {
 		slog.Info("pruner: audit_log pruned",
 			"rows", n, "cutoff", auditCutoff, "retention_days", auditDays)
+	}
+
+	// Job bootstrap logs: the only unbounded thing on the jobs table.
+	// A failed job carries up to 64 KiB of captured output, so a
+	// noisy week costs more disk than every other housekeeping table
+	// combined. This CLEARS THE LOG and keeps the row - stats read
+	// jobs directly, and deleting rows here would quietly shorten
+	// every cost report to the retention window.
+	jobLogDays := settingsdomain.EffectiveJobLogDays(ctx, p.Runtime)
+	jobLogCutoff := now.Add(-time.Duration(jobLogDays) * 24 * time.Hour)
+	if n, err := p.Runtime.Store.Job.ClearLogsOlderThan(ctx, jobLogCutoff); err != nil {
+		slog.Error("pruner: job logs failed", "err", err)
+	} else if n > 0 {
+		slog.Info("pruner: job logs cleared",
+			"rows", n, "cutoff", jobLogCutoff, "retention_days", jobLogDays)
 	}
 }

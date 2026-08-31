@@ -112,7 +112,7 @@ describe('isRepoFullName', () => {
     expect(isRepoFullName('a/b')).toBe(true)
   })
   it("matches the Go SplitN(s, '/', 2) semantics", () => {
-    // Both halves non-empty when split on the first slash --
+    // Both halves non-empty when split on the first slash -
     // "owner/name/sub" -> ["owner", "name/sub"], both non-empty.
     expect(isRepoFullName('owner/name/sub')).toBe(true)
   })

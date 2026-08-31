@@ -78,7 +78,7 @@ func TestDeleteOlderThan_MixedTimestampFormats(t *testing.T) {
 }
 
 // persistDelivery must stamp received_at itself, in UTC, rather than
-// relying on DEFAULT CURRENT_TIMESTAMP -- one write path, one format.
+// relying on DEFAULT CURRENT_TIMESTAMP - one write path, one format.
 func TestPersistDelivery_StampsUTCReceivedAt(t *testing.T) {
 	rt := runtimeutil.NewRuntime(t, &env.Config{})
 	ctx := context.Background()

@@ -248,7 +248,7 @@ func (h *Handler) auditOIDCDenied(c *fiber.Ctx, claims *pacoidc.Claims, reason s
 }
 
 // redirectLogin sends the browser back to /login with an error code
-// the SPA can render as a banner. Generic codes -- never include the
+// the SPA can render as a banner. Generic codes - never include the
 // raw failure reason in the URL.
 func redirectLogin(c *fiber.Ctx, code string) error {
 	return c.Redirect("/login?err="+code, fiber.StatusFound)

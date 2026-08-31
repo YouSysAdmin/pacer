@@ -5,7 +5,7 @@
 
 // Pool list, filtered by project, with create / fork / edit / delete
 // and the runs-on clipboard helper. The form itself lives in
-// PoolFormModal -- this page owns the list and which pool is open.
+// PoolFormModal - this page owns the list and which pool is open.
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { pools as poolsAPI, projects as projectsAPI } from '@/api'
