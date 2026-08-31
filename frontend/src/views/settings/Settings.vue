@@ -272,7 +272,7 @@ onMounted(refresh)
   <BaseModal
     v-if="confirmOpen"
     title="Rotate bootstrap API token?"
-    size="modal-w520"
+    size="modal-w560"
     @close="confirmOpen = false"
   >
     <p>
