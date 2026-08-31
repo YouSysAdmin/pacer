@@ -14,19 +14,19 @@ export default defineConfigWithVueTs(
       // Prettier owns formatting; keep eslint on correctness only.
       'vue/max-attributes-per-line': 'off',
       'vue/singleline-html-element-content-newline': 'off',
+      'vue/multiline-html-element-content-newline': 'off',
       'vue/html-self-closing': 'off',
       'vue/html-indent': 'off',
       'vue/html-closing-bracket-newline': 'off',
       'vue/first-attribute-linebreak': 'off',
-    },
-  },
-  {
-    // Route components are addressed by path, not by tag, so the
-    // multi-word rule (meant to avoid clashes with native elements)
-    // does not apply to them.
-    files: ['src/views/**/*.vue'],
-    rules: {
+      // The component vocabulary (Notice, Pagination) and route
+      // components (Jobs, Pools) are single words on purpose; nothing
+      // here shadows a native element.
       'vue/multi-word-component-names': 'off',
+      // Every v-html renders a constant from layouts/icons.ts or
+      // components/statIcons.ts -- our own inline SVG, never remote or
+      // user-supplied content. Keep it that way.
+      'vue/no-v-html': 'off',
     },
   },
 )
