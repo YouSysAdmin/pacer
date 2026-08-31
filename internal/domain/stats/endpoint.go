@@ -19,16 +19,18 @@ type Handler struct {
 	Runtime *env.Runtime
 }
 
-// Timeseries is GET /api/stats/timeseries?from=&to=.
+// Timeseries is GET /api/stats/timeseries?from=&to=&project_id=.
 // One row per UTC calendar day with terminal-status job counts -
 // powers the Overview page's success/failed bar chart. Window
 // defaults match Get (last 30 days when params are omitted).
+// project_id is the console's scope selector; omitted means every
+// project.
 func (h *Handler) Timeseries(c *fiber.Ctx) error {
 	from, to, err := parseWindow(c.Query("from"), c.Query("to"))
 	if err != nil {
 		return response.BadRequest(c, err.Error())
 	}
-	days, err := h.Runtime.Store.Job.StatusTimeseries(c.UserContext(), from, to)
+	days, err := h.Runtime.Store.Job.StatusTimeseries(c.UserContext(), from, to, c.Query("project_id"))
 	if err != nil {
 		return response.Internal(c, err)
 	}
@@ -38,10 +40,11 @@ func (h *Handler) Timeseries(c *fiber.Ctx) error {
 	})
 }
 
-// TopUsers is GET /api/stats/top-users?from=&to=&limit=.
+// TopUsers is GET /api/stats/top-users?from=&to=&limit=&project_id=.
 // Ranks GitHub senders by terminal-state job count in the requested
 // window. Powers the stats page's top-N user panel. Limit defaults
-// to 10 and is capped at 100.
+// to 10 and is capped at 100. project_id is the console's scope
+// selector; omitted means every project.
 func (h *Handler) TopUsers(c *fiber.Ctx) error {
 	from, to, err := parseWindow(c.Query("from"), c.Query("to"))
 	if err != nil {
@@ -56,7 +59,7 @@ func (h *Handler) TopUsers(c *fiber.Ctx) error {
 			limit = n
 		}
 	}
-	users, err := h.Runtime.Store.Stats.TopUsers(c.UserContext(), from, to, limit)
+	users, err := h.Runtime.Store.Stats.TopUsers(c.UserContext(), from, to, limit, c.Query("project_id"))
 	if err != nil {
 		return response.Internal(c, err)
 	}
@@ -67,11 +70,18 @@ func (h *Handler) TopUsers(c *fiber.Ctx) error {
 	})
 }
 
-// Get is GET /api/stats?from=&to=&group_by=.
-// All three params are optional: from/to default to the last 30 days.
-// group_by defaults to project.
+// Get is GET /api/stats?from=&to=&group_by=&project_id=.
+// Every param is optional: from/to default to the last 30 days,
+// group_by defaults to project, and project_id (the console's scope
+// selector) defaults to every project.
 // The response is a single JSON envelope with totals +
 // per-bucket rows so the UI doesn't need to make multiple calls.
+//
+// Scoping to a project and grouping by project are not the same
+// question and both are allowed: the first asks "what did THIS
+// project cost", the second "how does spend split across projects".
+// Combined they yield the one bucket, which is what a scoped stats
+// page wants.
 func (h *Handler) Get(c *fiber.Ctx) error {
 	from, to, err := parseWindow(c.Query("from"), c.Query("to"))
 	if err != nil {
@@ -85,7 +95,7 @@ func (h *Handler) Get(c *fiber.Ctx) error {
 		return response.BadRequest(c, "group_by must be one of: project, pool, repo")
 	}
 
-	totals, buckets, err := h.Runtime.Store.Stats.Rollup(c.UserContext(), by, from, to)
+	totals, buckets, err := h.Runtime.Store.Stats.Rollup(c.UserContext(), by, from, to, c.Query("project_id"))
 	if err != nil {
 		return response.Internal(c, err)
 	}

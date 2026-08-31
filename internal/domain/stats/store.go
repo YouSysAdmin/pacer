@@ -24,16 +24,21 @@ func NewStore(db *sql.DB) *Store {
 
 // Rollup runs a single GROUP BY query over the terminal-state jobs
 // in [from, to], returning one row per project / pool / repo plus
-// the unfiltered totals for the same window.
+// the totals for the same window.
 // julianday() arithmetic gives runner-minutes from launched_at to completed_at.
 // Rows with no instance row (spawn-failed jobs) contribute zero minutes.
+//
+// projectID narrows the whole query to one project (the console's
+// scope selector); empty means every project. It applies to the
+// TOTALS as well as the buckets, which is the point -- a scoped page
+// showing a global total would read as that project's spend.
 //
 // Both timestamps are sliced to chars 1..19 (YYYY-MM-DDTHH:MM:SS)
 // before julianday() because modernc/sqlite writes time.Time with
 // 9-digit nanosecond precision. Some sqlite builds return NULL
 // from julianday() on the wider format. Sub-second truncation is
 // negligible for cost / runtime rollups.
-func (s *Store) Rollup(ctx context.Context, by statsmodel.GroupBy, from, to time.Time) (statsmodel.Totals, []statsmodel.Bucket, error) {
+func (s *Store) Rollup(ctx context.Context, by statsmodel.GroupBy, from, to time.Time, projectID string) (statsmodel.Totals, []statsmodel.Bucket, error) {
 	from = dbutil.UTC(from)
 	to = dbutil.UTC(to)
 	keyCol, nameJoin, err := groupExpr(by)
@@ -41,6 +46,7 @@ func (s *Store) Rollup(ctx context.Context, by statsmodel.GroupBy, from, to time
 		return statsmodel.Totals{}, nil, err
 	}
 
+	scope, args := projectScope(projectID, from, to)
 	q := fmt.Sprintf(`
         SELECT
             %s AS k,
@@ -61,12 +67,12 @@ func (s *Store) Rollup(ctx context.Context, by statsmodel.GroupBy, from, to time
         WHERE j.status IN ('completed','failed','cancelled','reaped')
           AND j.completed_at IS NOT NULL
           AND j.completed_at >= ?
-          AND j.completed_at <  ?
+          AND j.completed_at <  ?%s
         GROUP BY k
         ORDER BY est_cost DESC, jobs DESC
-    `, keyCol, nameCol(by), nameJoin)
+    `, keyCol, nameCol(by), nameJoin, scope)
 
-	rows, err := s.db.QueryContext(ctx, q, from, to)
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return statsmodel.Totals{}, nil, err
 	}
@@ -114,13 +120,17 @@ func groupExpr(by statsmodel.GroupBy) (keyCol, nameJoin string, err error) {
 }
 
 // TopUsers ranks senders by terminal-state job count in [from, to),
-// limit-clamped at the call site. Rows where sender_login = "" are
+// limit-clamped at the call site. projectID narrows to one project;
+// empty means every project. Rows where sender_login = "" are
 // excluded (jobs predating the column, or webhook payloads with no
 // sender block). They would all collapse into a single misleading
 // "anonymous" bucket otherwise.
-func (s *Store) TopUsers(ctx context.Context, from, to time.Time, limit int) ([]statsmodel.UserBucket, error) {
+func (s *Store) TopUsers(ctx context.Context, from, to time.Time, limit int, projectID string) ([]statsmodel.UserBucket, error) {
 	from = dbutil.UTC(from)
 	to = dbutil.UTC(to)
+	scope, args := projectScope(projectID, from, to)
+	// LIMIT binds last, after the window and the optional project.
+	args = append(args, limit)
 	rows, err := s.db.QueryContext(ctx, `
         SELECT
             j.sender_login AS login,
@@ -139,11 +149,11 @@ func (s *Store) TopUsers(ctx context.Context, from, to time.Time, limit int) ([]
           AND j.status IN ('completed','failed','cancelled','reaped')
           AND j.completed_at IS NOT NULL
           AND j.completed_at >= ?
-          AND j.completed_at <  ?
+          AND j.completed_at <  ?`+scope+`
         GROUP BY j.sender_login
         ORDER BY jobs DESC, est_cost DESC
         LIMIT ?
-    `, from, to, limit)
+    `, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -158,6 +168,22 @@ func (s *Store) TopUsers(ctx context.Context, from, to time.Time, limit int) ([]
 		out = append(out, b)
 	}
 	return out, rows.Err()
+}
+
+// projectScope appends the console's scope selector to a window-bound
+// query and returns the bind args in the order the SQL expects them
+// (from, to, then the project when one was given).
+//
+// Returning both halves together is what keeps them in step: the two
+// queries here differ in what follows the WHERE block, and a clause
+// added in one place with its arg appended in another is how a query
+// ends up binding the project id to the LIMIT.
+func projectScope(projectID string, from, to time.Time) (string, []any) {
+	args := []any{from, to}
+	if projectID == "" {
+		return "", args
+	}
+	return "\n          AND j.project_id = ?", append(args, projectID)
 }
 
 func nameCol(by statsmodel.GroupBy) string {

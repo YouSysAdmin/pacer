@@ -157,7 +157,8 @@ type JobStore interface {
 	// StatusTimeseries returns one bucket per UTC calendar day with
 	// terminal-status counts (completed / failed / reaped). Powers
 	// the Overview page's success-vs-failed chart.
-	StatusTimeseries(ctx context.Context, from, to time.Time) ([]job.DayBucket, error)
+	// projectID narrows to one project; empty means every project.
+	StatusTimeseries(ctx context.Context, from, to time.Time, projectID string) ([]job.DayBucket, error)
 	// FinalizeCost recomputes a job's estimated_cost_usd after its
 	// instance has been marked terminated/reaped. The Mark{Completed,
 	// Failed,Reaped} stamps an early estimate using the webhook /
@@ -198,11 +199,14 @@ type AuditStore interface {
 // Best-effort: cost is launch-time price * elapsed time. Jobs
 // whose pricing fetch failed at spawn contribute to JobsWithoutCost.
 type StatsStore interface {
-	Rollup(ctx context.Context, by stats.GroupBy, from, to time.Time) (stats.Totals, []stats.Bucket, error)
+	// projectID narrows the window to one project (totals included);
+	// empty means every project.
+	Rollup(ctx context.Context, by stats.GroupBy, from, to time.Time, projectID string) (stats.Totals, []stats.Bucket, error)
 	// TopUsers returns the top-N GitHub senders by job count over
 	// terminal-state jobs in [from, to). Used by the stats page's
-	// "who runs the most CI" panel.
-	TopUsers(ctx context.Context, from, to time.Time, limit int) ([]stats.UserBucket, error)
+	// "who runs the most CI" panel. projectID narrows to one project;
+	// empty means every project.
+	TopUsers(ctx context.Context, from, to time.Time, limit int, projectID string) ([]stats.UserBucket, error)
 }
 
 // WebhookStore is the lifecycle side of the webhook_deliveries table

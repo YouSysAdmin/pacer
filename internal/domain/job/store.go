@@ -600,9 +600,17 @@ func (s *Store) FinalizeCost(ctx context.Context, instanceID string) error {
 // Empty response when no jobs completed in the window -- the chart
 // renderer pads zero-bars for the missing days if it wants a
 // continuous axis.
-func (s *Store) StatusTimeseries(ctx context.Context, from, to time.Time) ([]jobmodel.DayBucket, error) {
+// projectID narrows the chart to one project (the console's scope
+// selector); empty means every project.
+func (s *Store) StatusTimeseries(ctx context.Context, from, to time.Time, projectID string) ([]jobmodel.DayBucket, error) {
 	from = dbutil.UTC(from)
 	to = dbutil.UTC(to)
+	scope := ""
+	args := []any{from, to}
+	if projectID != "" {
+		scope = "\n          AND j.project_id = ?"
+		args = append(args, projectID)
+	}
 	rows, err := s.db.QueryContext(ctx, `
         SELECT substr(j.completed_at, 1, 10)                           AS day,
                SUM(CASE WHEN j.status = 'completed' THEN 1 ELSE 0 END) AS completed,
@@ -613,10 +621,10 @@ func (s *Store) StatusTimeseries(ctx context.Context, from, to time.Time) ([]job
         WHERE j.status IN ('completed','failed','cancelled','reaped')
           AND j.completed_at IS NOT NULL
           AND j.completed_at >= ?
-          AND j.completed_at <  ?
+          AND j.completed_at <  ?`+scope+`
         GROUP BY day
         ORDER BY day ASC
-    `, from, to)
+    `, args...)
 	if err != nil {
 		return nil, err
 	}
