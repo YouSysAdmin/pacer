@@ -3,29 +3,32 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Svelte frontend for Pacer. Prerenders to static via @sveltejs/adapter-static and is embedded into the Go binary via //go:embed.",
+  "description": "Vue 3 SPA for Pacer. Built with Vite and embedded into the Go binary via //go:embed.",
   "scripts": {
-    "dev": "vite dev",
-    "build": "vite build && bun run minify:html",
-    "minify:html": "bun scripts/minify-html.mjs",
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
+    "type-check": "vue-tsc --noEmit",
+    "lint": "eslint . && prettier --check src",
+    "lint:fix": "eslint . --fix && prettier --write src",
     "test": "vitest run",
     "test:watch": "vitest"
   },
+  "dependencies": {
+    "pinia": "^4.0.2",
+    "vue": "^3.5.25",
+    "vue-router": "^5.2.0"
+  },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "@sveltejs/adapter-static": "^3.0.8",
-    "@sveltejs/kit": "^2.15.0",
-    "@sveltejs/vite-plugin-svelte": "^5.0.3",
-    "eslint": "^10.3.0",
-    "eslint-plugin-svelte": "^3.17.1",
-    "globals": "^17.6.0",
-    "html-minifier-terser": "^7.2.0",
-    "jsdom": "^25",
-    "svelte": "^5.20.0",
-    "vite": "^6.0.0",
-    "vitest": "^2"
+    "@vitejs/plugin-vue": "^6.0.0",
+    "@vue/eslint-config-typescript": "^14.6.0",
+    "eslint": "^9.39.0",
+    "eslint-plugin-vue": "^10.5.0",
+    "jsdom": "^25.0.0",
+    "prettier": "^3.6.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.3.0",
+    "vitest": "^3.2.0",
+    "vue-tsc": "^3.2.0"
   }
 }

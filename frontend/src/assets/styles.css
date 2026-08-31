@@ -1,0 +1,17 @@
+/* SPDX-License-Identifier: LicenseRef-DSL-1.0
+   Deferred Source License (DSL)
+   Pacer, Copyright (c) 2026 YouSysAdmin */
+
+/* Milestone 1 placeholder. The full design system (light/dark themes,
+   tokens, component vocabulary) lands with the next milestone. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}

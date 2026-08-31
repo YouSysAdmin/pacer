@@ -185,11 +185,11 @@ func registerRoutes(app *fiber.App, rt *env.Runtime) {
 	apiAuth.Get("/health", shH.List)
 	apiAuth.Post("/reconcile", shH.Reconcile)
 
-	// SPA (embedded prerendered Svelte build).
+	// SPA (embedded Vue build).
 	// Register LAST so
 	// /api/* and /healthz match before this catch-all.
-	// NotFoundFile
-	// = index.html is the SPA-fallback shape SvelteKit expects.
+	// NotFoundFile = index.html serves the single Vue shell for
+	// history-mode deep links (/jobs, /settings, ...).
 	sub, err := fs.Sub(pacer.Frontend, "frontend/dist")
 	if err != nil {
 		app.Use("/", func(c *fiber.Ctx) error {
@@ -204,10 +204,11 @@ func registerRoutes(app *fiber.App, rt *env.Runtime) {
 	}))
 }
 
-// spaRoutePrefixes is the set of top-level paths the SvelteKit client
-// router owns. Each one matches itself exactly AND any subpath (for
-// dynamic routes like /jobs/123). Add an entry here when a new
-// top-level page lands in frontend/src/routes/.
+// spaRoutePrefixes is the set of top-level paths the Vue router owns.
+// Each one matches itself exactly AND any subpath (for dynamic routes
+// like /jobs/123). Add an entry here when a new top-level route lands
+// in frontend/src/router/index.ts -- routes_test.go parses that file
+// and fails when the two lists drift.
 //
 // Anything outside these prefixes that isn't a real embedded asset
 // returns 404 instead of falling back to index.html. Without that
@@ -251,10 +252,8 @@ func spaAllowlist(sub fs.FS) fiber.Handler {
 		if _, ok := files[p]; ok {
 			return c.Next()
 		}
-		for _, r := range spaRoutePrefixes {
-			if p == r || strings.HasPrefix(p, r+"/") {
-				return c.Next()
-			}
+		if isSPARoute(p) {
+			return c.Next()
 		}
 		return c.SendStatus(fiber.StatusNotFound)
 	}
@@ -279,34 +278,49 @@ func noStoreCache(c *fiber.Ctx) error {
 // the API didn't already handle (those return earlier in the chain),
 // so /api/* responses are not touched.
 //
-// SvelteKit's adapter-static produces three classes of asset:
+// The Vue/Vite build produces three classes of asset:
 //
-//   - /_app/immutable/* - content-hashed bundles (e.g.
-//     /_app/immutable/chunks/B72M0WY1.js). Safe to cache forever. The
-//     filename changes whenever the content changes. "immutable"
-//     additionally tells the browser to skip even revalidation.
-//   - *.html - per-route SPA shells. They reference the latest hashed
-//     bundle. If a stale shell is served after a deploy the user
-//     would load old JS pointing at API contracts that may have moved.
-//     Use no-cache so the browser revalidates with If-Modified-Since,
-//     getting a cheap 304 most of the time but always picking up new
-//     deploys.
-//   - everything else (fonts, logos) - stable filenames, no hash. A
-//     1-day public cache balances bandwidth against the rare font/
-//     logo replacement. The embedded ETag/Last-Modified will catch
-//     updates on revalidation.
+//   - /assets/* - content-hashed bundles (e.g. /assets/index-BSIvxOY.js,
+//     hashed CSS, bundled fonts). Safe to cache forever. The filename
+//     changes whenever the content changes. "immutable" additionally
+//     tells the browser to skip even revalidation.
+//   - the index.html shell - served for "/" AND for every SPA deep
+//     link (/jobs, /settings, ...) via the NotFoundFile fallback. It
+//     references the latest hashed bundle. If a stale shell is served
+//     after a deploy the user would load old JS pointing at API
+//     contracts that may have moved. Use no-cache so the browser
+//     revalidates, getting a cheap 304 most of the time but always
+//     picking up new deploys. Matching the route prefixes here matters:
+//     the deep-link response IS the shell even though the path has no
+//     .html suffix.
+//   - everything else (public/ passthrough: logos) - stable filenames,
+//     no hash. A 1-day public cache balances bandwidth against the
+//     rare logo replacement. The embedded ETag/Last-Modified will
+//     catch updates on revalidation.
 func spaCacheControl(c *fiber.Ctx) error {
 	if err := c.Next(); err != nil {
 		return err
 	}
 	path := c.Path()
 	switch {
-	case strings.HasPrefix(path, "/_app/immutable/"):
+	case strings.HasPrefix(path, "/assets/"):
 		c.Set(fiber.HeaderCacheControl, "public, max-age=31536000, immutable")
-	case path == "/" || strings.HasSuffix(path, ".html"):
+	case path == "/" || isSPARoute(path):
 		c.Set(fiber.HeaderCacheControl, "no-cache")
 	default:
 		c.Set(fiber.HeaderCacheControl, "public, max-age=86400")
 	}
 	return nil
+}
+
+// isSPARoute reports whether path is owned by the Vue router -- an
+// exact spaRoutePrefixes entry or a subpath of one. Those responses
+// carry the index.html shell, never a static file.
+func isSPARoute(path string) bool {
+	for _, r := range spaRoutePrefixes {
+		if path == r || strings.HasPrefix(path, r+"/") {
+			return true
+		}
+	}
+	return false
 }

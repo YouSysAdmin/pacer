@@ -27,13 +27,13 @@ help:
 	@echo "  build-linux-amd64  frontend + cross-compile static linux/amd64 binary (for EC2 deploy)"
 	@echo "  release            frontend + cross-compile linux/amd64, linux/arm64, darwin/arm64 binaries"
 	@echo "  build-docker       frontend + linux/$(DOCKER_GOARCH) binary + docker image $(DOCKER_IMAGE)"
-	@echo "  frontend           build Svelte SPA into frontend/dist/ (embedded by go:embed)"
+	@echo "  frontend           build Vue SPA into frontend/dist/ (embedded by go:embed)"
 	@echo "  run                build + run serve"
 	@echo "  dev                go run with $(DEV_CONFIG) (UI-only, no GitHub App / AWS)"
 	@echo "  test               run Go + frontend test suites"
 	@echo "  test-go            run Go test suite"
 	@echo "  test-frontend      run vitest suite"
-	@echo "  lint               run eslint over frontend/"
+	@echo "  lint               run eslint + prettier over frontend/"
 	@echo "  clean              bin/ and frontend/dist/ contents"
 
 all: build
