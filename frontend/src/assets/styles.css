@@ -522,6 +522,37 @@ a:not([class]):hover {
   cursor: not-allowed;
 }
 
+/* A FILE input is a button plus a filename, not a text field, and the
+   shared rule above styles it as the latter: the native button keeps
+   its own OS chrome and sits jammed against the left edge of a box
+   sized for a single line of centred text. Give the control room, and
+   restyle the button itself as a secondary button so it belongs to
+   the form rather than to the browser. */
+.form-input[type='file'] {
+  height: auto;
+  padding: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.form-input[type='file']::file-selector-button {
+  margin-right: 10px;
+  padding: 0 12px;
+  height: var(--control-h-sm);
+  border: 1px solid var(--border-button);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.form-input[type='file']::file-selector-button:hover {
+  background: var(--bg-hover);
+}
+
 /* A textarea is multi-line, so it cannot take the fixed control
    height the single-line controls share. Monospace is deliberate -
    these carry HTML bodies, recipient lists and JSON. */
@@ -680,9 +711,13 @@ option::checkmark {
   padding: 16px;
 }
 
-/* Stacked cards space themselves. A grid uses gap, so it opts out. */
+/* Stacked cards space themselves. A grid uses gap, so it opts out.
+   Both orderings are listed: the stats page puts a filter card ABOVE
+   its tiles, and with only `.stats-grid + .card` the tiles sat flush
+   against the card's bottom edge, reading as one merged block. */
 .card + .card,
-.stats-grid + .card {
+.stats-grid + .card,
+.card + .stats-grid {
   margin-top: 24px;
 }
 /* A tab strip is a page control, a flush card header, or a card-body opener. */
@@ -1454,8 +1489,29 @@ input[type='checkbox']:checked::before {
 .filter-bar {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 12px;
   margin-bottom: 20px;
+}
+
+/* A control in a TOOLBAR sizes to its content, not to the row.
+   .form-input and .form-select are 100% wide because a form row gives
+   each field a column of its own; dropped into a flex strip that width
+   makes every control demand the whole line, so a filter bar or a page
+   header with three controls wrapped one per row with the rest of the
+   strip empty beside it. The .w-* utilities still cap them. */
+.filter-bar .form-input,
+.filter-bar .form-select,
+.page-actions .form-input,
+.page-actions .form-select {
+  width: auto;
+}
+
+/* The search box is the exception: it holds a pasted instance id or
+   request id, so it takes the slack the fixed-width controls leave
+   rather than shrinking to its placeholder. */
+.filter-bar .w-search {
+  flex: 1 1 240px;
 }
 
 .pager {
