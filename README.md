@@ -1,6 +1,6 @@
 # Pacer
 
-![](frontend/static/logo/wordmark.svg)
+![](frontend/public/logo/wordmark.svg)
 
 Self-hosted GitHub Actions runner orchestrator for AWS. A single Go binary that receives GitHub `workflow_job` webhooks and spawns short-lived EC2 instances per job (on-demand or spot, per pool), then reaps them when the job finishes.
 
@@ -15,7 +15,7 @@ Minimal AWS surface — only EC2, IAM, and the Pricing API. The agent owns its q
 - **On-demand or spot, per pool.** Cost-optimized (`lowest-price` / `price-capacity-optimized`) or priority-based allocation.
 - **Capacity-aware retries.** Transient EC2 capacity errors are backed off and retried; permanent errors fail fast.
 - **Best-effort cost stamping.** At-launch USD/hour quote via the AWS Pricing API, rolled up into per-job cost on completion.
-- **Built-in web UI** (Vue 3 SPA) for project / pool / repo / job CRUD.
+- **Built-in web UI.** A Vue 3 SPA embedded in the binary — project / pool / repo / job CRUD, live queue, cost rollups, light and dark themes.
 - **Optional console auth.** Local (email + password) or OIDC (Authorization Code + PKCE) with domain / email / group allowlists.
 - **TLS modes.** Plain HTTP, operator-supplied PEM, in-memory self-signed, or Let's Encrypt via ACME.
 

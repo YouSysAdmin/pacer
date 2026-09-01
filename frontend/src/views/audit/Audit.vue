@@ -203,8 +203,9 @@ const pageable = computed<Pageable>(() => {
 })
 
 // Reset paging + reload when a discrete filter changes. Offset writes
-// are owned by the pager - explicit watch, not watchEffect (the
-// Svelte page needed untrack() for exactly this).
+// are owned by the pager, so this is an explicit watch on the filters
+// rather than a watchEffect that would also track offset and rewind
+// the page it just left.
 watch([range, actionFilter, limit], () => {
   offset.value = 0
   void refresh()

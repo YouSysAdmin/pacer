@@ -142,10 +142,10 @@ async function reconcile() {
 }
 
 // Auto-refresh: one interval created on mount - NOT a watchEffect
-// that reads refresh()'s internals, which would recreate the interval
-// on every offset change and race the pager (the Svelte page needed
-// untrack() for exactly this). Gated on offset === 0: past page 1 the
-// operator wants the data to stay put while they read it.
+// that reads refresh()'s internals, which would track offset and so
+// recreate the interval on every page change, racing the pager.
+// Gated on offset === 0: past page 1 the operator wants the data to
+// stay put while they read it.
 let timer: ReturnType<typeof setInterval> | undefined
 
 onMounted(() => {
