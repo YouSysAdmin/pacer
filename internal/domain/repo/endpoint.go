@@ -29,10 +29,15 @@ type Handler struct {
 // re-split. project_id length cap mirrors project.NameMax (uuid is
 // 36 chars but we leave headroom in case the ID format changes).
 // Tags follow the project / pool taxonomy: gha:* prefix reserved.
+//
+// max_concurrent_runners is floored at 0 (meaning no repo-level cap)
+// because Job.Claim compares an in-flight count against it: a
+// negative would make that comparison unsatisfiable and quietly park
+// every job for the repo in the queue forever.
 type bindInput struct {
 	FullName             string            `json:"full_name"                  validate:"required,max=140,repo_full_name"`
 	ProjectID            string            `json:"project_id"                 validate:"required,min=1,max=128"`
-	MaxConcurrentRunners *int              `json:"max_concurrent_runners,omitempty"`
+	MaxConcurrentRunners *int              `json:"max_concurrent_runners,omitempty" validate:"omitempty,min=0,max=10000"`
 	Tags                 map[string]string `json:"tags,omitempty"             validate:"omitempty,max=50,dive,keys,required,min=1,max=128,gha_safe,endkeys,max=256"`
 }
 

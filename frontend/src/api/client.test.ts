@@ -206,3 +206,25 @@ describe('request bodies + methods', () => {
     expect(fetchMock.mock.calls[0][1].method).toBe('DELETE')
   })
 })
+
+describe('jobs.count', () => {
+  it('reads total off the envelope and asks for one row', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, { entries: [{ id: 'j1' }], total: 137, limit: 1, offset: 0 }),
+    )
+    const n = await jobs.count({ status: 'queued', projectID: 'p1' })
+
+    // total ignores limit/offset server-side, which is the whole
+    // point: counting the returned rows would report 1.
+    expect(n).toBe(137)
+    const url = fetchMock.mock.calls[0][0]
+    expect(url).toContain('limit=1')
+    expect(url).toContain('status=queued')
+    expect(url).toContain('project_id=p1')
+  })
+
+  it('is 0 when the envelope carries no total', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { entries: [] }))
+    await expect(jobs.count()).resolves.toBe(0)
+  })
+})

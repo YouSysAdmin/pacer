@@ -150,6 +150,9 @@ type JobStore interface {
 	// retry rather than fail the job.
 	Reschedule(ctx context.Context, id string, attempts int, nextRetryAt time.Time) error
 	ReclaimStale(ctx context.Context, cutoff time.Time) (int, error)
+	// List returns matching rows with FailureLog and Payload blanked -
+	// both are bulky and only the detail view renders them. Get by id
+	// when you need either.
 	List(ctx context.Context, f job.ListFilter) ([]*job.Job, error)
 	// Count returns the number of rows matching f, ignoring Limit
 	// and Offset. Powers the "X of Y" pager on the jobs page.

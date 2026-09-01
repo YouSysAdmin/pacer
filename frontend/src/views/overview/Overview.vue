@@ -3,20 +3,21 @@
 // Deferred Source License (DSL)
 // Pacer, Copyright (c) 2026 YouSysAdmin
 
-// The dashboard: live count tiles (5 s), month-to-date spend + daily
-// chart (60 s). Two cadences because /api/stats is daily-grain - it
-// doesn't change between 5 s ticks.
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+// The dashboard: in-flight queue tiles (5 s), month-to-date totals,
+// spend and the daily chart (60 s). Two cadences because /api/stats is
+// daily-grain - it doesn't change between 5 s ticks.
+//
+// The two halves answer different questions and say so on the tiles.
+// The queue tiles are a snapshot of right now; the outcome tiles cover
+// the month, and they are summed from the same timeseries the chart
+// draws so the two can never disagree about the same window.
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { projects, repos, jobs, stats } from '@/api'
 import { useNotificationStore } from '@/stores/notification'
 import { useScopeStore } from '@/stores/scope'
 import PageHeader from '@/components/PageHeader.vue'
 import StatCard from '@/components/StatCard.vue'
 import BarChart, { type DayPoint } from './BarChart.vue'
-
-interface JobEntry {
-  status: string
-}
 
 interface Bucket {
   key: string
@@ -27,7 +28,12 @@ interface Bucket {
 const notify = useNotificationStore()
 const scope = useScopeStore()
 
-const counts = ref({ projects: 0, repos: 0, queued: 0, running: 0, completed: 0, failed: 0 })
+// Waiting counts claimed and starting too: from the operator's side
+// those are all "asked for, not running yet".
+const WAITING = ['queued', 'claimed', 'starting']
+
+const inventory = ref({ projects: 0, repos: 0 })
+const queue = ref({ waiting: 0, running: 0 })
 const liveLoading = ref(true)
 
 const spend = ref({
@@ -38,6 +44,19 @@ const spend = ref({
 })
 const series = ref<DayPoint[]>([])
 const rollupError = ref<string | null>(null)
+
+// Month outcome totals, summed from the chart's own data. Derived
+// rather than fetched: one window, one source, so a tile and the bar
+// above it cannot tell the operator two different numbers.
+const monthTotals = computed(() =>
+  series.value.reduce(
+    (acc, d) => ({
+      completed: acc.completed + d.completed,
+      failed: acc.failed + d.failed + d.cancelled + d.reaped,
+    }),
+    { completed: 0, failed: 0 },
+  ),
+)
 
 // First day of the current month, in UTC, as YYYY-MM-DD. The stats
 // endpoint accepts both RFC3339 and date-only; date-only is read as
@@ -63,31 +82,17 @@ function fmtUSD(n?: number | null): string {
 
 let liveFailed = false
 
-async function refreshLive() {
+// The queue tiles ask the server to count rather than counting a page
+// of rows here: with enough recent traffic a page-sized window fills
+// with finished jobs and reports an empty queue while jobs are
+// actually waiting.
+async function refreshQueue() {
   try {
-    const [ps, rs, js] = await Promise.all([
-      projects.list(),
-      repos.list(),
-      jobs.list({ limit: 200, projectID: scope.projectParam }),
+    const [waiting, running] = await Promise.all([
+      Promise.all(WAITING.map((s) => jobs.count({ status: s, projectID: scope.projectParam }))),
+      jobs.count({ status: 'running', projectID: scope.projectParam }),
     ])
-    // jobs.list returns the envelope {entries, total, ...}. The
-    // overview chips count by status within the most-recent window
-    // only.
-    const entries = ((js as { entries?: JobEntry[] })?.entries || []) as JobEntry[]
-    const byStatus = (s: string) => entries.filter((j) => j.status === s).length
-    // Repos has no pagination and every row carries project_id, so
-    // the scope is applied here rather than asking the server.
-    const repoRows = ((rs as Array<{ project_id: string }>) || []).filter(
-      (r) => !scope.currentId || r.project_id === scope.currentId,
-    )
-    counts.value = {
-      projects: ((ps as unknown[]) || []).length,
-      repos: repoRows.length,
-      queued: byStatus('queued') + byStatus('claimed') + byStatus('starting'),
-      running: byStatus('running'),
-      completed: byStatus('completed'),
-      failed: byStatus('failed') + byStatus('cancelled') + byStatus('reaped'),
-    }
+    queue.value = { waiting: waiting.reduce((a, b) => a + b, 0), running }
     liveFailed = false
   } catch (e) {
     // Toast once, not every 5 s tick, or a flaky poll floods the corner.
@@ -95,6 +100,23 @@ async function refreshLive() {
     liveFailed = true
   } finally {
     liveLoading.value = false
+  }
+}
+
+// Projects and repos change when an operator changes them, so they
+// ride the slow cadence rather than being re-fetched every 5 s.
+async function refreshInventory() {
+  try {
+    const [ps, rs] = await Promise.all([projects.list(), repos.list()])
+    // Repos has no pagination and every row carries project_id, so
+    // the scope is applied here rather than asking the server.
+    const repoRows = ((rs as Array<{ project_id: string }>) || []).filter(
+      (r) => !scope.currentId || r.project_id === scope.currentId,
+    )
+    inventory.value = { projects: ((ps as unknown[]) || []).length, repos: repoRows.length }
+  } catch {
+    // The queue poll already owns the "backend is unreachable" toast.
+    // A second one for the same outage is noise.
   }
 }
 
@@ -127,13 +149,18 @@ async function refreshRollup() {
   }
 }
 
-function refreshAll() {
-  void refreshLive()
+function refreshSlow() {
+  void refreshInventory()
   void refreshRollup()
 }
 
-let liveTimer: ReturnType<typeof setInterval> | undefined
-let rollupTimer: ReturnType<typeof setInterval> | undefined
+function refreshAll() {
+  void refreshQueue()
+  refreshSlow()
+}
+
+let queueTimer: ReturnType<typeof setInterval> | undefined
+let slowTimer: ReturnType<typeof setInterval> | undefined
 
 // Both cadences re-read the scope on their next tick anyway; this
 // refreshes immediately so the page does not sit on the old project's
@@ -142,13 +169,13 @@ watch(() => scope.currentId, refreshAll)
 
 onMounted(() => {
   refreshAll()
-  liveTimer = setInterval(refreshLive, 5000)
-  rollupTimer = setInterval(refreshRollup, 60000)
+  queueTimer = setInterval(refreshQueue, 5000)
+  slowTimer = setInterval(refreshSlow, 60000)
 })
 
 onUnmounted(() => {
-  clearInterval(liveTimer)
-  clearInterval(rollupTimer)
+  clearInterval(queueTimer)
+  clearInterval(slowTimer)
 })
 </script>
 
@@ -168,18 +195,40 @@ onUnmounted(() => {
         <StatCard
           label="Projects"
           icon="total"
-          :value="String(counts.projects)"
+          :value="String(inventory.projects)"
           :sub="scope.currentId ? 'across the installation' : ''"
         />
-        <StatCard label="Bound repos" icon="instances" :value="String(counts.repos)" />
-        <StatCard label="Queued / starting" icon="queued" :value="String(counts.queued)" />
-        <StatCard label="Running" icon="running" :value="String(counts.running)" />
-        <StatCard label="Completed" icon="completed" :value="String(counts.completed)" />
-        <StatCard label="Failed / reaped" icon="failed" :value="String(counts.failed)" />
+        <StatCard label="Bound repos" icon="instances" :value="String(inventory.repos)" />
+        <!-- Every tile carries its window. The first pair is a
+             snapshot of the queue, the second covers the month, and
+             an operator comparing them without being told would read
+             the gap as data going missing. -->
+        <StatCard
+          label="Queued / starting"
+          icon="queued"
+          :value="String(queue.waiting)"
+          sub="right now"
+        />
+        <StatCard label="Running" icon="running" :value="String(queue.running)" sub="right now" />
+        <StatCard
+          label="Completed"
+          icon="completed"
+          :value="String(monthTotals.completed)"
+          sub="this month"
+        />
+        <StatCard
+          label="Failed / reaped"
+          icon="failed"
+          :value="String(monthTotals.failed)"
+          sub="this month"
+        />
       </div>
 
       <div class="card">
-        <div class="card-header"><h2>Jobs this month</h2></div>
+        <div class="card-header">
+          <h2>Jobs this month</h2>
+          <span class="text-muted text-sm">since {{ firstOfMonthUTC() }} UTC</span>
+        </div>
         <div class="card-body">
           <div v-if="rollupError" class="alert alert-danger">{{ rollupError }}</div>
           <p v-else-if="series.length === 0" class="text-muted">
@@ -225,7 +274,9 @@ onUnmounted(() => {
     </aside>
   </div>
 
-  <p class="text-muted text-sm mt-3">Live tiles refresh every 5 s. Spend + chart every 60 s.</p>
+  <p class="text-muted text-sm mt-3">
+    Queue tiles refresh every 5 s. Month totals, spend and chart every 60 s.
+  </p>
 </template>
 
 <style scoped>

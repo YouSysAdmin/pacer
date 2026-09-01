@@ -267,12 +267,12 @@ func (h *Handler) retentionStatus(ctx context.Context) retentionStatus {
 // default applies again. Written once rather than per field: the
 // three blocks were identical apart from their bounds, and the third
 // copy is where a wrong constant hides.
-func (h *Handler) putRetentionField(ctx context.Context, name, key string, v *int, min, max int) error {
+func (h *Handler) putRetentionField(ctx context.Context, name, key string, v *int, lo, hi int) error {
 	if v == nil {
 		return nil
 	}
-	if *v != 0 && (*v < min || *v > max) {
-		return fmt.Errorf("%s must be 0 (use default) or %d..%d, got %d", name, min, max, *v)
+	if *v != 0 && (*v < lo || *v > hi) {
+		return fmt.Errorf("%s must be 0 (use default) or %d..%d, got %d", name, lo, hi, *v)
 	}
 	val := ""
 	if *v != 0 {
@@ -302,8 +302,8 @@ func (h *Handler) PutRetention(c *fiber.Ctx) error {
 		name string
 		key  string
 		val  *int
-		min  int
-		max  int
+		lo   int
+		hi   int
 	}{
 		{"audit_days", settingsmodel.KeyAuditRetentionDays, in.AuditDays, AuditMinDays, AuditMaxDays},
 		{"webhook_days", settingsmodel.KeyWebhookRetentionDays, in.WebhookDays, WebhookMinDays, WebhookMaxDays},
@@ -315,13 +315,13 @@ func (h *Handler) PutRetention(c *fiber.Ctx) error {
 		if f.val == nil {
 			continue
 		}
-		if *f.val != 0 && (*f.val < f.min || *f.val > f.max) {
+		if *f.val != 0 && (*f.val < f.lo || *f.val > f.hi) {
 			return response.BadRequest(c, fmt.Sprintf(
-				"%s must be 0 (use default) or %d..%d, got %d", f.name, f.min, f.max, *f.val))
+				"%s must be 0 (use default) or %d..%d, got %d", f.name, f.lo, f.hi, *f.val))
 		}
 	}
 	for _, f := range fields {
-		if err := h.putRetentionField(ctx, f.name, f.key, f.val, f.min, f.max); err != nil {
+		if err := h.putRetentionField(ctx, f.name, f.key, f.val, f.lo, f.hi); err != nil {
 			return response.Internal(c, err)
 		}
 	}

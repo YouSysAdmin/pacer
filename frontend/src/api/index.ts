@@ -63,6 +63,14 @@ export const jobs = {
     const q = qs.toString()
     return call(`/api/jobs${q ? '?' + q : ''}`)
   },
+  // How many jobs match, without fetching them. `total` on the list
+  // envelope ignores limit/offset, so limit=1 buys the count for one
+  // row. Counting client-side from a page of rows instead would cap
+  // at that page and silently under-report.
+  count: async ({ status, projectID }: Pick<JobsListParams, 'status' | 'projectID'> = {}) => {
+    const r = (await jobs.list({ status, limit: 1, projectID })) as { total?: number } | null
+    return r?.total ?? 0
+  },
   // Detail bundle: {job, payload, instance, audit}. Backed by
   // GET /api/jobs/:id. The modal on the jobs page renders all four.
   get: (id: string) => call(`/api/jobs/${id}`),

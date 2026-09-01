@@ -146,7 +146,7 @@ func (p *pool) Normalize() {
 
 type repo struct {
 	FullName             string            `json:"full_name"                  validate:"required,max=140,repo_full_name"`
-	MaxConcurrentRunners *int              `json:"max_concurrent_runners,omitempty"`
+	MaxConcurrentRunners *int              `json:"max_concurrent_runners,omitempty" validate:"omitempty,min=0,max=10000"`
 	Tags                 map[string]string `json:"tags,omitempty"             validate:"omitempty,max=50,dive,keys,required,min=1,max=128,gha_safe,endkeys,max=256"`
 }
 

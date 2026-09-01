@@ -31,11 +31,10 @@ import (
 // 2017, so we don't pass an explicit MaxPrice.
 //
 // The LT carries static user-data baked at pool-save time. Per-job
-// state (the HMAC callback token) is stamped on the instance via
-// post-launch CreateTags and read by the bootstrap script from IMDS.
-// This is why we reference Version=$Default rather than minting a
-// transient version per spawn - the LT only mutates when the
-// operator saves the pool.
+// state (the HMAC callback token) is served by /api/runner/bootstrap
+// and never rides on the instance, so nothing here has to be minted
+// per spawn: we reference Version=$Default and the LT only mutates
+// when the operator saves the pool.
 //
 // Returns:
 //   - (result, false, nil)              success
@@ -114,25 +113,18 @@ func (o *Orchestrator) spawnFleet(ctx context.Context, sc *spawnContext) (*spawn
 		// (gated on managed-by) admits this call. Retry once to ride
 		// over a transient rate limit.
 		//
-		// Failure here is fatal: gha-callback-token is in this batch
-		// and the bootstrap script can't authenticate to
-		// /api/runner/register without it. Without the tag the
-		// instance polls IMDS for 2 min, exits, terminates - and
-		// the job sits in claimed until the reaper fires. Better to
-		// terminate immediately and fail the spawn so the operator
-		// sees a real error.
+		// Best-effort by design. Nothing the runner needs travels
+		// here - it authenticates against /api/runner/bootstrap using
+		// the token baked into user-data - and gha:managed-by, the tag
+		// the terminate policy is gated on, comes from the LT. So a
+		// throttled CreateTags costs cost-attribution accuracy, not a
+		// working runner, and killing a healthy instance over it would
+		// fail a job that was about to run.
 		bctx, cancel := detach(ctx)
 		defer cancel()
 		if err := o.postTagInstanceRetry(bctx, sc, instID); err != nil {
-			slog.Error("orchestrator: post-launch tagging failed, terminating to avoid stranded runner",
-				"instance_id", instID, "err", err)
-			if _, terr := o.Runtime.EC2.TerminateInstances(bctx, &ec2.TerminateInstancesInput{
-				InstanceIds: []string{instID},
-			}); terr != nil {
-				slog.Error("orchestrator: terminate after tagging failure also failed; clean up via EC2 console",
-					"instance_id", instID, "err", terr)
-			}
-			return nil, false, fmt.Errorf("post-launch tagging (instance %s terminated): %w", instID, err)
+			slog.Warn("orchestrator: post-launch tagging failed; instance keeps its launch-template tags",
+				"instance_id", instID, "job_id", sc.job.ID, "err", err)
 		}
 		return &spawnResult{InstanceID: instID, InstanceType: instType, AZ: az}, false, nil
 	}
@@ -233,16 +225,14 @@ func allocationStrategies(strategy string) (ec2types.FleetOnDemandAllocationStra
 	}
 }
 
-// postTagInstance applies per-spawn tags Fleet can't include in the
-// CreateFleet call: gha:job_id, gha:repo, gha:callback-token, plus
-// the repo user tags. The instance already carries managed-by +
-// project + pool tags from the LT, so the IAM CreateTags Sid (gated
-// on managed-by) admits this call.
+// postTagInstance applies the per-spawn tags Fleet can't include in
+// the CreateFleet call: gha:job_id, gha:repo, plus the repo user
+// tags. The instance already carries managed-by + project + pool tags
+// from the LT, so the IAM CreateTags Sid (gated on managed-by) admits
+// this call.
 //
-// gha:callback-token is load-bearing: the in-instance bootstrap
-// script polls IMDS for this tag and uses the value as the HMAC
-// auth on /api/runner/{register,error,complete}. The script polls
-// up to 2 minutes, so post-launch tagging racing cloud-init is fine.
+// These tags are for the operator's benefit - cost allocation and
+// console search. No part of the boot path reads them.
 func (o *Orchestrator) postTagInstance(ctx context.Context, sc *spawnContext, instID string) error {
 	tags := postLaunchTags(sc)
 	if len(tags) == 0 {
@@ -291,9 +281,9 @@ func postLaunchTags(sc *spawnContext) []ec2types.Tag {
 //
 // User-data is baked into the LT at materialize time, not passed
 // per-call, so the LT version this references stays consecutive
-// across spawns (same invariant as the Fleet path). gha:callback-token
-// is included in the launch-time TagSpecifications, so RunInstances
-// spawns see the tag before cloud-init starts - no polling race.
+// across spawns (same invariant as the Fleet path). Unlike Fleet,
+// RunInstances carries the full tag set in TagSpecifications, so
+// there is no post-launch CreateTags step.
 func (o *Orchestrator) spawnRunInstances(ctx context.Context, sc *spawnContext) (*spawnResult, bool, error) {
 	if len(sc.pool.InstanceTypes) == 0 || len(sc.pool.SubnetIDs) == 0 {
 		return nil, false, fmt.Errorf("pool %s has no instance_types or subnets to launch into", sc.pool.Name)
@@ -320,6 +310,12 @@ func (o *Orchestrator) spawnRunInstances(ctx context.Context, sc *spawnContext) 
 		if runErr == nil && runOut != nil && len(runOut.Instances) > 0 {
 			typeUsed = t
 			break
+		}
+		if runErr == nil {
+			// Accepted the call but launched nothing. Not a documented
+			// RunInstances outcome, so treat it as permanent rather
+			// than burning the retry budget on it.
+			return nil, false, fmt.Errorf("run instances (%s): no error and no instances", t)
 		}
 		if !isCapacityError(runErr) {
 			return nil, false, fmt.Errorf("run instances (%s): %w", t, runErr)

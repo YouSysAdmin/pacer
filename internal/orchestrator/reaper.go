@@ -365,10 +365,13 @@ func excludeIDs(all, drop []string) []string {
 // fire /api/runner/complete. Flips the instance row to terminated and,
 // if the job is still in flight, marks it failed with stage="ec2" so
 // the slot frees up and the workflow stops blocking on a runner that
-// is never coming back. The eventual workflow_job=completed webhook
-// from GitHub (heartbeat-timeout path) will overwrite the failure
-// message with its own conclusion - harmless, both signals agree the
-// job failed.
+// is never coming back.
+//
+// That verdict is final: 'failed' is a terminal status, so the
+// workflow_job=completed webhook GitHub sends later is dropped by the
+// Mark* guard rather than refining it. Waiting for GitHub instead is
+// worse - the heartbeat timeout runs ~10 minutes, and the job holds a
+// concurrency slot for all of it on a host that no longer exists.
 func (r *Reaper) markLost(ctx context.Context, i *instance.Instance, d deadState) {
 	now := time.Now().UTC()
 

@@ -11,9 +11,9 @@
 // (default, "fleet" spawn method - AWS picks an available type+AZ
 // from every override combo) or RunInstances (legacy serial
 // fallback, "run_instances" spawn method) referencing the pool's
-// LT at $Default. The callback token rides as the gha:callback-token
-// instance tag (stamped at-launch for RunInstances, post-launch for
-// Fleet). The LT's baked user-data reads it via IMDS at boot. The
+// LT at $Default. The callback token is stashed on the job row and
+// handed to the instance by /api/runner/bootstrap, which the LT's
+// baked user-data calls once IMDSv2 gives it an instance id. The
 // LT itself is never mutated by the orchestrator - it only changes
 // when the operator saves the pool. Capacity-class failures (no
 // capacity for any type+AZ combo) are RESCHEDULED rather than
@@ -266,11 +266,11 @@ func retryBackoff(attempt int) time.Duration {
 // spawnContext bundles the per-spawn inputs the backend impls need.
 // Built once in spawn() and threaded into spawnFleet/spawnRunInstances.
 //
-// callbackToken is the raw HMAC token (`<job_id>.<exp>.<sig>`). The
-// orchestrator stamps it on the instance as the gha:callback-token
-// tag so the in-instance bootstrap script can read it via IMDS. Per
-// CLAUDE.md, raw tokens never hit disk - only the sha256 hash lives
-// on the job row.
+// callbackToken is the raw HMAC token (`<job_id>.<exp>.<sig>`).
+// StampSpawn parks it in jobs.bootstrap_token for /api/runner/bootstrap
+// to hand over once, and stores its sha256 hash in
+// jobs.callback_token_hash as the lasting record - the raw value is
+// cleared on first read.
 type spawnContext struct {
 	job           *job.Job
 	pool          *pool.Pool
@@ -545,9 +545,9 @@ func (o *Orchestrator) snapshotPrice(ctx context.Context, instanceType, az strin
 // last so user tags can never accidentally shadow them.
 //
 // Note: with the Fleet path, instance/volume tags come from the LT
-// (project + pool + gha:{managed-by,project,pool}). Per-job + repo
-// tags + the callback-token tag are added by spawnFleet via a
-// post-launch CreateTags call (see postLaunchTags).
+// (project + pool + gha:{managed-by,project,pool}) and the per-job +
+// repo tags are added by spawnFleet via a post-launch CreateTags call
+// (see postLaunchTags).
 func buildTagSpecs(sc *spawnContext) []ec2types.TagSpecification {
 	tags := buildAllTags(sc)
 	return []ec2types.TagSpecification{

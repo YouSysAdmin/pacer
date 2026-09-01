@@ -708,3 +708,124 @@ func TestJob_MarkReaped_DoesNotOverwriteWebhookFinalizedRow(t *testing.T) {
 		t.Fatalf("reap running: %v", err)
 	}
 }
+
+func TestJob_Claim_NegativeRepoCapDoesNotWedgeTheQueue(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	// A count is never less than a negative bound, so a repo row that
+	// somehow carries one would hold every job it owns in the queue
+	// forever with nothing logged to explain it. Treat it as "no cap",
+	// same as 0 and NULL.
+	if _, err := f.db.ExecContext(ctx, `
+		INSERT INTO repos (full_name, project_id, max_concurrent_runners, tags)
+		VALUES ('octocat/hello-world', ?, -1, '{}')`, f.projectID); err != nil {
+		t.Fatalf("bind repo: %v", err)
+	}
+
+	now := time.Now().UTC()
+	mustPut(t, f, "ready", jobmodel.StatusQueued, now, nil, 0)
+
+	got, err := f.store.Claim(ctx, now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("Claim: %v", err)
+	}
+	if got == nil || got.ID != "ready" {
+		t.Fatalf("negative repo cap must not block claim, got %v", got)
+	}
+}
+
+func TestJob_Claim_NegativeProjectCeilingDoesNotWedgeTheQueue(t *testing.T) {
+	db := testutil.OpenTestDB(t)
+	f := &fixture{store: NewStore(db), db: db, projectID: "p-neg", poolID: "po-neg"}
+	insertProject(t, db, f.projectID, "proj", -5, false)
+	insertPool(t, db, f.poolID, f.projectID, "default", 5, false)
+
+	now := time.Now().UTC()
+	mustPut(t, f, "ready", jobmodel.StatusQueued, now, nil, 0)
+
+	got, err := f.store.Claim(t.Context(), now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("Claim: %v", err)
+	}
+	if got == nil || got.ID != "ready" {
+		t.Fatalf("negative project ceiling must not block claim, got %v", got)
+	}
+}
+
+func TestJob_Reschedule_ClearsBootstrapToken(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	now := time.Now().UTC()
+
+	mustPut(t, f, "j1", jobmodel.StatusQueued, now, nil, 0)
+	claimed, err := f.store.Claim(ctx, now)
+	if err != nil || claimed == nil {
+		t.Fatalf("setup Claim: %v %v", claimed, err)
+	}
+	if err := f.store.StampSpawn(ctx, claimed.ID, "i-abc", "hash", "raw-token"); err != nil {
+		t.Fatalf("StampSpawn: %v", err)
+	}
+
+	if err := f.store.Reschedule(ctx, claimed.ID, 1, now.Add(30*time.Second)); err != nil {
+		t.Fatalf("Reschedule: %v", err)
+	}
+
+	// The next attempt mints its own token, so the abandoned one must
+	// not stay redeemable on a queued row.
+	var tok sql.NullString
+	if err := f.db.QueryRowContext(ctx,
+		`SELECT bootstrap_token FROM jobs WHERE id = ?`, claimed.ID).Scan(&tok); err != nil {
+		t.Fatalf("read bootstrap_token: %v", err)
+	}
+	if tok.Valid && tok.String != "" {
+		t.Fatalf("bootstrap_token should clear on reschedule, got %q", tok.String)
+	}
+	if _, _, err := f.store.ConsumeBootstrap(ctx, "i-abc", time.Hour, now); !errors.Is(err, ErrBootstrapUnavailable) {
+		t.Fatalf("ConsumeBootstrap after reschedule: want ErrBootstrapUnavailable, got %v", err)
+	}
+}
+
+func TestJob_List_OmitsBulkColumns(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	now := time.Now().UTC()
+
+	mustPut(t, f, "j1", jobmodel.StatusQueued, now, nil, 0)
+	if err := f.store.MarkFailedWithLog(ctx, "j1", "bootstrap", "boom", "line one\nline two", now); err != nil {
+		t.Fatalf("MarkFailedWithLog: %v", err)
+	}
+
+	// Get is the detail read: it carries everything.
+	full, err := f.store.Get(ctx, "j1")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if full.FailureLog == "" {
+		t.Fatal("Get must return failure_log")
+	}
+	if len(full.Payload) == 0 {
+		t.Fatal("Get must return payload")
+	}
+
+	// List is the table read: the bulky columns are left on disk.
+	rows, err := f.store.List(ctx, jobmodel.ListFilter{})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("List: want 1 row, got %d", len(rows))
+	}
+	if rows[0].FailureLog != "" {
+		t.Fatalf("List must not carry failure_log, got %q", rows[0].FailureLog)
+	}
+	if len(rows[0].Payload) != 0 {
+		t.Fatalf("List must not carry payload, got %q", rows[0].Payload)
+	}
+	// Everything the table renders still has to survive the trim.
+	if rows[0].FailureStage != "bootstrap" || rows[0].FailureMessage != "boom" {
+		t.Fatalf("List dropped failure metadata: stage=%q msg=%q", rows[0].FailureStage, rows[0].FailureMessage)
+	}
+	if rows[0].Status != jobmodel.StatusFailed || rows[0].CompletedAt == nil {
+		t.Fatalf("List dropped lifecycle columns: %+v", rows[0])
+	}
+}

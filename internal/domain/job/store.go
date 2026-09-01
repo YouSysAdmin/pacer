@@ -109,6 +109,11 @@ func (s *Store) GetByGHJobID(ctx context.Context, ghJobID int64) (*jobmodel.Job,
 // PROJECT-wide ceiling (when set non-zero) is not yet reached AND
 // whose REPO cap (when bound and non-zero) is not yet reached, then
 // flips it to claimed.
+//
+// The project and repo ceilings read "<= 0 means no ceiling" rather
+// than "= 0": a count is never below a negative bound, so a bad row
+// would otherwise hold every one of its jobs in the queue with
+// nothing logged anywhere to say why.
 // MaxOpenConns(1) on the connection pool serializes this with all other writes.
 // Explicit transaction kept for clarity and ease of porting to postgres.
 func (s *Store) Claim(ctx context.Context, now time.Time) (*jobmodel.Job, error) {
@@ -134,7 +139,7 @@ func (s *Store) Claim(ctx context.Context, now time.Time) (*jobmodel.Job, error)
                 AND jc.status IN ('claimed','starting','running')
           ) < po.max_concurrent_runners
           AND (
-              pr.max_concurrent_runners = 0
+              pr.max_concurrent_runners <= 0
               OR (
                   SELECT COUNT(*) FROM jobs jc
                   WHERE jc.project_id = j.project_id
@@ -143,7 +148,7 @@ func (s *Store) Claim(ctx context.Context, now time.Time) (*jobmodel.Job, error)
           )
           AND (
               re.full_name IS NULL
-              OR COALESCE(re.max_concurrent_runners, 0) = 0
+              OR COALESCE(re.max_concurrent_runners, 0) <= 0
               OR (
                   SELECT COUNT(*) FROM jobs jc
                   WHERE jc.repo_full_name = j.repo_full_name
@@ -424,6 +429,10 @@ func (s *Store) ReclaimStale(ctx context.Context, cutoff time.Time) (int, error)
 // failure exhausts every (instance_type, subnet) combo - the job
 // stays in flight rather than failing, and the next tick after
 // nextRetryAt picks it up.
+//
+// Clears every credential the abandoned attempt minted, bootstrap_token
+// included: the next attempt mints its own, and a raw token left on a
+// queued row is a secret nothing can ever redeem.
 func (s *Store) Reschedule(ctx context.Context, id string, attempts int, nextRetryAt time.Time) error {
 	nextRetryAt = dbutil.UTC(nextRetryAt)
 	_, err := s.db.ExecContext(ctx, `
@@ -431,6 +440,7 @@ func (s *Store) Reschedule(ctx context.Context, id string, attempts int, nextRet
         SET status = 'queued',
             instance_id = NULL,
             callback_token_hash = NULL,
+            bootstrap_token = NULL,
             claimed_at = NULL,
             attempts = ?,
             next_retry_at = ?
@@ -442,6 +452,9 @@ func (s *Store) Reschedule(ctx context.Context, id string, attempts int, nextRet
 // List returns jobs filtered by Status / ProjectID / PoolID / Repo,
 // newest first, capped at f.Limit (default 100, max 500) and skipping
 // f.Offset rows.
+//
+// FailureLog and Payload come back empty on every row - see
+// jobListSelect. Fetch the job by id when you need either.
 func (s *Store) List(ctx context.Context, f jobmodel.ListFilter) ([]*jobmodel.Job, error) {
 	limit := f.Limit
 	if limit <= 0 {
@@ -453,7 +466,7 @@ func (s *Store) List(ctx context.Context, f jobmodel.ListFilter) ([]*jobmodel.Jo
 	offset := max(f.Offset, 0)
 
 	where, args := buildJobWhere(f)
-	q := jobSelect + where + " ORDER BY queued_at DESC LIMIT ? OFFSET ?"
+	q := jobListSelect + where + " ORDER BY queued_at DESC LIMIT ? OFFSET ?"
 	args = append(args, limit, offset)
 
 	rows, err := s.db.QueryContext(ctx, q, args...)
@@ -473,9 +486,6 @@ func (s *Store) List(ctx context.Context, f jobmodel.ListFilter) ([]*jobmodel.Jo
 	return out, rows.Err()
 }
 
-// Count returns the number of rows matching f, ignoring Limit + Offset.
-// Sharing buildJobWhere with List guarantees pagination math (showing
-// X-Y of total) reflects what's actually on the page.
 // ClearLogsOlderThan drops the captured bootstrap log from finished
 // jobs older than cutoff, returning how many rows it cleared.
 //
@@ -488,7 +498,7 @@ func (s *Store) List(ctx context.Context, f jobmodel.ListFilter) ([]*jobmodel.Jo
 // not lost the answer.
 //
 // Gated on completed_at so an in-flight job cannot have its log
-// cleared out from under it, and on failure_log != ” so repeat
+// cleared out from under it, and on a non-empty failure_log so repeat
 // sweeps over an already-clean window report zero instead of
 // rewriting rows they have nothing to change.
 func (s *Store) ClearLogsOlderThan(ctx context.Context, cutoff time.Time) (int, error) {
@@ -510,6 +520,9 @@ func (s *Store) ClearLogsOlderThan(ctx context.Context, cutoff time.Time) (int, 
 	return int(n), nil
 }
 
+// Count returns the number of rows matching f, ignoring Limit + Offset.
+// Sharing buildJobWhere with List guarantees pagination math (showing
+// X-Y of total) reflects what's actually on the page.
 func (s *Store) Count(ctx context.Context, f jobmodel.ListFilter) (int, error) {
 	where, args := buildJobWhere(f)
 	var n int
@@ -548,13 +561,32 @@ func buildJobWhere(f jobmodel.ListFilter) (string, []any) {
 	return " WHERE " + strings.Join(conds, " AND "), args
 }
 
-const jobSelect = `
-SELECT id, gh_job_id, gh_run_id, installation_id, repo_full_name,
+// The two read shapes differ only in their bulky columns, so they
+// share a head and tail and splice those in - one place to add a
+// column, no chance of the projections drifting out of scan order.
+const (
+	jobColsHead = `id, gh_job_id, gh_run_id, installation_id, repo_full_name,
        project_id, pool_id, status, instance_id, callback_token_hash,
        queued_at, claimed_at, started_at, completed_at,
-       failure_stage, failure_message, failure_log, estimated_cost_usd,
-       attempts, next_retry_at, sender_login, payload, bootstrap_token
+       failure_stage, failure_message, `
+	jobColsTail = `, estimated_cost_usd,
+       attempts, next_retry_at, sender_login, `
+	jobColsEnd = `, bootstrap_token
 FROM jobs`
+)
+
+// jobSelect reads the whole row. Used by Get / GetByGHJobID, which
+// feed the detail modal.
+const jobSelect = `
+SELECT ` + jobColsHead + `failure_log` + jobColsTail + `payload` + jobColsEnd
+
+// jobListSelect blanks the two columns that carry bulk: failure_log
+// runs to 64 KiB and payload is the whole GitHub webhook body. Only
+// the detail view renders either, while the jobs table polls every
+// 5 s at up to 500 rows a page - reading them there is megabytes of
+// SQLite and JSON work per poll for data nothing on the page shows.
+const jobListSelect = `
+SELECT ` + jobColsHead + `''` + jobColsTail + `''` + jobColsEnd
 
 func (s *Store) scanOne(ctx context.Context, where string, args ...any) (*jobmodel.Job, error) {
 	row := s.db.QueryRowContext(ctx, jobSelect+" "+where, args...)

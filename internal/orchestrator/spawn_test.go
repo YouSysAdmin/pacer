@@ -153,3 +153,39 @@ func TestMaybeReap_MissingPoolUnderCapIsNoop(t *testing.T) {
 		t.Fatalf("missing pool under cap must be a no-op, got %v", err)
 	}
 }
+
+// Post-launch tagging is best-effort precisely because nothing the
+// runner needs travels in it: the callback token comes from
+// /api/runner/bootstrap and gha:managed-by (which the terminate
+// policy is gated on) comes from the launch template. If a secret or
+// a boot-critical tag is ever added here, that reasoning breaks and
+// spawnFleet must stop shrugging off a CreateTags failure.
+func TestPostLaunchTags_CarryNothingBootCritical(t *testing.T) {
+	sc := &spawnContext{
+		job:           &job.Job{ID: "j-1", RepoFullName: "octocat/hello-world"},
+		pool:          &pool.Pool{Name: "linux"},
+		project:       &projectInfo{Name: "alpha"},
+		repoTags:      map[string]string{"cost-center": "eng"},
+		callbackToken: "job.9999.deadbeef",
+		tokenHash:     "sha256hash",
+	}
+
+	keys := map[string]string{}
+	for _, tag := range postLaunchTags(sc) {
+		keys[*tag.Key] = *tag.Value
+	}
+
+	for _, want := range []string{"gha:job_id", "gha:repo", "cost-center"} {
+		if _, ok := keys[want]; !ok {
+			t.Errorf("missing expected tag %q", want)
+		}
+	}
+	for k, v := range keys {
+		if strings.Contains(v, sc.callbackToken) || strings.Contains(v, sc.tokenHash) {
+			t.Errorf("tag %q leaks a per-job credential", k)
+		}
+	}
+	if _, ok := keys["gha:managed-by"]; ok {
+		t.Error("gha:managed-by must come from the launch template, not a post-launch call the spawn tolerates failing")
+	}
+}

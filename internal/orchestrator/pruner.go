@@ -19,6 +19,9 @@ const (
 	// and every state change, so daily is plenty - slower would
 	// still be correct, faster just burns a write.
 	PruneInterval = 24 * time.Hour
+
+	// prunerHealthComponent is the Health key a panicking sweep writes.
+	prunerHealthComponent = "pruner"
 )
 
 // Pruner sweeps housekeeping tables that grow with traffic:
@@ -48,9 +51,20 @@ func (p *Pruner) Run(ctx context.Context) {
 			slog.Info("pruner stopping")
 			return
 		case <-t.C:
-			p.Tick(ctx)
+			p.safeTick(ctx)
 		}
 	}
+}
+
+// safeTick runs one sweep under the same panic guard the orchestrator
+// and reaper loops use. Without it a panic takes the goroutine with
+// it and pruning stops for the life of the process, silently: nothing
+// polls this loop, and the tables it trims only misbehave by growing.
+func (p *Pruner) safeTick(ctx context.Context) {
+	_ = safeTick(p.Runtime, prunerHealthComponent, func() error {
+		p.Tick(ctx)
+		return nil
+	})
 }
 
 // Tick is one sweep of all housekeeping tables. Exported so tests
