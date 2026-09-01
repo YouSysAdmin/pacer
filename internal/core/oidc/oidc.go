@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
@@ -27,6 +28,9 @@ import (
 // stays free of imports back into core/env. Construct via FromEnv()
 // at the cli/serve.go startup site.
 type Config struct {
+	// Name is the operator-supplied display name. Empty means "use
+	// the issuer host" - see DisplayName.
+	Name                 string
 	Issuer               string
 	ClientID             string
 	ClientSecret         string
@@ -84,8 +88,22 @@ func New(ctx context.Context, cfg Config) (*Provider, error) {
 // the allowlist surface + RequireEmailVerified.
 func (p *Provider) Config() Config { return p.cfg }
 
-// IssuerHost returns the host portion of the issuer URL for display
-// purposes ("Sign in with <host>"). Falls back to the raw issuer.
+// DisplayName is what the sign-in button calls this provider.
+//
+// The operator's own name wins when they set one: an issuer host is
+// accurate but not what anybody calls their IdP, and
+// "login.microsoftonline.com" on a button reads as a URL that leaked
+// into the UI. With no name configured this is exactly the previous
+// behavior, so existing installs see no change.
+func (p *Provider) DisplayName() string {
+	if n := strings.TrimSpace(p.cfg.Name); n != "" {
+		return n
+	}
+	return p.IssuerHost()
+}
+
+// IssuerHost returns the host portion of the issuer URL. The display
+// fallback, and the honest answer when no name was configured.
 func (p *Provider) IssuerHost() string {
 	u, err := url.Parse(p.cfg.Issuer)
 	if err != nil || u.Host == "" {

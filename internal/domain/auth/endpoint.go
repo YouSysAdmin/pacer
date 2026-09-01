@@ -130,7 +130,7 @@ func (h *Handler) Info(c *fiber.Ctx) error {
 		"oidc_enabled":  cfg.OIDC.Enabled,
 	}
 	if h.Runtime.OIDC != nil {
-		out["oidc_label"] = h.Runtime.OIDC.IssuerHost()
+		out["oidc_label"] = h.Runtime.OIDC.DisplayName()
 	}
 	return response.Success(c, out)
 }

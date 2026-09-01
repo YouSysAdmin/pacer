@@ -7,6 +7,7 @@ package auth_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/yousysadmin/pacer/internal/core/authenticator"
 	"github.com/yousysadmin/pacer/internal/core/env"
+	pacoidc "github.com/yousysadmin/pacer/internal/core/oidc"
 	"github.com/yousysadmin/pacer/internal/core/validation"
 	"github.com/yousysadmin/pacer/internal/domain/auth"
 	auditmodel "github.com/yousysadmin/pacer/internal/models/audit"
@@ -214,5 +216,80 @@ func TestInfo_Shapes(t *testing.T) {
 	}
 	if _, ok := b["oidc_label"]; ok {
 		t.Fatal("oidc_label must be absent without a provider")
+	}
+}
+
+// discoveryServer stands in for an IdP just far enough for
+// oidc.New to build a Provider: go-oidc fetches the discovery
+// document and checks that the issuer inside it matches the URL it
+// asked. Nothing else here is exercised.
+func discoveryServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{
+			"issuer": %q,
+			"authorization_endpoint": %q,
+			"token_endpoint": %q,
+			"jwks_uri": %q,
+			"id_token_signing_alg_values_supported": ["RS256"]
+		}`, srv.URL, srv.URL+"/authorize", srv.URL+"/token", srv.URL+"/jwks")
+	})
+	return srv
+}
+
+func oidcCfg(t *testing.T, name, issuer string) (*env.Config, *pacoidc.Provider) {
+	t.Helper()
+	prov, err := pacoidc.New(t.Context(), pacoidc.Config{
+		Name: name, Issuer: issuer, ClientID: "cid", ClientSecret: "sec",
+		RedirectURL: "https://pacer.example.com/api/auth/oidc/callback",
+	})
+	if err != nil {
+		t.Fatalf("provider: %v", err)
+	}
+	return &env.Config{
+		Server: env.ServerConfig{PublicURL: "https://pacer.example.com"},
+		Auth: env.AuthConfig{
+			JWTSecret: jwtSecret,
+			OIDC:      env.AuthOIDCConfig{Enabled: true, Name: name, Issuer: issuer},
+		},
+	}, prov
+}
+
+// TestInfo_OIDCLabelPrefersConfiguredName: the sign-in button reads
+// this field, and an operator who named their IdP should see that
+// name rather than a host out of the issuer URL.
+func TestInfo_OIDCLabelPrefersConfiguredName(t *testing.T) {
+	srv := discoveryServer(t)
+	cfg, prov := oidcCfg(t, "Acme SSO", srv.URL)
+	app, rt := newApp(t, cfg)
+	rt.OIDC = prov
+
+	resp, _ := app.Test(httptest.NewRequest("GET", "/api/auth/info", nil), -1)
+	var b map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&b)
+	if b["oidc_label"] != "Acme SSO" {
+		t.Fatalf("oidc_label: got %v, want \"Acme SSO\"", b["oidc_label"])
+	}
+}
+
+// TestInfo_OIDCLabelFallsBackToIssuerHost pins the no-change promise
+// for installs that never set a name.
+func TestInfo_OIDCLabelFallsBackToIssuerHost(t *testing.T) {
+	srv := discoveryServer(t)
+	cfg, prov := oidcCfg(t, "", srv.URL)
+	app, rt := newApp(t, cfg)
+	rt.OIDC = prov
+
+	resp, _ := app.Test(httptest.NewRequest("GET", "/api/auth/info", nil), -1)
+	var b map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&b)
+
+	host := strings.TrimPrefix(srv.URL, "http://")
+	if b["oidc_label"] != host {
+		t.Fatalf("oidc_label: got %v, want %q", b["oidc_label"], host)
 	}
 }

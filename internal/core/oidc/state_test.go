@@ -110,3 +110,30 @@ func TestIssuerHost(t *testing.T) {
 		t.Fatal(h)
 	}
 }
+
+// TestDisplayName: the operator's own name wins; without one the
+// button keeps saying exactly what it said before this existed, so
+// upgrading changes nothing for installs that do not set it.
+func TestDisplayName(t *testing.T) {
+	cases := []struct {
+		name   string
+		issuer string
+		want   string
+	}{
+		{"Acme SSO", "https://login.microsoftonline.com/tid/v2.0", "Acme SSO"},
+		{"", "https://idp.example.com/realms/x", "idp.example.com"},
+		// Whitespace is not a name. A YAML `name: "  "` would
+		// otherwise put an empty label on the button.
+		{"   ", "https://idp.example.com/realms/x", "idp.example.com"},
+		// Surrounding space is trimmed rather than rejected.
+		{"  Okta  ", "https://idp.example.com", "Okta"},
+		// The issuer fallback keeps its own fallback to the raw value.
+		{"", "garbage", "garbage"},
+	}
+	for _, c := range cases {
+		got := admitProvider(Config{Name: c.name, Issuer: c.issuer}).DisplayName()
+		if got != c.want {
+			t.Errorf("Name=%q Issuer=%q: got %q, want %q", c.name, c.issuer, got, c.want)
+		}
+	}
+}

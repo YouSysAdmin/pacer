@@ -134,6 +134,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 			requireVerified = *cfg.Auth.OIDC.RequireEmailVerified
 		}
 		oidcProvider, err = pacoidc.New(context.Background(), pacoidc.Config{
+			Name:                 cfg.Auth.OIDC.Name,
 			Issuer:               cfg.Auth.OIDC.Issuer,
 			ClientID:             cfg.Auth.OIDC.ClientID,
 			ClientSecret:         cfg.Auth.OIDC.ClientSecret,

@@ -96,6 +96,7 @@ auth:
   # at startup -- local is for first-setup / break-glass only.
   oidc:
     enabled: false
+    name: Acme SSO                      # optional; button label. Omit to show the issuer host
     issuer: https://accounts.example.com
     client_id: pacer
     client_secret: <set via PACER_AUTH_OIDC_CLIENT_SECRET>
@@ -146,6 +147,7 @@ auth:
 | `auth.local.enabled`                    | Turns on email + password local login. The bootstrap flow runs at first start when both `local.enabled` and an empty `users` table coincide. **Auto-disabled when `auth.oidc.enabled: true`.** |
 | `auth.local.email`                      | The bootstrap user's email. Lower-cased + trimmed at config-load time so casing in YAML doesn't cause a lookup miss.                                                                           |
 | `auth.oidc.enabled`                     | Turns on the OIDC Authorization Code + PKCE flow. Local login is auto-disabled when this is on. Required peers: `issuer`, `client_id`, `client_secret`, `redirect_url`.                        |
+| `auth.oidc.name`                        | Display name for the sign-in button ("Sign in with Acme SSO"). Optional - omit it and the button falls back to the issuer's host, which is the pre-existing behavior. Display only; nothing in the flow keys off it. |
 | `auth.oidc.issuer`                      | The IdP's issuer URL (e.g. `https://accounts.google.com`, `https://oauth.id.jumpcloud.com/`, `https://login.microsoftonline.com/<tenant>/v2.0`). Must include `http://` or `https://` and a host -- bare identifiers are rejected at startup. Discovery (`/.well-known/openid-configuration`) happens at startup. Must NOT share a host with `redirect_url` (issuer is the IdP, redirect_url is pacer). |
 | `auth.oidc.client_id` / `client_secret` | App registration on the IdP. Prefer `PACER_AUTH_OIDC_CLIENT_SECRET=...` env var to keep the secret out of YAML.                                                                                |
 | `auth.oidc.redirect_url`                | Callback URL the IdP redirects back to. Must be `<server.public_url>/api/auth/oidc/callback` and registered with the IdP exactly.                                                              |

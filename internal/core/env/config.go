@@ -81,7 +81,13 @@ type AuthLocalConfig struct {
 }
 
 type AuthOIDCConfig struct {
-	Enabled      bool     `mapstructure:"enabled"`
+	Enabled bool `mapstructure:"enabled"`
+	// Name is what the sign-in button calls this provider ("Sign in
+	// with <name>"). Empty falls back to the issuer's host, which is
+	// what an operator sees today: accurate, but "login.microsoft
+	// online.com" is not what their staff call it. Display only - no
+	// part of the flow keys off it.
+	Name         string   `mapstructure:"name"`
 	Issuer       string   `mapstructure:"issuer"`
 	ClientID     string   `mapstructure:"client_id"`
 	ClientSecret string   `mapstructure:"client_secret"`
