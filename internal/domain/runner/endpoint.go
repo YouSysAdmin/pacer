@@ -33,13 +33,9 @@ import (
 // JITMinter is the slice of the GitHub App client this handler uses:
 // two calls, both minting a single-use runner registration.
 //
-// An interface rather than *ghapp.Client so the refusal path can be
-// tested. That path is the one an operator meets on their worst day
-// - a revoked installation, an App that lost access to a repo - and
-// it decides both what the runner does next (retry or stop) and
-// whether the reason survives anywhere. Untestable, it was wrong:
-// every GitHub error came back as a bare 500 that curl then retried
-// twelve times.
+// An interface rather than *ghapp.Client so the refusal path stays
+// testable: it decides what the runner does next (retry or stop) and
+// whether the reason reaches the operator.
 type JITMinter interface {
 	JITConfig(ctx context.Context, installationID int64, repoOwner, repoName, runnerName string, labels []string, runnerGroupID int) (string, int64, error)
 	JITConfigOrg(ctx context.Context, installationID int64, orgName, runnerName string, labels []string, runnerGroupID int) (string, int64, error)
@@ -316,13 +312,9 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 }
 
 // failureMessage is the one-line summary shown beside the stage in
-// the jobs UI, above the captured log.
-//
-// It used to say "bootstrap exit=N line=N" for everything, which read
-// as "register - bootstrap exit=22 line=142" on a registration
-// failure: two different words for the phase, one of them wrong. The
-// stage is already displayed on its own, so this says what the number
-// means instead of repeating where it happened.
+// the jobs UI, above the captured log. The stage is displayed on its
+// own, so this says what the number means rather than repeating
+// where it happened.
 //
 // A "run" failure is the runner process exiting, not a line of our
 // script blowing up, so it carries no line number.
@@ -338,12 +330,10 @@ func failureMessage(stage string, exitCode, line int) string {
 
 // jitConfigFailed answers a runner whose JIT config GitHub refused.
 //
-// Three things have to happen here, and each was missing before: the
-// runner needs a status code that tells it whether retrying is worth
-// the billed seconds, the operator needs GitHub's own words rather
-// than a bare 500, and the reason has to survive somewhere other than
-// the server's stderr - the instance shuts itself down a few seconds
-// later, taking its log with it.
+// Three things happen here: the runner gets a status code telling it
+// whether retrying is worth the billed seconds, the response carries
+// GitHub's own words, and the reason is audited - the instance shuts
+// down seconds later, taking its own log with it.
 func (h *Handler) jitConfigFailed(c *fiber.Ctx, j *job.Job, runnerName string, err error) error {
 	reason := err.Error()
 	temporary := false
@@ -355,11 +345,10 @@ func (h *Handler) jitConfigFailed(c *fiber.Ctx, j *job.Job, runnerName string, e
 	slog.Error("runner.register: jit config failed",
 		"job_id", j.ID, "runner", runnerName, "temporary", temporary, "err", err)
 
-	// Audited even though the runner is about to report its own
-	// failure: it reports what it SAW (a status code), and only the
-	// server knows why. A revoked installation shows up here as one
-	// row per attempt, which is the signal an operator needs when
-	// every job in a project starts failing at once.
+	// Audited even though the runner reports its own failure: the
+	// runner only saw a status code, and a revoked installation shows
+	// up here as one row per attempt - the signal an operator needs
+	// when every job in a project starts failing at once.
 	if putErr := h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
 		ID:         uuid.New().String(),
 		Action:     audit.ActionRunnerRegisterFailed,
@@ -506,6 +495,24 @@ func (h *Handler) Error(c *fiber.Ctx) error {
 	msg := failureMessage(stage, in.ExitCode, in.Line)
 
 	now := time.Now().UTC()
+
+	// Once the job is running, GitHub owns the verdict: a
+	// workflow_job webhook carries the real conclusion, and the
+	// runner process exiting non-zero says the machine had a problem,
+	// not that the work failed. Writing 'failed' here would stick -
+	// MarkCompleted will not move a row out of a terminal state.
+	//
+	// Before `running` no webhook is coming (the runner never
+	// connected), so this report is the only account of the job.
+	if j.Status == job.StatusRunning {
+		if err := h.Runtime.Store.Job.AttachFailureLog(c.UserContext(), j.ID, stage, msg, logBody); err != nil {
+			return response.Internal(c, err)
+		}
+		slog.Info("runner.error: log attached, outcome left to the webhook",
+			"job_id", j.ID, "stage", stage, "exit_code", in.ExitCode)
+		return response.NoContent(c)
+	}
+
 	if err := h.Runtime.Store.Job.MarkFailedWithLog(c.UserContext(), j.ID, stage, msg, logBody, now); err != nil {
 		if errors.Is(err, jobstore.ErrStatusConflict) {
 			return response.Conflict(c, "job already finalized")

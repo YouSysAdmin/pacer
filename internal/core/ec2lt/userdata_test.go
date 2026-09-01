@@ -16,10 +16,9 @@ import (
 	"github.com/yousysadmin/pacer/internal/models/pool"
 )
 
-// TestUserData_ReportsRunStageFailure pins the hole that used to
-// swallow the most common failure of all. ./run.sh exiting non-zero
-// is caught by "|| RUNNER_EXIT=$?", so the ERR trap never fires; the
-// script has to report that case explicitly or the log dies with the
+// TestUserData_ReportsRunStageFailure: ./run.sh exiting non-zero is
+// caught by "|| RUNNER_EXIT=$?", so the ERR trap never fires. The
+// script must report that case explicitly or the log dies with the
 // instance a minute later.
 func TestUserData_ReportsRunStageFailure(t *testing.T) {
 	got, err := renderUserData(&pool.Pool{}, "https://pacer.example", "2.319.1", "tok")
@@ -45,8 +44,8 @@ func TestUserData_ReportsRunStageFailure(t *testing.T) {
 }
 
 // TestUserData_NoBareFailFlag: "curl -f" throws the response body
-// away, which is exactly how a 424 carrying GitHub's explanation
-// reached the operator as the single word "424".
+// away, reducing a 424 that carries GitHub's explanation to a bare
+// status code.
 func TestUserData_NoBareFailFlag(t *testing.T) {
 	got, err := renderUserData(&pool.Pool{}, "https://pacer.example", "2.319.1", "tok")
 	if err != nil {
@@ -84,11 +83,10 @@ func extractShellFunc(t *testing.T, script, name string) string {
 	return rest[:end+3]
 }
 
-// TestUserData_APIPostSurfacesErrorBody actually RUNS the helper
-// against a server that refuses the way pacer does, because the
-// whole point of the change is what a human reads afterwards. A
-// string-matching test would have passed against the old -f version
-// too.
+// TestUserData_APIPostSurfacesErrorBody runs the helper for real
+// against a server that refuses the way pacer does: what matters is
+// what ends up in the log, which a string-matching test cannot
+// check.
 func TestUserData_APIPostSurfacesErrorBody(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash not available")

@@ -357,6 +357,33 @@ func (s *Store) MarkFailedWithLog(ctx context.Context, id, stage, message, log s
 		stage, message, log, now, now, id)
 }
 
+// AttachFailureLog records what an instance reported without deciding
+// the job's outcome: only the diagnostic columns are touched, so
+// status, completed_at and cost stay with whoever owns them.
+//
+// For a job GitHub is tracking, that owner is the workflow_job
+// webhook. Used by the runner-error path once a job is running.
+//
+// No terminal-state guard: a webhook that already landed leaves the
+// row failed with no log, and the log is what the operator needs.
+// Stage and message are overwritten for the same reason.
+func (s *Store) AttachFailureLog(ctx context.Context, id, stage, message, log string) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE jobs SET failure_stage = ?, failure_message = ?, failure_log = ? WHERE id = ?`,
+		stage, message, log, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrJobMissing
+	}
+	return nil
+}
+
 // MarkReaped finalizes a job whose instance the reaper had to kill.
 // Rows already finalized by the webhook keep their status and cost,
 // the reaper only records the instance side in that case.

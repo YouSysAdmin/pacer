@@ -163,6 +163,9 @@ type JobStore interface {
 	// than cutoff and reports how many rows changed. The rows stay,
 	// so stats keep their history - see the store method.
 	ClearLogsOlderThan(ctx context.Context, cutoff time.Time) (int, error)
+	// AttachFailureLog records diagnostics without deciding the
+	// outcome, for a job whose result GitHub owns.
+	AttachFailureLog(ctx context.Context, id, stage, message, log string) error
 	// FinalizeCost recomputes a job's estimated_cost_usd after its
 	// instance has been marked terminated/reaped. The Mark{Completed,
 	// Failed,Reaped} stamps an early estimate using the webhook /

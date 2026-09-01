@@ -103,10 +103,10 @@ func TestPruner_ClearsOldJobLogsKeepsRecent(t *testing.T) {
 	}
 }
 
-// TestPruner_JobLogSweepPreservesStats is the whole reason this
-// clears logs instead of deleting rows: cost and runtime rollups read
-// the jobs table, so a sweep that removed rows would silently shorten
-// every historical report to the retention window.
+// TestPruner_JobLogSweepPreservesStats is why this clears logs
+// instead of deleting rows: cost and runtime rollups read the jobs
+// table, so removing rows would silently shorten every historical
+// report to the retention window.
 func TestPruner_JobLogSweepPreservesStats(t *testing.T) {
 	rt := newPrunerRuntime(t, 31)
 	seedProjectPool(t, rt)

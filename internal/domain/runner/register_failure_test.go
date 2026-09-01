@@ -53,10 +53,10 @@ func registerWith(t *testing.T, mintErr error) (*http.Response, string) {
 	return resp, body.Error
 }
 
-// TestRegister_PermanentGitHubRefusalIsNotRetryable is the case from
-// the field: an App that lost access to the repo. The runner must be
-// told to stop rather than spend its retry budget, and the operator
-// must get GitHub's own sentence instead of a bare 500.
+// TestRegister_PermanentGitHubRefusalIsNotRetryable: an App that lost
+// access to the repo. The runner must be told to stop rather than
+// spend its retry budget, and the response must carry GitHub's own
+// sentence.
 func TestRegister_PermanentGitHubRefusalIsNotRetryable(t *testing.T) {
 	resp, msg := registerWith(t, &ghapp.APIError{
 		Op: "jitconfig", StatusCode: http.StatusForbidden, Status: "403 Forbidden",
@@ -143,13 +143,16 @@ func TestRegister_FailureIsAudited(t *testing.T) {
 	}
 }
 
-// TestError_RunStageMarksFailedWithLog covers the hole that swallowed
-// the most common failure of all: ./run.sh exiting non-zero never
-// tripped the ERR trap, so a runner GitHub rejected at connect time
-// (a version it no longer accepts, a consumed JIT config) left no
-// trace anywhere. The job was running, so the endpoint has to accept
-// it and keep the log.
-func TestError_RunStageMarksFailedWithLog(t *testing.T) {
+// TestError_RunStageAttachesLog covers the hole that swallowed the
+// most common failure of all: ./run.sh exiting non-zero never tripped
+// the ERR trap, so a runner GitHub rejected at connect time (a
+// version it no longer accepts, a consumed JIT config) left no trace
+// anywhere.
+//
+// The log is kept; the VERDICT is not ours to write while GitHub is
+// still tracking the job - see
+// TestError_RunReportDoesNotOverrideWebhookOutcome.
+func TestError_RunStageAttachesLog(t *testing.T) {
 	h := newHarness(t)
 	seedProjectAndPool(t, h.rt)
 	tok := seedClaimedJob(t, h.rt, "j-run", "i-run")
@@ -169,9 +172,6 @@ func TestError_RunStageMarksFailedWithLog(t *testing.T) {
 	j, err := h.rt.Store.Job.Get(t.Context(), "j-run")
 	if err != nil {
 		t.Fatal(err)
-	}
-	if j.Status != jobmodel.StatusFailed {
-		t.Fatalf("status: got %q, want failed", j.Status)
 	}
 	if j.FailureStage != "run" {
 		t.Fatalf("stage: got %q, want run", j.FailureStage)
@@ -205,5 +205,77 @@ func TestFailureMessage(t *testing.T) {
 		if got := failureMessage(c.stage, c.exit, c.line); got != c.want {
 			t.Errorf("failureMessage(%q, %d, %d) = %q, want %q", c.stage, c.exit, c.line, got, c.want)
 		}
+	}
+}
+
+// TestError_RunReportDoesNotOverrideWebhookOutcome: run.sh exiting
+// non-zero does not mean the workflow failed, and recording 'failed'
+// would be permanent - MarkCompleted refuses to leave a terminal
+// state, so the webhook carrying the real conclusion would be
+// dropped and a green job would read as failed forever.
+func TestError_RunReportDoesNotOverrideWebhookOutcome(t *testing.T) {
+	h := newHarness(t)
+	seedProjectAndPool(t, h.rt)
+	tok := seedClaimedJob(t, h.rt, "j-race", "i-race")
+	if err := h.rt.Store.Job.MarkRunning(t.Context(), "j-race", "i-race", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := h.postJSON(t, "/api/runner/error", map[string]any{
+		"job_id": "j-race", "callback_token": tok, "stage": "run",
+		"exit_code": 1, "log": "runner listener exited with error code 1",
+	})
+	if resp.StatusCode >= 400 {
+		t.Fatalf("error report rejected: %d", resp.StatusCode)
+	}
+
+	// The diagnosis is kept even though the verdict is not ours.
+	j, err := h.rt.Store.Job.Get(t.Context(), "j-race")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j.Status != jobmodel.StatusRunning {
+		t.Fatalf("status must stay with the webhook, got %q", j.Status)
+	}
+	if !strings.Contains(j.FailureLog, "error code 1") {
+		t.Fatalf("log must still be attached, got %q", j.FailureLog)
+	}
+	if j.FailureStage != "run" {
+		t.Fatalf("stage: got %q", j.FailureStage)
+	}
+
+	// GitHub then reports the truth, and it must land.
+	if err := h.rt.Store.Job.MarkCompleted(t.Context(), "j-race", time.Now().UTC()); err != nil {
+		t.Fatalf("webhook could not finalize: %v", err)
+	}
+	j, _ = h.rt.Store.Job.Get(t.Context(), "j-race")
+	if j.Status != jobmodel.StatusCompleted {
+		t.Fatalf("final status: got %q, want completed", j.Status)
+	}
+	// And the log survives the transition, which is the whole point
+	// of attaching it separately.
+	if !strings.Contains(j.FailureLog, "error code 1") {
+		t.Fatalf("log lost on completion: %q", j.FailureLog)
+	}
+}
+
+// A job that never reached `running` has no webhook coming, so this
+// report IS the outcome.
+func TestError_PreRunningStillMarksFailed(t *testing.T) {
+	h := newHarness(t)
+	seedProjectAndPool(t, h.rt)
+	tok := seedClaimedJob(t, h.rt, "j-early", "i-early")
+
+	h.postJSON(t, "/api/runner/error", map[string]any{
+		"job_id": "j-early", "callback_token": tok, "stage": "register",
+		"exit_code": 1, "line": 218, "log": "HTTP 424",
+	})
+
+	j, err := h.rt.Store.Job.Get(t.Context(), "j-early")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j.Status != jobmodel.StatusFailed {
+		t.Fatalf("status: got %q, want failed", j.Status)
 	}
 }

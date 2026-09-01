@@ -86,13 +86,11 @@ trap 'report_error $? $LINENO' ERR
 
 # api_post POSTs to pacer and prints the response body on stdout.
 #
-# It exists because "curl -f" - which every one of these calls used
-# to use - exits 22 and THROWS THE BODY AWAY. The operator reading a
-# failed job then sees "error: 424" and nothing else, while the
-# sentence that explains it ("jitconfig: 403 Forbidden: Resource not
-# accessible by integration") is discarded a few milliseconds before
-# the log is shipped. Here the body is captured either way, and
-# printed to the log when the request fails.
+# Deliberately not "curl -f": that exits 22 and discards the body,
+# leaving the log with a bare status code instead of the sentence
+# explaining it ("jitconfig: 403 Forbidden: Resource not accessible
+# by integration"). Here the body is captured either way and printed
+# when the request fails.
 #
 # --retry covers curl's transient set (connection failures, 408, 429,
 # 5xx) and nothing else, which is why the server answers a permanent
@@ -250,18 +248,15 @@ echo "run.sh exited with $RUNNER_EXIT"
 # trap so a curl failure doesn't trigger a duplicate error report.
 trap - ERR
 
-# A runner that exits non-zero never reached the ERR trap: the
-# "|| RUNNER_EXIT=$?" above catches the failure by design, so the
-# script walks on to "complete" and the log dies with the instance a
-# minute later. That hid the single most common class of failure -
-# GitHub refusing the registration at connect time (a runner version
-# it no longer accepts, a JIT config already consumed, a runner group
-# that went away) - because all of that is printed by run.sh, not by
-# anything the server ever sees.
+# A non-zero runner exit never reaches the ERR trap: the
+# "|| RUNNER_EXIT=$?" above catches it by design. Report it
+# explicitly, or the output covering GitHub refusing the runner at
+# connect time (deprecated version, consumed JIT config, missing
+# runner group) dies with the instance a minute later.
 #
-# So report it the same way a bootstrap failure is reported. This is
-# NOT the trap: the job is genuinely finished, and "complete" below
-# still runs to stamp termination and finalize cost.
+# The server keeps the verdict for a job it is already tracking and
+# only stores this log. "complete" below still runs to stamp
+# termination and finalize cost.
 if [ "$RUNNER_EXIT" -ne 0 ]; then
     STAGE="run"
     echo "RUNNER FAIL stage=run exit=$RUNNER_EXIT"

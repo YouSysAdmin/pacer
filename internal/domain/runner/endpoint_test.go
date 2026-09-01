@@ -348,9 +348,14 @@ func TestRunner_Error_AllowedWhileRunning(t *testing.T) {
 	if resp.StatusCode != 204 {
 		t.Fatalf("status: want 204, got %d", resp.StatusCode)
 	}
+	// Accepted, and the log is kept. The status belongs to the
+	// workflow_job webhook while GitHub is still tracking the job.
 	j, _ := h.rt.Store.Job.Get(t.Context(), "j-1")
-	if j.Status != jobmodel.StatusFailed {
-		t.Fatalf("job status: want failed, got %q", j.Status)
+	if j.Status != jobmodel.StatusRunning {
+		t.Fatalf("job status: want running, got %q", j.Status)
+	}
+	if !strings.Contains(j.FailureLog, "runner crashed mid-job") {
+		t.Fatalf("log not attached: %q", j.FailureLog)
 	}
 }
 
