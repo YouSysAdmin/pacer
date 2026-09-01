@@ -405,26 +405,27 @@ func (h *Handler) Complete(c *fiber.Ctx) error {
 	}
 
 	now := time.Now().UTC()
-	if j.InstanceID != "" {
-		if err := h.Runtime.Store.Instance.UpdateState(c.UserContext(), j.InstanceID, "terminated", now); err != nil {
+	instanceID := h.callerInstance(j)
+	if instanceID != "" {
+		if err := h.Runtime.Store.Instance.UpdateState(c.UserContext(), instanceID, "terminated", now); err != nil {
 			slog.Warn("runner.complete: instance update failed",
-				"job_id", j.ID, "instance_id", j.InstanceID, "err", err)
+				"job_id", j.ID, "instance_id", instanceID, "err", err)
 		}
 		// Refine the cost estimate with the actual billable window
 		// (terminated_at - launched_at) now that terminated_at is
 		// stamped. The earlier MarkCompleted/MarkFailed estimate
 		// missed the runner-shutdown tail that runs between the
 		// workflow_job webhook and this callback.
-		if err := h.Runtime.Store.Job.FinalizeCost(c.UserContext(), j.InstanceID); err != nil {
+		if err := h.Runtime.Store.Job.FinalizeCost(c.UserContext(), instanceID); err != nil {
 			slog.Warn("runner.complete: cost finalize failed",
-				"job_id", j.ID, "instance_id", j.InstanceID, "err", err)
+				"job_id", j.ID, "instance_id", instanceID, "err", err)
 		}
 	}
 	if err := h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{
 		ID:         uuid.New().String(),
 		Action:     audit.ActionInstanceTerminated,
 		TargetType: "instance",
-		TargetID:   j.InstanceID,
+		TargetID:   instanceID,
 		Detail: audit.Detail(map[string]any{
 			"job_id":    j.ID,
 			"exit_code": in.ExitCode,
@@ -435,6 +436,18 @@ func (h *Handler) Complete(c *fiber.Ctx) error {
 		slog.Warn("runner.complete: audit put failed", "job_id", j.ID, "err", err)
 	}
 	return response.NoContent(c)
+}
+
+// callerInstance is the machine this callback came from.
+//
+// The runner knows only the job id it booted with, and jobs.instance_id
+// is the machine launched for that job - so it identifies the caller
+// even when GitHub ran the job somewhere else. That is the reason the
+// launch pairing is kept in its own column: stamping
+// runner_instance_id here would mark a live host terminated, dropping
+// it out of the reaper's sweep to bill until max_runtime unwatched.
+func (h *Handler) callerInstance(j *job.Job) string {
+	return j.InstanceID
 }
 
 // Error is POST /api/runner/error.
@@ -519,17 +532,17 @@ func (h *Handler) Error(c *fiber.Ctx) error {
 		}
 		return response.Internal(c, err)
 	}
-	if j.InstanceID != "" {
-		if err := h.Runtime.Store.Instance.UpdateState(c.UserContext(), j.InstanceID, "terminated", now); err != nil {
+	if instanceID := h.callerInstance(j); instanceID != "" {
+		if err := h.Runtime.Store.Instance.UpdateState(c.UserContext(), instanceID, "terminated", now); err != nil {
 			slog.Warn("runner.error: instance update failed",
-				"job_id", j.ID, "instance_id", j.InstanceID, "err", err)
+				"job_id", j.ID, "instance_id", instanceID, "err", err)
 		}
 		// See Complete: refine cost using the now-stamped
 		// terminated_at. Bootstrap-fail instances usually terminate
 		// almost immediately, so the change is small but consistent.
-		if err := h.Runtime.Store.Job.FinalizeCost(c.UserContext(), j.InstanceID); err != nil {
+		if err := h.Runtime.Store.Job.FinalizeCost(c.UserContext(), instanceID); err != nil {
 			slog.Warn("runner.error: cost finalize failed",
-				"job_id", j.ID, "instance_id", j.InstanceID, "err", err)
+				"job_id", j.ID, "instance_id", instanceID, "err", err)
 		}
 	}
 	if err := h.Runtime.Store.Audit.Put(c.UserContext(), &audit.Entry{

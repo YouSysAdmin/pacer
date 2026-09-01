@@ -22,6 +22,10 @@ import (
 	"github.com/yousysadmin/pacer/internal/core/health"
 	"github.com/yousysadmin/pacer/internal/domain/store"
 	"github.com/yousysadmin/pacer/internal/models/instance"
+	jobmodel "github.com/yousysadmin/pacer/internal/models/job"
+	poolmodel "github.com/yousysadmin/pacer/internal/models/pool"
+	projectmodel "github.com/yousysadmin/pacer/internal/models/project"
+	"github.com/yousysadmin/pacer/internal/testutil/runtimeutil"
 )
 
 // fakeAPIError satisfies smithy.APIError so the reaper's NotFound
@@ -421,4 +425,122 @@ func TestReapInterval_NotPathological(t *testing.T) {
 	if ReapInterval > 2*time.Minute {
 		t.Fatalf("ReapInterval too long for UI self-heal: %v", ReapInterval)
 	}
+}
+
+// seedCrossedPair reproduces the production shape: two jobs, two
+// instances, and GitHub having handed each job to the other one's
+// runner. jobs.instance_id keeps the launch pairing, runner_instance_id
+// records where the work went.
+func seedCrossedPair(t *testing.T, rt *env.Runtime) {
+	t.Helper()
+	ctx := t.Context()
+	if err := rt.Store.Project.Put(ctx, &projectmodel.Project{
+		ID: "p-1", Name: "demo", Scope: projectmodel.ScopeRepo, Tags: map[string]string{},
+	}); err != nil {
+		t.Fatalf("Project.Put: %v", err)
+	}
+	if err := rt.Store.Pool.Put(ctx, &poolmodel.Pool{
+		ID: "po-1", ProjectID: "p-1", Name: "default", IsDefault: true, AMIID: "ami-1",
+		InstanceTypes: []string{"t3.small"}, SubnetIDs: []string{"s-1"},
+		MaxRuntimeMinutes: 60, MaxConcurrentRunners: 5,
+	}); err != nil {
+		t.Fatalf("Pool.Put: %v", err)
+	}
+	for _, tc := range []struct{ job, spawnedOn, ranOn string }{
+		{"job-A", "i-aaa", "i-bbb"},
+		{"job-B", "i-bbb", "i-aaa"},
+	} {
+		if err := rt.Store.Job.Put(ctx, &jobmodel.Job{
+			ID: tc.job, GHJobID: int64(len(tc.job)) + int64(tc.job[4]), GHRunID: 1, InstallationID: 1,
+			RepoFullName: "octocat/hello-world", ProjectID: "p-1", PoolID: "po-1",
+			Status: jobmodel.StatusQueued, QueuedAt: time.Now().UTC(), Payload: []byte("{}"),
+		}); err != nil {
+			t.Fatalf("Job.Put %s: %v", tc.job, err)
+		}
+		if err := rt.Store.Job.StampSpawn(ctx, tc.job, tc.spawnedOn, "h-"+tc.job, "tok"); err != nil {
+			t.Fatalf("StampSpawn %s: %v", tc.job, err)
+		}
+		if err := rt.Store.Job.MarkRunning(ctx, tc.job, tc.spawnedOn, time.Now().UTC()); err != nil {
+			t.Fatalf("MarkRunning %s: %v", tc.job, err)
+		}
+		if err := rt.Store.Job.BindRunnerInstance(ctx, tc.job, tc.ranOn); err != nil {
+			t.Fatalf("BindRunnerInstance %s: %v", tc.job, err)
+		}
+		if err := rt.Store.Instance.Put(ctx, &instance.Instance{
+			ID: tc.spawnedOn, JobID: tc.job, ProjectID: "p-1", PoolID: "po-1",
+			State: instance.StateRunning, LaunchedAt: time.Now().UTC(),
+		}); err != nil {
+			t.Fatalf("Instance.Put %s: %v", tc.spawnedOn, err)
+		}
+	}
+}
+
+// The bug this guards: i-aaa was launched for job-A, but GitHub ran
+// job-B there. When i-aaa shuts itself down, the ec2 verdict belongs
+// to job-B - marking job-A failed would kill a job running fine on the
+// other host, and 'failed' is terminal, so GitHub's real conclusion
+// for it would be dropped on arrival.
+func TestMarkLost_FailsTheJobOnTheHost_NotTheOneLaunchedForIt(t *testing.T) {
+	rt := runtimeutil.NewRuntime(t, &env.Config{})
+	seedCrossedPair(t, rt)
+	r := &Reaper{Runtime: rt}
+	ctx := t.Context()
+
+	inst, err := rt.Store.Instance.Get(ctx, "i-aaa")
+	if err != nil || inst == nil {
+		t.Fatalf("Instance.Get: %v", err)
+	}
+	r.markLost(ctx, inst, deadState{
+		StateName:       "shutting-down",
+		StateReasonCode: "Client.InstanceInitiatedShutdown",
+		StateReason:     "Instance initiated shutdown",
+	})
+
+	a, _ := rt.Store.Job.Get(ctx, "job-A")
+	if a.Status != jobmodel.StatusRunning {
+		t.Fatalf("job-A runs on i-bbb and must be untouched, got %q (%s)", a.Status, a.FailureMessage)
+	}
+	b, _ := rt.Store.Job.Get(ctx, "job-B")
+	if b.Status != jobmodel.StatusFailed {
+		t.Fatalf("job-B was on the dead host and must fail, got %q", b.Status)
+	}
+	if b.FailureStage != "ec2" {
+		t.Fatalf("job-B failure stage: want ec2, got %q", b.FailureStage)
+	}
+}
+
+func TestMaybeReap_ReapsTheJobOnTheHost_NotTheOneLaunchedForIt(t *testing.T) {
+	rt := runtimeutil.NewRuntime(t, &env.Config{})
+	seedCrossedPair(t, rt)
+	ctx := t.Context()
+
+	// Age i-aaa past the pool's max_runtime. Written directly because
+	// Instance.Put's upsert deliberately leaves launched_at alone.
+	if _, err := rt.DB.DB().ExecContext(ctx,
+		`UPDATE instances SET launched_at = ? WHERE id = 'i-aaa'`,
+		time.Now().UTC().Add(-3*time.Hour)); err != nil {
+		t.Fatalf("age instance: %v", err)
+	}
+	r := &Reaper{Runtime: rt}
+	if err := r.reapVia(ctx, &stubEC2{}, mustGetInstance(t, rt, "i-aaa")); err != nil {
+		t.Fatalf("reapVia: %v", err)
+	}
+
+	a, _ := rt.Store.Job.Get(ctx, "job-A")
+	if a.Status != jobmodel.StatusRunning {
+		t.Fatalf("job-A runs on i-bbb and must be untouched, got %q", a.Status)
+	}
+	b, _ := rt.Store.Job.Get(ctx, "job-B")
+	if b.Status != jobmodel.StatusReaped {
+		t.Fatalf("job-B was on the reaped host, got %q", b.Status)
+	}
+}
+
+func mustGetInstance(t *testing.T, rt *env.Runtime, id string) *instance.Instance {
+	t.Helper()
+	i, err := rt.Store.Instance.Get(t.Context(), id)
+	if err != nil || i == nil {
+		t.Fatalf("Instance.Get %s: %v", id, err)
+	}
+	return i
 }

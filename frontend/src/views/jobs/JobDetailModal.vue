@@ -24,6 +24,8 @@ interface Job {
   project_id?: string
   pool_id?: string
   attempts: number
+  instance_id?: string
+  runner_instance_id?: string
   sender_login?: string
   queued_at?: string
   claimed_at?: string
@@ -105,6 +107,13 @@ onMounted(() => {
 onUnmounted(() => clearInterval(timer))
 
 const fmt = (t?: string | null) => (t ? formatDate(t) : '')
+
+// True once GitHub has named a runner and it is not the machine
+// pacer launched for this job.
+const ranElsewhere = computed(() => {
+  const j = detail.value?.job
+  return !!j?.runner_instance_id && j.runner_instance_id !== j.instance_id
+})
 
 // The webhook payload parsed once. Missing fields collapse to "" / []
 // so the markup stays free of long optional chains.
@@ -348,6 +357,17 @@ function fmtAuditDetail(s?: string): string {
           <dd class="code-font">{{ fmt(derived.ghCompletedAt) }}</dd>
         </template>
       </dl>
+
+      <!-- Pool runners share a label set, so GitHub can hand this job
+           to a runner launched for a different one. Worth showing:
+           the log an operator wants is on the machine named here, not
+           on the one below. -->
+      <div v-if="ranElsewhere" class="notice mt-2">
+        GitHub ran this job on
+        <code>{{ detail.job.runner_instance_id }}</code
+        >, a runner launched for another job in the same pool. Normal when a pool runs several jobs
+        at once.
+      </div>
 
       <template v-if="detail.instance">
         <h4 class="detail-section">Instance</h4>

@@ -21,6 +21,7 @@ import (
 
 	"github.com/yousysadmin/pacer/internal/core/env"
 	auditmodel "github.com/yousysadmin/pacer/internal/models/audit"
+	instancemodel "github.com/yousysadmin/pacer/internal/models/instance"
 	jobmodel "github.com/yousysadmin/pacer/internal/models/job"
 	poolmodel "github.com/yousysadmin/pacer/internal/models/pool"
 	projectmodel "github.com/yousysadmin/pacer/internal/models/project"
@@ -501,4 +502,154 @@ func TestWebhook_LateCompleted_DoesNotOverwriteReapedJob(t *testing.T) {
 			t.Fatalf("late completed(%s) overwrote reaped: %q", conclusion, got.Status)
 		}
 	}
+}
+
+// workflowJobOnRunner is workflowJobAction with the runner identity
+// GitHub populates from in_progress onwards.
+func workflowJobOnRunner(action, repoFullName string, ghJobID int64, conclusion, runnerName string) []byte {
+	var payload map[string]any
+	_ = json.Unmarshal(workflowJobAction(action, repoFullName, ghJobID, conclusion), &payload)
+	wj := payload["workflow_job"].(map[string]any)
+	wj["runner_id"] = 77
+	wj["runner_name"] = runnerName
+	b, _ := json.Marshal(payload)
+	return b
+}
+
+// seedRunningJob puts a job on an instance the way the orchestrator
+// would: both sides pointing at the machine spawned for it.
+func seedRunningJob(t *testing.T, h *harness, jobID, instID string, ghJobID int64) {
+	t.Helper()
+	ctx := t.Context()
+	if err := h.rt.Store.Job.Put(ctx, &jobmodel.Job{
+		ID: jobID, GHJobID: ghJobID, GHRunID: ghJobID + 1, InstallationID: 12345,
+		RepoFullName: "octocat/hello-world", ProjectID: "p-1", PoolID: "po-1",
+		Status: jobmodel.StatusQueued, QueuedAt: time.Now().UTC(), Payload: []byte("{}"),
+	}); err != nil {
+		t.Fatalf("Job.Put %s: %v", jobID, err)
+	}
+	if err := h.rt.Store.Job.StampSpawn(ctx, jobID, instID, "hash-"+jobID, "tok-"+jobID); err != nil {
+		t.Fatalf("StampSpawn %s: %v", jobID, err)
+	}
+	if err := h.rt.Store.Instance.Put(ctx, &instancemodel.Instance{
+		ID: instID, JobID: jobID, ProjectID: "p-1", PoolID: "po-1",
+		State: instancemodel.StateRunning, LaunchedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("Instance.Put %s: %v", instID, err)
+	}
+}
+
+// Two runners in one pool carry identical labels, so GitHub is free to
+// hand either job to either machine. When it crosses them, the job has
+// to follow the runner that actually took it - the reaper decides what
+// to fail and terminate from that binding.
+func TestWebhook_InProgress_RebindsJobToTheRunnerThatTookIt(t *testing.T) {
+	h := newHarness(t)
+	seedRepoBoundProject(t, h.rt, "p-1", "demo", "octocat/hello-world", "po-1", "default", true, nil)
+	ctx := t.Context()
+
+	seedRunningJob(t, h, "job-A", "i-aaa", 1001)
+	seedRunningJob(t, h, "job-B", "i-bbb", 1002)
+
+	// GitHub gives job-A to the runner on i-bbb.
+	resp := h.post(t, workflowJobOnRunner("in_progress", "octocat/hello-world", 1001, "", "ghr-i-bbb"),
+		map[string]string{"X-GitHub-Event": "workflow_job", "X-GitHub-Delivery": "del-1"})
+	if resp.StatusCode != 204 {
+		t.Fatalf("in_progress: want 204, got %d", resp.StatusCode)
+	}
+
+	a, err := h.rt.Store.Job.Get(ctx, "job-A")
+	if err != nil || a == nil {
+		t.Fatalf("Get job-A: %v", err)
+	}
+	if a.RunnerInstanceID != "i-bbb" {
+		t.Fatalf("job-A must record the runner that took it: want i-bbb, got %q", a.RunnerInstanceID)
+	}
+	// The launch pairing is untouched: it is how the machine's own
+	// callbacks find their row, and what the job's cost is billed on.
+	if a.InstanceID != "i-aaa" {
+		t.Fatalf("job-A launch pairing must stay i-aaa, got %q", a.InstanceID)
+	}
+	if a.Status != jobmodel.StatusRunning {
+		t.Fatalf("job-A status: want running, got %q", a.Status)
+	}
+
+	inst, err := h.rt.Store.Instance.Get(ctx, "i-bbb")
+	if err != nil || inst == nil {
+		t.Fatalf("Get i-bbb: %v", err)
+	}
+	if inst.JobID != "job-B" {
+		t.Fatalf("instances.job_id must stay the launch pairing: want job-B, got %q", inst.JobID)
+	}
+
+	// And the query the reaper runs now names the right job.
+	onB, err := h.rt.Store.Job.GetByInstanceID(ctx, "i-bbb")
+	if err != nil || onB == nil {
+		t.Fatalf("GetByInstanceID i-bbb: %v (job=%v)", err, onB)
+	}
+	if onB.ID != "job-A" {
+		t.Fatalf("job on i-bbb: want job-A, got %q", onB.ID)
+	}
+	onA, err := h.rt.Store.Job.GetByInstanceID(ctx, "i-aaa")
+	if err != nil {
+		t.Fatalf("GetByInstanceID i-aaa: %v", err)
+	}
+	if onA != nil {
+		t.Fatalf("nothing runs on i-aaa yet, got %q", onA.ID)
+	}
+}
+
+func TestWebhook_RebindIsAuditedAndSkippedWhenAlreadyCorrect(t *testing.T) {
+	h := newHarness(t)
+	seedRepoBoundProject(t, h.rt, "p-1", "demo", "octocat/hello-world", "po-1", "default", true, nil)
+	ctx := t.Context()
+	seedRunningJob(t, h, "job-A", "i-aaa", 1001)
+
+	// Runner matches the spawn pairing: nothing to correct, nothing to
+	// audit.
+	h.post(t, workflowJobOnRunner("in_progress", "octocat/hello-world", 1001, "", "ghr-i-aaa"),
+		map[string]string{"X-GitHub-Event": "workflow_job", "X-GitHub-Delivery": "del-same"})
+	if n := countAudit(t, h, auditmodel.ActionJobRunnerRebound); n != 0 {
+		t.Fatalf("matching runner must not audit a rebind, got %d", n)
+	}
+
+	seedRunningJob(t, h, "job-B", "i-bbb", 1002)
+	h.post(t, workflowJobOnRunner("in_progress", "octocat/hello-world", 1002, "", "ghr-i-aaa"),
+		map[string]string{"X-GitHub-Event": "workflow_job", "X-GitHub-Delivery": "del-cross"})
+	if n := countAudit(t, h, auditmodel.ActionJobRunnerRebound); n != 1 {
+		t.Fatalf("crossed runner must audit a rebind, got %d", n)
+	}
+	b, _ := h.rt.Store.Job.Get(ctx, "job-B")
+	if b.RunnerInstanceID != "i-aaa" {
+		t.Fatalf("job-B ran on: want i-aaa, got %q", b.RunnerInstanceID)
+	}
+}
+
+// A runner pacer did not spawn cannot be resolved to an instance. The
+// binding is left alone rather than pointed at nothing.
+func TestWebhook_ForeignRunnerLeavesBindingAlone(t *testing.T) {
+	h := newHarness(t)
+	seedRepoBoundProject(t, h.rt, "p-1", "demo", "octocat/hello-world", "po-1", "default", true, nil)
+	seedRunningJob(t, h, "job-A", "i-aaa", 1001)
+
+	for _, name := range []string{"", "some-corp-runner-7"} {
+		h.post(t, workflowJobOnRunner("in_progress", "octocat/hello-world", 1001, "", name),
+			map[string]string{"X-GitHub-Event": "workflow_job", "X-GitHub-Delivery": "del-" + name})
+		j, _ := h.rt.Store.Job.Get(t.Context(), "job-A")
+		if j.RunnerInstanceID != "" {
+			t.Fatalf("runner %q: nothing should be recorded, got %q", name, j.RunnerInstanceID)
+		}
+	}
+	if n := countAudit(t, h, auditmodel.ActionJobRunnerRebound); n != 0 {
+		t.Fatalf("foreign runner must not audit a rebind, got %d", n)
+	}
+}
+
+func countAudit(t *testing.T, h *harness, action string) int {
+	t.Helper()
+	n, err := h.rt.Store.Audit.Count(t.Context(), auditmodel.ListFilter{Action: action})
+	if err != nil {
+		t.Fatalf("Audit.Count: %v", err)
+	}
+	return n
 }

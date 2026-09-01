@@ -37,20 +37,25 @@ func Detail(kv map[string]any) string {
 }
 
 const (
-	ActionProjectCreated     = "project.created"
-	ActionProjectUpdated     = "project.updated"
-	ActionProjectDeleted     = "project.deleted"
-	ActionPoolCreated        = "pool.created"
-	ActionPoolUpdated        = "pool.updated"
-	ActionPoolDeleted        = "pool.deleted"
-	ActionRepoBound          = "repo.bound"
-	ActionRepoUnbound        = "repo.unbound"
-	ActionJobEnqueued        = "job.enqueued"
-	ActionJobCompleted       = "job.completed"
-	ActionJobFailed          = "job.failed"
-	ActionJobNoPoolMatch     = "job.no_pool_match"
-	ActionJobSpawnRetry      = "job.spawn_retry"
-	ActionJobSpawnExhausted  = "job.spawn_capacity_exhausted"
+	ActionProjectCreated    = "project.created"
+	ActionProjectUpdated    = "project.updated"
+	ActionProjectDeleted    = "project.deleted"
+	ActionPoolCreated       = "pool.created"
+	ActionPoolUpdated       = "pool.updated"
+	ActionPoolDeleted       = "pool.deleted"
+	ActionRepoBound         = "repo.bound"
+	ActionRepoUnbound       = "repo.unbound"
+	ActionJobEnqueued       = "job.enqueued"
+	ActionJobCompleted      = "job.completed"
+	ActionJobFailed         = "job.failed"
+	ActionJobNoPoolMatch    = "job.no_pool_match"
+	ActionJobSpawnRetry     = "job.spawn_retry"
+	ActionJobSpawnExhausted = "job.spawn_capacity_exhausted"
+	// GitHub dispatched the job to a different instance than the one
+	// spawned for it - normal whenever a pool runs more than one job
+	// at a time, and recorded because it moves what the reaper will
+	// terminate and fail.
+	ActionJobRunnerRebound   = "job.runner_rebound"
 	ActionInstanceLaunched   = "instance.launched"
 	ActionInstanceRegistered = "instance.registered"
 	// GitHub refused to mint a JIT config. The runner only ever sees

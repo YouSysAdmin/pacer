@@ -387,10 +387,7 @@ func (r *Reaper) markLost(ctx context.Context, i *instance.Instance, d deadState
 		slog.Error("reaper: mark instance terminated failed", "instance_id", i.ID, "err", err)
 	}
 
-	j, err := r.Runtime.Store.Job.Get(ctx, i.JobID)
-	if err != nil {
-		slog.Error("reaper: get job failed", "job_id", i.JobID, "err", err)
-	}
+	j := r.jobOnInstance(ctx, i)
 	if j != nil && jobInFlight(j.Status) {
 		msg := lostReasonMessage(d)
 		if err := r.Runtime.Store.Job.MarkFailed(ctx, j.ID, "ec2", msg, now); err != nil {
@@ -484,6 +481,31 @@ func jobInFlight(s jobmodel.Status) bool {
 		s == jobmodel.StatusRunning
 }
 
+// jobOnInstance answers "whose work am I about to end" - the only job
+// the reaper may pass a verdict on when it kills or buries a host.
+//
+// The lookup deliberately does not go through instances.job_id. That
+// column records which job the machine was LAUNCHED for, and GitHub
+// does not honour that pairing: every runner in a pool advertises
+// identical labels, so a queued job goes to whichever one is free.
+// jobs.runner_instance_id carries GitHub's own account of where the
+// job ran (see job.Store.GetByInstanceID for how the two are ranked).
+//
+// nil means nobody's work is on this host, and the caller then
+// terminates it without touching any job's status.
+func (r *Reaper) jobOnInstance(ctx context.Context, i *instance.Instance) *jobmodel.Job {
+	j, err := r.Runtime.Store.Job.GetByInstanceID(ctx, i.ID)
+	if err != nil {
+		slog.Error("reaper: lookup job on instance failed", "instance_id", i.ID, "err", err)
+		return nil
+	}
+	if j == nil && i.JobID != "" {
+		slog.Info("reaper: instance holds no live job",
+			"instance_id", i.ID, "launched_for", i.JobID)
+	}
+	return j
+}
+
 func lostReasonMessage(d deadState) string {
 	switch {
 	case d.StateReasonCode != "" && d.StateReason != "":
@@ -498,6 +520,13 @@ func lostReasonMessage(d deadState) string {
 }
 
 func (r *Reaper) maybeReap(ctx context.Context, i *instance.Instance) error {
+	return r.reapVia(ctx, r.Runtime.EC2, i)
+}
+
+// reapVia is maybeReap with the EC2 client injected, so the decision
+// table (who gets terminated, whose job gets the verdict) is testable
+// without a live client. Same split as checkEC2HealthVia.
+func (r *Reaper) reapVia(ctx context.Context, c ec2API, i *instance.Instance) error {
 	if i.PoolID == "" {
 		// Pre-pools instance - skip. Operator can clean up via console.
 		return nil
@@ -529,10 +558,10 @@ func (r *Reaper) maybeReap(ctx context.Context, i *instance.Instance) error {
 	// Best-effort runner deregister BEFORE we hard-kill the host:
 	// gives GitHub a clean abort signal so the workflow_job fails fast
 	// instead of relying on heartbeat timeout.
-	j, _ := r.Runtime.Store.Job.Get(ctx, i.JobID)
+	j := r.jobOnInstance(ctx, i)
 	r.deleteGitHubRunner(ctx, i, j)
 
-	if _, err := r.Runtime.EC2.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
+	if _, err := c.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
 		InstanceIds: []string{i.ID},
 	}); err != nil {
 		return fmt.Errorf("terminate %s: %w", i.ID, err)
@@ -542,7 +571,12 @@ func (r *Reaper) maybeReap(ctx context.Context, i *instance.Instance) error {
 	if err := r.Runtime.Store.Instance.UpdateState(ctx, i.ID, instance.StateReaped, now); err != nil {
 		slog.Error("reaper: update instance state failed", "err", err)
 	}
-	if err := r.Runtime.Store.Job.MarkReaped(ctx, i.JobID, now); err != nil {
+	// Only the job actually on this host gets reaped. jobOnInstance
+	// returns nil when the host is running nobody's work, and then the
+	// termination above stands on its own.
+	if j == nil {
+		slog.Warn("reaper: instance terminated with no job to reap", "instance_id", i.ID)
+	} else if err := r.Runtime.Store.Job.MarkReaped(ctx, j.ID, now); err != nil {
 		// A job the webhook already finalized keeps its status. The
 		// instance row and cost are still updated below.
 		if errors.Is(err, jobstore.ErrStatusConflict) {

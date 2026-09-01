@@ -104,6 +104,30 @@ func (s *Store) GetByGHJobID(ctx context.Context, ghJobID int64) (*jobmodel.Job,
 	return s.scanOne(ctx, "WHERE gh_job_id = ?", ghJobID)
 }
 
+// GetByInstanceID returns the unfinished job occupying an instance -
+// the reaper's question before it ends anything.
+//
+// A confirmed answer wins: a row whose runner_instance_id names this
+// host was placed there by GitHub. Failing that, the job launched for
+// the host counts, but only while nothing has placed it elsewhere -
+// once its runner_instance_id names another machine, this host is
+// running someone else's work or none at all, and guessing is exactly
+// the mistake this lookup exists to stop.
+//
+// Pre-terminal rows only. A finished job keeps its binding as history
+// and must not be re-finalized.
+func (s *Store) GetByInstanceID(ctx context.Context, instanceID string) (*jobmodel.Job, error) {
+	if instanceID == "" {
+		return nil, nil
+	}
+	return s.scanOne(ctx,
+		`WHERE status NOT IN `+terminalStatuses+`
+		   AND (runner_instance_id = ?
+		        OR (runner_instance_id IS NULL AND instance_id = ?))
+		 ORDER BY (runner_instance_id IS NULL), queued_at DESC
+		 LIMIT 1`, instanceID, instanceID)
+}
+
 // Claim atomically pops the oldest queued job whose POOL still has
 // capacity (active jobs < pool.max_concurrent_runners) AND whose
 // PROJECT-wide ceiling (when set non-zero) is not yet reached AND
@@ -193,6 +217,28 @@ func (s *Store) StampSpawn(ctx context.Context, id, instanceID, callbackTokenHas
 		return ErrJobMissing
 	}
 	return nil
+}
+
+// BindRunnerInstance records which machine GitHub actually dispatched
+// the job to, from workflow_job.runner_name.
+//
+// Written to its own column rather than over instance_id, because the
+// two answer different questions and both have callers. instance_id
+// is where the job's own runner callbacks arrive from and what its
+// cost is billed against; runner_instance_id is where the work ran,
+// and it is what the reaper must consult before ending anything.
+//
+// They diverge whenever a pool runs more than one job at once: pool
+// runners share a label set by construction, so GitHub gives a queued
+// job to whichever is free, with no notion of which job the instance
+// was launched for.
+//
+// Pre-terminal rows only. A finished job's account of where it ran is
+// history and does not get rewritten by a late redelivery.
+func (s *Store) BindRunnerInstance(ctx context.Context, id, instanceID string) error {
+	return s.execTransition(ctx, id,
+		`UPDATE jobs SET runner_instance_id = ? WHERE id = ? AND status NOT IN `+terminalStatuses,
+		instanceID, id)
 }
 
 // ConsumeBootstrap atomically reads-and-clears the bootstrap_token for
@@ -566,7 +612,8 @@ func buildJobWhere(f jobmodel.ListFilter) (string, []any) {
 // column, no chance of the projections drifting out of scan order.
 const (
 	jobColsHead = `id, gh_job_id, gh_run_id, installation_id, repo_full_name,
-       project_id, pool_id, status, instance_id, callback_token_hash,
+       project_id, pool_id, status, instance_id, runner_instance_id,
+       callback_token_hash,
        queued_at, claimed_at, started_at, completed_at,
        failure_stage, failure_message, `
 	jobColsTail = `, estimated_cost_usd,
@@ -599,13 +646,13 @@ func (s *Store) scanOne(ctx context.Context, where string, args ...any) (*jobmod
 
 func scanJobRow(r interface{ Scan(...any) error }) (*jobmodel.Job, error) {
 	var j jobmodel.Job
-	var poolID, instID, callbackHash, failStage, failMsg, failLog, bootstrapTok sql.NullString
+	var poolID, instID, runnerInstID, callbackHash, failStage, failMsg, failLog, bootstrapTok sql.NullString
 	var claimedAt, startedAt, completedAt, nextRetryAt sql.NullTime
 	var costUSD sql.NullFloat64
 	var status, senderLogin, payload string
 	if err := r.Scan(&j.ID, &j.GHJobID, &j.GHRunID, &j.InstallationID,
 		&j.RepoFullName, &j.ProjectID, &poolID,
-		&status, &instID, &callbackHash,
+		&status, &instID, &runnerInstID, &callbackHash,
 		&j.QueuedAt, &claimedAt, &startedAt, &completedAt,
 		&failStage, &failMsg, &failLog, &costUSD,
 		&j.Attempts, &nextRetryAt, &senderLogin, &payload, &bootstrapTok); err != nil {
@@ -616,6 +663,7 @@ func scanJobRow(r interface{ Scan(...any) error }) (*jobmodel.Job, error) {
 	j.PoolID = poolID.String
 	j.Status = jobmodel.Status(status)
 	j.InstanceID = instID.String
+	j.RunnerInstanceID = runnerInstID.String
 	j.CallbackTokenHash = callbackHash.String
 	j.FailureStage = failStage.String
 	j.FailureMessage = failMsg.String

@@ -103,6 +103,11 @@ type JobStore interface {
 	Put(ctx context.Context, j *job.Job) error
 	Get(ctx context.Context, id string) (*job.Job, error)
 	GetByGHJobID(ctx context.Context, ghJobID int64) (*job.Job, error)
+	// GetByInstanceID returns the pre-terminal job GitHub dispatched to
+	// this instance, which is the reaper's question when a host dies.
+	// Not the same as looking the job up through instances.job_id -
+	// see the store method.
+	GetByInstanceID(ctx context.Context, instanceID string) (*job.Job, error)
 	// Claim atomically pops the oldest queued job whose pool is not
 	// at capacity AND (if set) whose project-wide ceiling is not
 	// reached, stamps claim metadata, and returns the updated row.
@@ -115,6 +120,10 @@ type JobStore interface {
 	// ConsumeBootstrap clears the raw column on first read so the
 	// secret has at most single-use exposure.
 	StampSpawn(ctx context.Context, id, instanceID, callbackTokenHash, bootstrapToken string) error
+	// BindRunnerInstance records which machine GitHub dispatched the
+	// job to, alongside (not over) the instance launched for it.
+	// See the store method for why both are kept.
+	BindRunnerInstance(ctx context.Context, id, instanceID string) error
 	// ConsumeBootstrap atomically reads-and-clears the cached
 	// bootstrap token for the job stamped with this instance_id.
 	// Returns ErrBootstrapUnavailable when no valid row matches

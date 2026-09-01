@@ -22,15 +22,28 @@ const (
 )
 
 type Job struct {
-	ID                string     `json:"id"`
-	GHJobID           int64      `json:"gh_job_id"`
-	GHRunID           int64      `json:"gh_run_id"`
-	InstallationID    int64      `json:"installation_id"`
-	RepoFullName      string     `json:"repo_full_name"`
-	ProjectID         string     `json:"project_id"`
-	PoolID            string     `json:"pool_id"`
-	Status            Status     `json:"status"`
-	InstanceID        string     `json:"instance_id,omitempty"`
+	ID             string `json:"id"`
+	GHJobID        int64  `json:"gh_job_id"`
+	GHRunID        int64  `json:"gh_run_id"`
+	InstallationID int64  `json:"installation_id"`
+	RepoFullName   string `json:"repo_full_name"`
+	ProjectID      string `json:"project_id"`
+	PoolID         string `json:"pool_id"`
+	Status         Status `json:"status"`
+	// InstanceID is the machine pacer LAUNCHED for this job. Stable
+	// from spawn onwards: callbacks the runner makes about itself are
+	// matched on it, and the cost rollup bills the job for the
+	// instance it caused to exist.
+	InstanceID string `json:"instance_id,omitempty"`
+	// RunnerInstanceID is the machine GitHub actually dispatched the
+	// job to, taken from workflow_job.runner_name. Empty until the
+	// first webhook names a runner.
+	//
+	// It differs from InstanceID whenever a pool runs more than one
+	// job at once: pool runners share a label set, so GitHub gives a
+	// queued job to whichever is free. This is the side the reaper
+	// trusts when deciding whose work it is about to end.
+	RunnerInstanceID  string     `json:"runner_instance_id,omitempty"`
 	CallbackTokenHash string     `json:"-"` // sha256 of the callback token. HMAC payload is (job_id, exp_unix). Raw token never stored.
 	QueuedAt          time.Time  `json:"queued_at"`
 	ClaimedAt         *time.Time `json:"claimed_at,omitempty"`

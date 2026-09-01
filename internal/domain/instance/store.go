@@ -127,6 +127,26 @@ func (s *Store) UpdateState(ctx context.Context, id string, state instancemodel.
 	return err
 }
 
+// GetByJobID returns the instance SPAWNED for a job, which is not
+// necessarily the one that ran it - instances.job_id records the
+// launch pairing and never moves, while jobs.instance_id follows
+// GitHub's actual dispatch (see job.Store.BindInstance).
+//
+// This is the lookup for a callback arriving from the machine itself:
+// the runner knows only the job id it booted with, and the row it
+// needs to stamp is its own.
+//
+// Returns (nil, nil) when the job never got an instance.
+func (s *Store) GetByJobID(ctx context.Context, jobID string) (*instancemodel.Instance, error) {
+	row := s.db.QueryRowContext(ctx,
+		instanceSelect+` WHERE job_id = ? ORDER BY launched_at DESC LIMIT 1`, jobID)
+	i, err := scanInstance(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return i, err
+}
+
 func (s *Store) StampRegistration(ctx context.Context, id, instanceType, az string, ghRunnerID int64, now time.Time) error {
 	now = dbutil.UTC(now)
 	_, err := s.db.ExecContext(ctx, `

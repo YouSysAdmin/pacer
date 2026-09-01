@@ -93,6 +93,11 @@ type workflowJobPayload struct {
 		Conclusion string   `json:"conclusion"`
 		Labels     []string `json:"labels"`
 		Name       string   `json:"name"`
+		// RunnerName is the only authoritative statement of which
+		// machine ran this job. Null on the queued action, populated
+		// from in_progress onwards. See reconcileRunner.
+		RunnerID   int64  `json:"runner_id"`
+		RunnerName string `json:"runner_name"`
 	} `json:"workflow_job"`
 	Repository struct {
 		FullName string `json:"full_name"`
@@ -294,6 +299,78 @@ func (h *Handler) routeProject(ctx context.Context, p *workflowJobPayload) (*pro
 	return h.Runtime.Store.Project.GetByOrgName(ctx, p.Repository.Owner.Login)
 }
 
+// runnerNamePrefix is what runner/endpoint.go::Register mints runner
+// names with. It is the link back from GitHub's runner_name to the
+// instance the runner is on.
+const runnerNamePrefix = "ghr-"
+
+// reconcileRunner corrects the job's instance binding from the runner
+// GitHub says took the job.
+//
+// The binding written at spawn time pairs a job with the instance
+// launched FOR it, and GitHub honours no such pairing: every runner in
+// a pool advertises the same labels, so a queued job goes to whichever
+// one is free. Run two jobs in a pool and the pairing is a coin flip.
+//
+// Left uncorrected, the reaper works from it: when an instance goes
+// away it fails, reaps and deregisters the job the row names, which
+// may be a job running happily on another host - and 'failed' is
+// terminal, so the conclusion GitHub sends later is dropped.
+//
+// Only jobs.instance_id moves. instances.job_id keeps recording what
+// the machine was LAUNCHED for, because that is what a callback from
+// the machine itself can be matched on - the runner knows only the
+// job id it booted with.
+//
+// Failures are logged, not surfaced: the webhook's own work (status,
+// payload) still has to land, and a stale binding is what we already
+// had.
+func (h *Handler) reconcileRunner(ctx context.Context, j *job.Job, p *workflowJobPayload) {
+	name := strings.TrimSpace(p.WorkflowJob.RunnerName)
+	instID, ok := strings.CutPrefix(name, runnerNamePrefix)
+	if name == "" || !ok || instID == "" {
+		// Either GitHub sent no runner (queued, or a job that never
+		// started) or the runner is not one of ours. A foreign runner
+		// with matching labels poaching pacer jobs is worth saying out
+		// loud - it means the labels are not as narrow as they look.
+		if name != "" {
+			slog.Warn("webhook: job ran on a runner pacer did not spawn",
+				"job_id", j.ID, "runner", name, "gh_job_id", p.WorkflowJob.ID)
+		}
+		return
+	}
+	if instID == j.RunnerInstanceID {
+		return
+	}
+
+	if err := h.Runtime.Store.Job.BindRunnerInstance(ctx, j.ID, instID); err != nil {
+		slog.Warn("webhook: runner bind failed", "job_id", j.ID, "instance_id", instID, "err", err)
+		return
+	}
+	j.RunnerInstanceID = instID
+
+	// Only worth a line, and an audit row, when GitHub put the job
+	// somewhere other than the machine launched for it. That is the
+	// case the reaper used to get wrong.
+	if instID == j.InstanceID {
+		return
+	}
+	slog.Info("webhook: job ran on a different instance than the one spawned for it",
+		"job_id", j.ID, "spawned_for", j.InstanceID, "ran_on", instID)
+	_ = h.Runtime.Store.Audit.Put(ctx, &audit.Entry{
+		ID:         uuid.New().String(),
+		Action:     audit.ActionJobRunnerRebound,
+		TargetType: "job",
+		TargetID:   j.ID,
+		Detail: audit.Detail(map[string]any{
+			"ran_on":      instID,
+			"spawned_for": j.InstanceID,
+			"runner":      name,
+		}),
+		OccurredAt: time.Now().UTC(),
+	})
+}
+
 func (h *Handler) markRunning(ctx context.Context, c *fiber.Ctx, p *workflowJobPayload, raw []byte) error {
 	j, err := h.Runtime.Store.Job.GetByGHJobID(ctx, p.WorkflowJob.ID)
 	if err != nil {
@@ -302,6 +379,10 @@ func (h *Handler) markRunning(ctx context.Context, c *fiber.Ctx, p *workflowJobP
 	if j == nil {
 		return response.NoContent(c)
 	}
+	// Before the status write: this is the first moment GitHub tells
+	// us which machine took the job, and the reaper may sweep at any
+	// point after it.
+	h.reconcileRunner(ctx, j, p)
 	// The in_progress webhook arrives with steps[] partially populated
 	// (set-up, checkout, ...). Refresh the payload column so the job
 	// detail modal can render them. Best-effort - a stale payload is
@@ -331,6 +412,10 @@ func (h *Handler) markCompleted(ctx context.Context, c *fiber.Ctx, p *workflowJo
 	if j == nil {
 		return response.NoContent(c)
 	}
+	// A job short enough to finish between sweeps may have no
+	// in_progress delivery on record yet, so bind here too before the
+	// cost rollup reads instance_id.
+	h.reconcileRunner(ctx, j, p)
 	// The completed webhook is the only one that carries the fully
 	// populated steps[] (with conclusion + duration per step). Refresh
 	// the payload column so the modal renders the final shape. Same
